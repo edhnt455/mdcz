@@ -14,6 +14,7 @@ import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, FileScraper } from "@mdcz/runtime/scrape";
 import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
 import { admitScrapeGroups } from "@mdcz/runtime/scrape/movieGroups";
+import { NumberRecognitionService } from "@mdcz/runtime/scrape/NumberRecognitionService";
 import type { MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockConfigManager } from "../../../helpers/scraper";
@@ -73,6 +74,39 @@ const createHarness = async () => {
 };
 
 describe("scrape admission and grouping", () => {
+  it("runs AI fallback after task acceptance and passes regrouped files to preparation", async () => {
+    const { directory, persistence, service, prepare, createLibrary } = await createHarness();
+    const library = await createLibrary(join(directory, "ABC-123"));
+    const state = await persistence.getState();
+    const root = await state.repositories.mediaRoots.ensurePath(join(directory, "ABC-123"));
+    const names = ["recording-CD1.mp4", "recording-CD2.mp4"];
+    for (const name of names) await writeFile(join(root.hostPath, name), "video");
+    mockConfigManager({ ...defaultConfiguration, scrape: { ...defaultConfiguration.scrape, aiNumberFallback: true } });
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const recognize = vi.spyOn(NumberRecognitionService.prototype, "recognize").mockImplementation(async () => {
+      await waiting;
+      return "ABC-123";
+    });
+    const launch = await service.start({
+      executionMode: "batch",
+      libraryId: library.id,
+      refs: names.map((relativePath) => ({ rootId: root.id, relativePath })),
+    });
+    expect(launch.taskId).toBeTruthy();
+    expect(prepare).not.toHaveBeenCalled();
+    release();
+    await service.waitForIdle();
+    expect(recognize).toHaveBeenCalledTimes(2);
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(prepare.mock.calls[0][0].map((entry) => [entry.fileInfo?.number, entry.fileInfo?.part?.number])).toEqual([
+      ["ABC-123", 1],
+      ["ABC-123", 2],
+    ]);
+  });
+
   it.each([
     "files",
     "empty",

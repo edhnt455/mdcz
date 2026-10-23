@@ -410,8 +410,9 @@ export const settings = {
   },
   layout: {
     title: "Settings",
+    sections: "Settings categories",
+    autoSaveHint: "Changes are saved automatically",
     matchCount: (count: number) => `${count} match${count === 1 ? "" : "es"}`,
-    showingAdvanced: "Showing advanced settings",
     showAdvanced: "Show advanced settings",
     hideAdvanced: "Hide advanced settings",
     searchPlaceholder: "Search settings",

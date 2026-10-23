@@ -1,7 +1,6 @@
 export * from "./AggregationPriorityEditorField";
 export * from "./autoSaveUtils";
 export * from "./CrossFieldBanner";
-export * from "./FloatingToc";
 export * from "./focusSettingField";
 export * from "./orderedSite";
 export * from "./orderedSiteSummary";
@@ -33,8 +32,6 @@ export {
 } from "./settingsFilter";
 export * from "./settingsRegistry";
 export * from "./sitePriorityOptions";
-export * from "./TocContext";
 export * from "./TopLevelSections";
 export * from "./useAutoSaveField";
 export * from "./useCrossFieldErrors";
-export * from "./useScrollSpy";

@@ -9,6 +9,7 @@ export class ScrapeFailureError extends Error {
     readonly kind: "no_number" | "not_found" | "ambiguous",
     message: string,
     readonly candidates: AmbiguousCandidate[] = [],
+    readonly canRetryNumber = false,
   ) {
     super(message);
   }

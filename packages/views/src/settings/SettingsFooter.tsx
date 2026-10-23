@@ -19,7 +19,7 @@ export function AdvancedSettingsFooterContent({
 
   const actionLabel = isAdvancedVisible ? t.settings.layout.hideAdvanced : t.settings.layout.showAdvanced;
   return (
-    <div className="flex justify-end pt-2">
+    <div className="flex shrink-0 justify-end">
       <button
         type="button"
         onClick={onToggleShowAdvanced}

@@ -36,6 +36,7 @@ export interface AggregationResult {
 }
 
 export interface SiteCrawlResult extends SiteResult {
+  lookupMiss?: boolean;
   data?: CrawlerData;
   candidates?: AmbiguousCandidate[];
   /** The detail page a manual-URL scrape read, which attributes the data to one work when a number names several. */
@@ -296,7 +297,12 @@ export class AggregationService {
     if (successes.size === 0) {
       const message = summarizeFailedSiteResults(number, siteResults);
       this.logger.warn(message);
-      throw new ScrapeFailureError("not_found", message);
+      throw new ScrapeFailureError(
+        "not_found",
+        message,
+        [],
+        crawled.some((result) => result.lookupMiss),
+      );
     }
 
     const stats: AggregationStats = {
@@ -418,11 +424,15 @@ export class AggregationService {
     }
     options.timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? perCrawlerTimeoutMs, perCrawlerTimeoutMs));
 
+    let responded = false;
     try {
       const result = await runWithCrawlerSource(
         site,
         async () => await this.crawlerProvider.crawl({ number, site, options }),
         budget,
+        () => {
+          responded = true;
+        },
       )
         .then((response) => response.result)
         .catch(toCrawlerErrorResult);
@@ -450,6 +460,11 @@ export class AggregationService {
         reason,
         detail,
         httpStatus: result.httpStatus,
+        ...(reason === "not_found" &&
+        responded &&
+        (result.httpStatus === undefined || (result.httpStatus >= 200 && result.httpStatus < 300))
+          ? { lookupMiss: true }
+          : {}),
         elapsedMs,
         ...(result.candidates ? { candidates: result.candidates } : {}),
       };

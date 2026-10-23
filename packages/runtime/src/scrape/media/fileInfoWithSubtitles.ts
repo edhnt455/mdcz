@@ -27,7 +27,9 @@ export const resolveFileInfoWithSubtitles = async (
 ): Promise<FileInfoWithSubtitles> => {
   const rules = options.filenameRules;
   const parsedFileInfo =
-    options.parsedFileInfo ?? parseFileInfo(filePath, rules?.filenameIgnoreTokens, rules?.numberMappings, rules);
+    options.parsedFileInfo ??
+    options.inventory?.fileInfo(filePath, rules) ??
+    parseFileInfo(filePath, rules?.filenameIgnoreTokens, rules?.numberMappings, rules);
   const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(filePath, options.inventory, rules));
   const subtitleTag = preferSubtitleTag(
     parsedFileInfo.subtitleTag,

@@ -113,6 +113,12 @@ const fields: Record<FieldKey, FieldText> = {
     ],
   },
   "scrape.r18MetadataLanguage": { label: "R18.dev metadata language" },
+  "scrape.aiNumberFallback": {
+    label: "AI movie code fallback",
+    description:
+      "Try AI when no code is detected, or no movie is found despite at least one site responding normally. Reuses the translation LLM settings without enabling translation. Sends the file name and immediate parent folder name; unresolved files remain for manual repair.",
+    aliases: ["AI", "LLM", "code", "fallback"],
+  },
   "scrape.filenameIgnoreTokens": {
     label: "Code detection ignore words",
     description:

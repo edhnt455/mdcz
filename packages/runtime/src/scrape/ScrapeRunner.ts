@@ -69,10 +69,14 @@ import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./executi
 import { assertTargetLayout, FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedMovieGroup, type RuntimeScrapeSignalService } from "./FileScraper";
 import { admitScrapeGroups, type MovieGroup } from "./movieGroups";
+import { NumberRecognitionService } from "./NumberRecognitionService";
 import { NfoGenerator } from "./nfo";
 import { versionKey } from "./organize/versionLabels";
 import { checkScrapeTargets } from "./preflightScrapeTask";
+import { resolveScrapeNumbers } from "./resolveScrapeNumbers";
 import { TranslateService } from "./TranslateService";
+import { LlmApiClient } from "./translate/engines/LlmApiClient";
+import { LlmRequestService } from "./translate/engines/LlmRequestService";
 import type { TranslationMappingStore } from "./translate/types";
 import { expandScrapeRetryItems } from "./utils/number";
 import { createVideoProbe } from "./utils/video";
@@ -206,6 +210,7 @@ export class ScrapeRunner {
   private readonly rootDisplayNames = new Map<string, string>();
   private readonly logger: RuntimeLogger;
   private readonly translateService: TranslateService;
+  private readonly numberRecognitionService: NumberRecognitionService;
   private readonly nfoGenerator = new NfoGenerator();
   private readonly fileOrganizer = new FileOrganizer();
   private readonly probeVideo: ReturnType<typeof createVideoProbe>;
@@ -229,9 +234,12 @@ export class ScrapeRunner {
       error: (msg: string, error?: unknown) => rawLogger.error(msg, error),
     };
     this.probeVideo = createVideoProbe(deps.mediaInfoWasmPath);
+    const llmRequests = new LlmRequestService(this.logger, new LlmApiClient(deps.networkClient));
+    this.numberRecognitionService = new NumberRecognitionService(llmRequests);
     this.translateService = new TranslateService(deps.networkClient, {
       logger: this.logger,
       mappingStore: deps.mappingStore,
+      llmRequests,
     });
 
     this.host = {
@@ -771,13 +779,33 @@ export class ScrapeRunner {
     const context = this.runContexts.get(manifest.id);
     if (!context?.inventory || !context.groups) throw new Error(`Scrape run is not prepared: ${manifest.id}`);
     const checkRoots = context.rootGuard ?? this.deps.persistence.mediaRoots.rootIntegrityGuard();
-    const { inventory, groups } = context;
+    const { inventory } = context;
     this.runContexts.delete(manifest.id);
     await checkRoots([...new Set([...manifest.items.map((item) => item.rootId), ...outputRootIds])]);
 
     const { configuration, target, unpin } = context;
     applyScrapeNetworkPolicy(this.deps.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
+
+    if (configuration.scrape.aiNumberFallback) reporter.stage({ stage: "search" });
+    const { groups, aggregationService } = await resolveScrapeNumbers({
+      groups: context.groups,
+      inventory,
+      configuration,
+      aggregationService:
+        this.deps.aggregationService ??
+        new AggregationService(this.deps.crawlerProvider, {
+          config: configuration,
+          logger: this.logger,
+          signal,
+          recordSiteResults: this.deps.recordSiteResults,
+        }),
+      recognitionService: this.numberRecognitionService,
+      logger: this.logger,
+      signal,
+      unpin,
+      beforeLookup: (signal) => policy.restGate?.waitBeforeStart(signal) ?? Promise.resolve(),
+    });
 
     const roots = new Map<string, MediaRoot>();
     for (const item of manifest.items) {
@@ -791,14 +819,7 @@ export class ScrapeRunner {
 
     const fileScraper = new FileScraper(
       {
-        aggregationService:
-          this.deps.aggregationService ??
-          new AggregationService(this.deps.crawlerProvider, {
-            config: configuration,
-            logger: this.logger,
-            signal,
-            recordSiteResults: this.deps.recordSiteResults,
-          }),
+        aggregationService,
         translateService: this.translateService,
         nfoGenerator: this.nfoGenerator,
         buildTags: buildMovieTags,
@@ -907,7 +928,7 @@ export class ScrapeRunner {
       concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
       movieGroups,
       prepareGroup: async (group, signal) => {
-        await policy.restGate?.waitBeforeStart(signal);
+        if (!configuration.scrape.aiNumberFallback) await policy.restGate?.waitBeforeStart(signal);
         const result = await fileScraper.prepareGroup(
           group.members.map((member) => {
             const uncensoredChoice = member.uncensoredChoice;

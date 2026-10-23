@@ -15,7 +15,6 @@ import {
 } from "./media";
 import { getNfoWritePaths } from "./nfo";
 import { NAMING_PREVIEW_SAMPLES, NamingEngine } from "./organize/NamingEngine";
-import { parseFileInfo } from "./utils/number";
 import { isStrmFile, prepareMovedStrmContent } from "./utils/strm";
 
 /** How a placed video reaches its target; the source stays on disk for `hardlink` and `copy`. */
@@ -202,16 +201,12 @@ export class FileOrganizer {
     const rules = options.filenameRules;
 
     if (sameDirectoryOutput && !options.allowSharedDirectory) {
-      const sourceFileInfo = parseFileInfo(sourceFilePath, rules?.filenameIgnoreTokens, rules?.numberMappings, rules);
+      const sourceFileInfo = inventory.fileInfo(sourceFilePath, rules);
       const videoFiles = (await inventory.mediaEntries(sourceDir)).map((entry) => join(sourceDir, entry.name));
       const otherVideos = videoFiles.filter(
         (filePath) =>
           resolve(filePath) !== resolve(sourceFilePath) &&
-          !(
-            sourceFileInfo.number &&
-            sourceFileInfo.number ===
-              parseFileInfo(filePath, rules?.filenameIgnoreTokens, rules?.numberMappings, rules).number
-          ),
+          !(sourceFileInfo.number && sourceFileInfo.number === inventory.fileInfo(filePath, rules).number),
       );
       if (otherVideos.length > 0) {
         this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);

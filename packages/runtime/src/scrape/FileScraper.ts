@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { filesystemPathKey, type MediaRoot } from "@mdcz/media-store";
+import type { MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { buildFileId } from "@mdcz/shared/mediaIdentity";
@@ -40,11 +40,10 @@ import {
 } from "./output/executeOutputSteps";
 import { prepareOnlineMetadata } from "./prepareOnlineMetadata";
 import { pendingOutcomeOf, ScrapeFailureError } from "./scrapeFailure";
-import { newestNfosFirst, preferredLocalNfoBaseNames, selectLocalNfoNames } from "./selectLocalNfo";
+import { loadLocalNfoSnapshot } from "./selectLocalNfo";
 import type { TranslateService } from "./TranslateService";
 import { isAbortError, throwIfAborted } from "./utils/abort";
 import { classifyMovie, isLikelyUncensoredNumber } from "./utils/movieClassification";
-import { parseFileInfo } from "./utils/number";
 
 const entryNameMatches = (entryName: string, candidateName: string): boolean =>
   process.platform === "win32" ? entryName.toLowerCase() === candidateName.toLowerCase() : entryName === candidateName;
@@ -220,14 +219,7 @@ export class FileScraper {
     const inventory = this.options.inventory ?? new DirectoryInventory();
     const members = entries.map(
       ({ filePath, fileInfo: providedFileInfo, groupMovieId, groupFileId, groupAssets, options, progress }, index) => {
-        const fileInfo =
-          providedFileInfo ??
-          parseFileInfo(
-            filePath,
-            configuration.scrape.filenameIgnoreTokens,
-            configuration.scrape.numberMappings,
-            configuration.scrape,
-          );
+        const fileInfo = providedFileInfo ?? inventory.fileInfo(filePath, configuration.scrape);
         const fileId = groupFileId ?? buildFileId(fileInfo.filePath);
         return {
           options,
@@ -267,34 +259,7 @@ export class FileScraper {
         member.fileInfo = resolved.fileInfo;
         member.identity = toScrapeIdentity(member.identity.fileId, resolved.fileInfo, options);
         let localState = options.localState;
-        const directory = path.dirname(parsedFileInfo.filePath);
-        const videos = await inventory.mediaEntries(directory);
-        const singleMovie = videos.every(
-          (entry) =>
-            parseFileInfo(
-              entry.name,
-              configuration.scrape.filenameIgnoreTokens,
-              configuration.scrape.numberMappings,
-              configuration.scrape,
-            ).number === parsedFileInfo.number,
-        );
-        const candidates = preferredLocalNfoBaseNames(
-          parsedFileInfo.fileName,
-          parsedFileInfo.part?.suffix,
-          singleMovie,
-        );
-        const nfos = await inventory.files(directory, (name) => path.extname(name).toLowerCase() === ".nfo");
-        const [selectedName] = selectLocalNfoNames(
-          nfos.map((entry) => entry.name),
-          candidates,
-          singleMovie,
-        );
-        const registered =
-          inventory.registeredNfos.get(filesystemPathKey(await inventory.entryPath(parsedFileInfo.filePath))) ?? [];
-        const nfoPath =
-          (await newestNfosFirst(registered, (nfoPath) => inventory.stats(nfoPath)))[0] ??
-          (selectedName ? path.join(directory, selectedName) : undefined);
-        const snapshot = nfoPath ? await inventory.loadNfo(nfoPath) : undefined;
+        const snapshot = await loadLocalNfoSnapshot(parsedFileInfo, inventory, configuration.scrape);
         publishedData ??= snapshot?.crawlerData;
         localState = snapshot?.localState || localState ? { ...snapshot?.localState, ...localState } : undefined;
         inspected.push({

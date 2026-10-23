@@ -47,6 +47,12 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["网站优先级", "站点优先级", "排序"],
     },
     "scrape.r18MetadataLanguage": { label: "R18.dev 元数据语言" },
+    "scrape.aiNumberFallback": {
+      label: "AI 番号识别兜底",
+      description:
+        "未提取到番号，或至少一个站点正常响应但所有站点均未查到影片时，尝试用 AI 提取番号。复用翻译设置中的 LLM 配置，无需启用翻译；会发送文件名和直接父目录名，仍失败则交由手动处理。",
+      aliases: ["AI", "LLM", "番号", "兜底"],
+    },
     "scrape.filenameIgnoreTokens": {
       label: "番号识别忽略词",
       description: "番号识别前忽略这些文字；仅影响识别，不修改文件名。支持 Enter、逗号或空格分割添加。",

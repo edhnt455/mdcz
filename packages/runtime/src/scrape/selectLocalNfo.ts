@@ -1,5 +1,34 @@
 import path from "node:path";
+import { filesystemPathKey } from "@mdcz/media-store";
 import { MOVIE_NFO_BASE_NAME } from "@mdcz/shared/assetNaming";
+import type { Configuration } from "@mdcz/shared/config";
+import type { FileInfo } from "@mdcz/shared/types";
+import type { DirectoryInventory } from "./DirectoryInventory";
+
+export const loadLocalNfoSnapshot = async (
+  fileInfo: FileInfo,
+  inventory: DirectoryInventory,
+  rules: Configuration["scrape"],
+) => {
+  const directory = path.dirname(fileInfo.filePath);
+  const videos = await inventory.mediaEntries(directory);
+  const singleMovie = videos.every(
+    (entry) => inventory.fileInfo(path.join(directory, entry.name), rules).number === fileInfo.number,
+  );
+  const candidates = preferredLocalNfoBaseNames(fileInfo.fileName, fileInfo.part?.suffix, singleMovie);
+  const nfos = await inventory.files(directory, (name) => path.extname(name).toLowerCase() === ".nfo");
+  const [selectedName] = selectLocalNfoNames(
+    nfos.map((entry) => entry.name),
+    candidates,
+    singleMovie,
+  );
+  const registered =
+    inventory.registeredNfos.get(filesystemPathKey(await inventory.entryPath(fileInfo.filePath))) ?? [];
+  const nfoPath =
+    (await newestNfosFirst(registered, (nfoPath) => inventory.stats(nfoPath)))[0] ??
+    (selectedName ? path.join(directory, selectedName) : undefined);
+  return nfoPath ? await inventory.loadNfo(nfoPath) : undefined;
+};
 
 export const preferredLocalNfoBaseNames = (
   fileName: string,

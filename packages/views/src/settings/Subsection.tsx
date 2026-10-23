@@ -10,12 +10,12 @@ interface SubsectionProps {
 
 export function Subsection({ title, description, className, children }: SubsectionProps) {
   return (
-    <section className={cn("space-y-2 mb-8 last:mb-0", className)}>
-      <header className="pb-1">
-        <h3 className="font-numeric text-base font-semibold tracking-tight text-foreground">{title}</h3>
+    <section className={cn("mb-8 last:mb-0", className)}>
+      <header className="border-b border-border/50 pb-3">
+        <h3 className="font-numeric text-sm font-semibold tracking-tight text-foreground">{title}</h3>
         {description && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>}
       </header>
-      <div className="space-y-0.5">{children}</div>
+      <div>{children}</div>
     </section>
   );
 }

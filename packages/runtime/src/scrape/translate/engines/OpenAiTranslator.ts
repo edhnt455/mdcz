@@ -1,27 +1,12 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import type { Configuration } from "@mdcz/shared/config";
-import PQueue from "p-queue";
 import { z } from "zod";
-import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
-import { isAbortError, throwIfAborted } from "../../utils/abort";
+import { toErrorMessage } from "../../../shared";
+import { throwIfAborted } from "../../utils/abort";
 import { getTargetLanguageLabel } from "../shared";
 import type { LanguageTarget } from "../types";
-import {
-  isMissingRequiredLlmApiKey,
-  type LlmApiClient,
-  type LlmJsonSchema,
-  LlmTransportError,
-  toLlmTextRequest,
-} from "./LlmApiClient";
+import { isMissingRequiredLlmApiKey, type LlmJsonSchema } from "./LlmApiClient";
+import type { LlmRequestService } from "./LlmRequestService";
 
-interface TranslationLogger {
-  warn(message: string): void;
-}
-
-const OPENAI_RETRY_STATUS_CODE = 429;
-const RETRY_AFTER_CAP_MS = 15_000;
-const REQUEST_TIMEOUT_PATTERN =
-  /request timeout|timed ?out|timeout \(\d+ ms\)|error reading response stream|kind: *body|econnreset|etimedout/iu;
 const COMPLETE_LEADING_THINK_PATTERN = /^<think>[\s\S]*?<\/think>\s*/iu;
 const TRANSLATION_ONLY_INSTRUCTION = "只输出最终译文，不要输出思考过程、解释、提示词或原文。";
 const JSON_TRANSLATION_INSTRUCTION = '只输出 JSON 对象，格式为 {"translation":"最终译文"}，不要添加其他字段。';
@@ -90,21 +75,11 @@ export const cleanTranslationOutput = (
   return translated;
 };
 
-interface RetryDecision {
-  delayMs: number;
-  reason: string;
-}
-
 export type LlmMetadataTranslationInput = z.infer<typeof metadataTranslationSchema>;
 export type LlmMetadataTranslationResult = z.infer<typeof metadataTranslationSchema>;
 
 export class OpenAiTranslator {
-  private readonly requestQueues = new Map<number, PQueue>();
-
-  constructor(
-    private readonly logger: TranslationLogger,
-    private readonly llmApiClient: LlmApiClient,
-  ) {}
+  constructor(private readonly requests: LlmRequestService) {}
 
   async translateText(
     text: string,
@@ -123,8 +98,8 @@ export class OpenAiTranslator {
 
     const structured = config.translate.llmOutputFormat !== "none";
     const contractedPrompt = buildLlmTranslatePrompt(config.translate.llmPrompt, text, target, structured);
-    const content = await this.requestText(
-      config,
+    const content = await this.requests.requestText(
+      config.translate,
       contractedPrompt,
       signal,
       structured ? LLM_TEXT_TRANSLATION_SCHEMA : undefined,
@@ -161,7 +136,7 @@ export class OpenAiTranslator {
       "输入 JSON：",
       JSON.stringify(input),
     ].join("\n");
-    const content = await this.requestText(config, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
+    const content = await this.requests.requestText(config.translate, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
     try {
       const parsed = metadataTranslationSchema.parse(JSON.parse(content ?? ""));
       if (
@@ -177,111 +152,5 @@ export class OpenAiTranslator {
         cause: error,
       });
     }
-  }
-
-  private requestText(config: Configuration, prompt: string, signal?: AbortSignal, outputSchema?: LlmJsonSchema) {
-    return this.executeRequestWithRetry(
-      config,
-      () => this.llmApiClient.generateText(toLlmTextRequest(config.translate, prompt, outputSchema), signal),
-      signal,
-    );
-  }
-
-  private getRequestsPerSecond(config: Configuration): number {
-    return config.translate.llmMaxRequestsPerSecond;
-  }
-
-  private getQueue(config: Configuration): PQueue {
-    const requestsPerSecond = this.getRequestsPerSecond(config);
-    const existing = this.requestQueues.get(requestsPerSecond);
-    if (existing) {
-      return existing;
-    }
-
-    const queue = new PQueue({
-      concurrency: 1,
-      interval: 1000,
-      intervalCap: requestsPerSecond,
-    });
-    this.requestQueues.set(requestsPerSecond, queue);
-    return queue;
-  }
-
-  private async executeRequestWithRetry<T>(
-    config: Configuration,
-    request: () => Promise<T>,
-    signal?: AbortSignal,
-  ): Promise<T> {
-    const maxRetryCount = config.translate.llmMaxRetries;
-    let attempt = 0;
-
-    while (true) {
-      try {
-        const queue = this.getQueue(config);
-        return await queue.add(
-          async () => {
-            throwIfAborted(signal);
-            return request();
-          },
-          signal ? { signal } : undefined,
-        );
-      } catch (error) {
-        if (isAbortError(error)) {
-          throw error;
-        }
-        if (attempt >= maxRetryCount) {
-          throw error;
-        }
-
-        const retryDecision = this.getRetryDecision(error, attempt);
-        if (!retryDecision) {
-          throw error;
-        }
-
-        attempt += 1;
-        this.logger.warn(
-          `LLM request retrying after ${retryDecision.reason} (${attempt}/${maxRetryCount}) in ${retryDecision.delayMs}ms`,
-        );
-        await sleep(retryDecision.delayMs, undefined, signal ? { signal } : undefined);
-      }
-    }
-  }
-
-  private getRetryDecision(error: unknown, attempt: number): RetryDecision | null {
-    if (error instanceof LlmTransportError) {
-      return { delayMs: this.getExponentialDelayMs(attempt), reason: "transport error" };
-    }
-
-    if (!error || typeof error !== "object") {
-      return null;
-    }
-
-    const status = (error as { status?: unknown }).status;
-    if (status !== OPENAI_RETRY_STATUS_CODE) {
-      if (this.isRetryableTimeout(error)) {
-        return { delayMs: this.getExponentialDelayMs(attempt), reason: "timeout" };
-      }
-      return null;
-    }
-
-    const headers =
-      (error as { headers?: unknown }).headers ?? (error as { response?: { headers?: unknown } }).response?.headers;
-
-    const rawRetryAfter = readRetryAfterHeader(headers);
-    const parsed = parseRetryAfterMs(rawRetryAfter);
-    if (parsed !== null) {
-      return { delayMs: Math.min(parsed, RETRY_AFTER_CAP_MS), reason: "HTTP 429" };
-    }
-
-    return { delayMs: this.getExponentialDelayMs(attempt), reason: "HTTP 429" };
-  }
-
-  private getExponentialDelayMs(attempt: number): number {
-    return Math.min(1000 * 2 ** attempt, RETRY_AFTER_CAP_MS);
-  }
-
-  private isRetryableTimeout(error: unknown): boolean {
-    const message = toErrorMessage(error);
-    return REQUEST_TIMEOUT_PATTERN.test(message);
   }
 }

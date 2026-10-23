@@ -18,6 +18,7 @@ export interface MovieMember {
   ownerId?: string;
   manualScrape?: ManualScrapeOptions;
   uncensoredChoice?: UncensoredChoice;
+  numberIsManual?: boolean;
   error?: string;
 }
 export interface MovieGroup<TMember = MovieMember> {
@@ -102,6 +103,11 @@ const inspectMember = async (
     canonicalDirectory: filesystemPathKey(dirname(entryPath)),
     manualScrape: ref.manualScrape,
     uncensoredChoice: ref.uncensoredChoice,
+    numberIsManual:
+      Boolean(ref.number) ||
+      Object.keys(configuration.scrape.numberMappings).some((match) =>
+        parsed.fileName.toUpperCase().includes(match.normalize("NFC").toUpperCase()),
+      ),
   };
   try {
     await inventory.admitRefs([ref], resolveRoot);

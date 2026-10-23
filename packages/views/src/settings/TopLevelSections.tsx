@@ -31,36 +31,32 @@ import type { FieldAnchor } from "./settingsRegistry";
 
 interface SiteOptionsProps {
   siteOptions: string[];
-  forceOpen?: boolean;
 }
 
 interface SystemSectionProps {
   initialUseCustomTitleBar: boolean;
-  forceOpen?: boolean;
 }
 
-export function PathsTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+export function PathsTopLevelSection() {
   const t = useT();
   return (
     <SectionAnchor
       id="paths"
       label={t.settingsFields.sections.paths.label}
       title={t.settingsFields.sections.paths.label}
-      forceOpen={forceOpen}
     >
       <PathsSection />
     </SectionAnchor>
   );
 }
 
-export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
+export function ScrapeTopLevelSection({ siteOptions }: SiteOptionsProps) {
   const t = useT();
   return (
     <SectionAnchor
       id="scrape"
       label={t.settingsFields.sections.scrape.label}
       title={t.settingsFields.sections.scrape.label}
-      forceOpen={forceOpen}
     >
       <Subsection
         title={t.settings.subsections.scrapeSites}
@@ -79,14 +75,13 @@ export function ScrapeTopLevelSection({ siteOptions, forceOpen = false }: SiteOp
   );
 }
 
-export function NetworkTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+export function NetworkTopLevelSection() {
   const t = useT();
   return (
     <SectionAnchor
       id="network"
       label={t.settingsFields.sections.network.label}
       title={t.settingsFields.sections.network.label}
-      forceOpen={forceOpen}
     >
       <Subsection title={t.settings.subsections.proxyAndRequests} className="mb-6 last:mb-0">
         <NetworkConnectionSection />
@@ -98,42 +93,39 @@ export function NetworkTopLevelSection({ forceOpen = false }: { forceOpen?: bool
   );
 }
 
-export function TranslateTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+export function TranslateTopLevelSection() {
   const t = useT();
   return (
     <SectionAnchor
       id="translate"
       label={t.settingsFields.sections.translate.label}
       title={t.settingsFields.sections.translate.label}
-      forceOpen={forceOpen}
     >
       <TranslateSection />
     </SectionAnchor>
   );
 }
 
-export function NamingTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+export function NamingTopLevelSection() {
   const t = useT();
   return (
     <SectionAnchor
       id="naming"
       label={t.settingsFields.sections.naming.label}
       title={t.settingsFields.sections.naming.label}
-      forceOpen={forceOpen}
     >
       <NamingSection />
     </SectionAnchor>
   );
 }
 
-export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+export function DownloadTopLevelSection() {
   const t = useT();
   return (
     <SectionAnchor
       id="download"
       label={t.settingsFields.sections.download.label}
       title={t.settingsFields.sections.download.label}
-      forceOpen={forceOpen}
     >
       <Subsection title={t.settings.subsections.assetDownloads} className="mb-6 last:mb-0">
         <AssetDownloadsSection />
@@ -145,14 +137,13 @@ export function DownloadTopLevelSection({ forceOpen = false }: { forceOpen?: boo
   );
 }
 
-export function MediaServerTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+export function MediaServerTopLevelSection() {
   const t = useT();
   return (
     <SectionAnchor
       id="mediaServer"
       label={t.settingsFields.sections.mediaServer.label}
       title={t.settingsFields.sections.mediaServer.label}
-      forceOpen={forceOpen}
     >
       <MediaServerSection />
     </SectionAnchor>
@@ -160,7 +151,7 @@ export function MediaServerTopLevelSection({ forceOpen = false }: { forceOpen?: 
 }
 
 /** Downloader access, qBittorrent polling and notifications; only the server receives callbacks and sends messages. */
-export function AutomationTopLevelSection({ forceOpen = false }: { forceOpen?: boolean }) {
+export function AutomationTopLevelSection() {
   const t = useT();
   const services = useSettingsServices();
   const search = useSettingsSearch();
@@ -172,7 +163,6 @@ export function AutomationTopLevelSection({ forceOpen = false }: { forceOpen?: b
       id="automation"
       label={t.settingsFields.sections.automation.label}
       title={t.settingsFields.sections.automation.label}
-      forceOpen={forceOpen}
     >
       <Subsection
         title={t.settings.integrations.access}
@@ -204,7 +194,7 @@ export function AutomationTopLevelSection({ forceOpen = false }: { forceOpen?: b
   );
 }
 
-export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = false }: SystemSectionProps) {
+export function SystemTopLevelSection({ initialUseCustomTitleBar }: SystemSectionProps) {
   const t = useT();
   const services = useSettingsServices();
   const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
@@ -218,7 +208,6 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
       id="system"
       label={t.settingsFields.sections.system.label}
       title={t.settingsFields.sections.system.label}
-      forceOpen={forceOpen}
     >
       <Subsection title={t.settings.subsections.interface} className="mb-6 last:mb-0">
         <UiSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
@@ -232,7 +221,7 @@ export function SystemTopLevelSection({ initialUseCustomTitleBar, forceOpen = fa
   );
 }
 
-export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: SiteOptionsProps) {
+export function AdvancedTopLevelSection({ siteOptions }: SiteOptionsProps) {
   const t = useT();
   const search = useSettingsSearch();
 
@@ -245,7 +234,6 @@ export function AdvancedTopLevelSection({ siteOptions, forceOpen = false }: Site
       id="advancedSettings"
       label={t.settings.subsections.advanced}
       title={t.settings.subsections.advanced}
-      forceOpen={forceOpen}
     >
       <SettingsSectionModeProvider mode="advanced">
         <AdvancedDomainSubsection anchor="scrape">

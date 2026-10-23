@@ -20,6 +20,7 @@ export interface CrawlerBudget {
 export interface CrawlerExecutionSource {
   website: Website;
   budget?: CrawlerBudget;
+  onResponse?: () => void;
 }
 
 export interface NetworkRequestExecutionContext {
@@ -80,7 +81,8 @@ export const runWithCrawlerSource = async <T>(
   website: Website,
   run: () => Promise<T>,
   budget?: CrawlerBudget,
-): Promise<T> => await runScoped("source", { website, budget, active: true }, run);
+  onResponse?: () => void,
+): Promise<T> => await runScoped("source", { website, budget, onResponse, active: true }, run);
 
 export const runWithNetworkChannel = async <T>(channel: string, run: () => Promise<T>): Promise<T> =>
   await runScoped("channel", { name: channel, active: true }, run);
@@ -95,7 +97,7 @@ export const reportSiteResult = (result: SiteResult): void => {
 
 export const getCrawlerExecutionSource = (): CrawlerExecutionSource | undefined => {
   const source = storage.getStore()?.source;
-  return source?.active ? { website: source.website, budget: source.budget } : undefined;
+  return source?.active ? { website: source.website, budget: source.budget, onResponse: source.onResponse } : undefined;
 };
 
 export const getNetworkRequestExecutionContext = (): NetworkRequestExecutionContext | undefined => {

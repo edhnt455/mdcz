@@ -1,11 +1,8 @@
 import { Search } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import type { ReactNode } from "react";
 import { useT } from "../i18n";
-import { AdvancedSettingsFooterContent } from "./SettingsFooter";
 import { useSettingsSearch } from "./SettingsSearchContext";
 import { useCrawlerSiteOptions } from "./settingsContent";
-import type { FieldAnchor } from "./settingsRegistry";
-import { useToc } from "./TocContext";
 import {
   AdvancedTopLevelSection,
   AutomationTopLevelSection,
@@ -23,25 +20,14 @@ interface SettingsFormProps {
   extraContent?: ReactNode;
   flatDefaults: Record<string, unknown>;
   initialUseCustomTitleBar: boolean;
-  initialSection?: FieldAnchor;
 }
 
-export function SettingsForm({
-  extraContent,
-  flatDefaults,
-  initialUseCustomTitleBar,
-  initialSection,
-}: SettingsFormProps) {
+export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitleBar }: SettingsFormProps) {
   const siteOptions = useCrawlerSiteOptions(flatDefaults);
   const search = useSettingsSearch();
-  const { scrollToSection } = useToc();
-
-  useEffect(() => {
-    if (initialSection) scrollToSection(initialSection, "instant");
-  }, [initialSection, scrollToSection]);
 
   return (
-    <div className="space-y-12">
+    <div className={search.hasActiveFilters ? "space-y-10" : undefined}>
       {search.hasActiveFilters && search.resultCount === 0 ? (
         <SettingsEmptyState />
       ) : (
@@ -60,7 +46,6 @@ export function SettingsForm({
       )}
 
       {extraContent}
-      <AdvancedSettingsFooter />
     </div>
   );
 }
@@ -76,17 +61,5 @@ function SettingsEmptyState() {
         <p className="text-sm font-medium text-foreground">{t.settings.layout.noMatches}</p>
       </div>
     </div>
-  );
-}
-
-function AdvancedSettingsFooter() {
-  const search = useSettingsSearch();
-
-  return (
-    <AdvancedSettingsFooterContent
-      hasActiveFilters={search.hasActiveFilters}
-      isAdvancedVisible={search.isAdvancedVisible}
-      onToggleShowAdvanced={search.toggleShowAdvanced}
-    />
   );
 }

@@ -327,6 +327,7 @@ export const parseFileInfo = (
   escapeStrings: readonly string[] = [],
   numberMappings: Readonly<Record<string, string>> = {},
   keywords: FilenameKeywords = DEFAULT_FILENAME_KEYWORDS,
+  numberOverride?: string,
 ): FileInfo => {
   const extension = extname(filePath);
   const stem = basename(filePath, extension);
@@ -347,7 +348,10 @@ export const parseFileInfo = (
   const leakMatch = normalizedPath.search(filenameKeywordPattern(keywords.leakKeywords)) >= 0;
   const resolutionMatch = RESOLUTION_PATTERNS.map((pattern) => normalizedUpper.match(pattern)).find(Boolean);
   const tokens = [...escapeStrings];
-  const number = mapped?.trim().toUpperCase() ?? extractNumber(normalizedStem, tokens, keywords);
+  const number =
+    numberOverride?.trim().toUpperCase() ??
+    mapped?.trim().toUpperCase() ??
+    extractNumber(normalizedStem, tokens, keywords);
   const cleanedStem = stripFilenameKeywords(normalizedStem, keywords);
   const part =
     detectNamedPart(cleanedStem, number) ??

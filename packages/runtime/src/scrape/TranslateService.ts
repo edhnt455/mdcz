@@ -14,6 +14,7 @@ import { BaiduTranslator } from "./translate/engines/BaiduTranslator";
 import { DeeplTranslator } from "./translate/engines/DeeplTranslator";
 import { GoogleTranslator } from "./translate/engines/GoogleTranslator";
 import { LlmApiClient, type RuntimeNetworkJsonResponse } from "./translate/engines/LlmApiClient";
+import { LlmRequestService } from "./translate/engines/LlmRequestService";
 import { type LlmMetadataTranslationInput, OpenAiTranslator } from "./translate/engines/OpenAiTranslator";
 import { GenreTranslator } from "./translate/GenreTranslator";
 import { ensureTargetChinese, normalizeNewlines } from "./translate/shared";
@@ -26,6 +27,7 @@ export type SettledTranslations = Partial<Record<"title" | "plot", string | unde
 export interface TranslateServiceOptions {
   logger?: RuntimeLogger;
   llmApiClient?: LlmApiClient;
+  llmRequests?: LlmRequestService;
   mappingStore?: TranslationMappingStore;
 }
 
@@ -57,8 +59,10 @@ export class TranslateService {
   constructor(networkClient: RuntimeNetworkClient, options: TranslateServiceOptions = {}) {
     this.logger = options.logger ?? noopRuntimeLogger;
     this.actorNameNormalizer = new ActorNameNormalizer(options.mappingStore);
-    const llmApiClient = options.llmApiClient ?? createLlmApiClient(networkClient);
-    this.openAiTranslator = new OpenAiTranslator(this.logger, llmApiClient);
+    const llmRequests =
+      options.llmRequests ??
+      new LlmRequestService(this.logger, options.llmApiClient ?? createLlmApiClient(networkClient));
+    this.openAiTranslator = new OpenAiTranslator(llmRequests);
     this.translators = {
       google: new GoogleTranslator(networkClient).translate,
       deepl: new DeeplTranslator(networkClient).translate,

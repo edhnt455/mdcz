@@ -1,7 +1,7 @@
 import { dirname, join, parse, resolve } from "node:path";
 import { isVideoFileName } from "@mdcz/shared/videoClassification";
 import type { DirectoryInventory } from "../DirectoryInventory";
-import { extractNumber, parseFileInfo } from "../utils/number";
+import { extractNumber } from "../utils/number";
 
 const TRAILER_SUFFIX = /(?:^|[-_.\s])trailer$/iu;
 // Only a trailing marker counts: FC2 titles often advertise bonuses (※特典あり), and a main video whose filename
@@ -27,7 +27,7 @@ export const findGeneratedVideoSidecars = async (
   sourceVideoPath: string,
   inventory: DirectoryInventory,
 ): Promise<GeneratedVideoSidecarMatch[]> => {
-  const number = parseFileInfo(sourceVideoPath).number.toUpperCase();
+  const number = inventory.fileInfo(sourceVideoPath).number.toUpperCase();
   if (!number.startsWith("FC2-")) {
     return [];
   }
@@ -43,7 +43,7 @@ export const findGeneratedVideoSidecars = async (
       isVideoFileName(name) &&
       isGeneratedSidecarVideo(name) &&
       resolve(directory, name) !== resolve(sourceVideoPath) &&
-      parseFileInfo(join(directory, name)).number.toUpperCase() === number &&
+      inventory.fileInfo(join(directory, name)).number.toUpperCase() === number &&
       suffixOf(name) !== undefined,
   );
   return sidecars

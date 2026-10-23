@@ -109,6 +109,7 @@ const scrapeSchema = z.object({
   restDuration: z.number().int().min(0).default(60),
   /** Filename keyword -> number, for files whose names no parser rule can read; saved from repairs. */
   numberMappings: z.record(z.string(), z.string().trim().min(1)).default({}),
+  aiNumberFallback: z.boolean().default(false),
 });
 
 const namingSchema = z.object({

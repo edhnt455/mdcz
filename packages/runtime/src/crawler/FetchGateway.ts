@@ -1,4 +1,9 @@
-import { type RuntimeNetworkClient, type RuntimeProbeResult, SiteError } from "@mdcz/runtime/network";
+import {
+  getCrawlerExecutionSource,
+  type RuntimeNetworkClient,
+  type RuntimeProbeResult,
+  SiteError,
+} from "@mdcz/runtime/network";
 
 export interface FetchOptions {
   timeout?: number;
@@ -23,7 +28,7 @@ export class FetchGateway {
   constructor(private readonly networkClient: RuntimeNetworkClient) {}
 
   async fetchHtml(url: string, options: FetchOptions = {}): Promise<string> {
-    return this.networkClient.getText(url, this.toHttpInit(options));
+    return this.observeResponse(this.networkClient.getText(url, this.toHttpInit(options)));
   }
 
   async fetchContent(url: string, options: FetchOptions = {}): Promise<Uint8Array> {
@@ -35,15 +40,15 @@ export class FetchGateway {
   }
 
   async fetchPostHtml(url: string, body: string, options: FetchOptions = {}): Promise<string> {
-    return this.networkClient.postText(url, body, this.toHttpInit(options));
+    return this.observeResponse(this.networkClient.postText(url, body, this.toHttpInit(options)));
   }
 
   async fetchJson<T>(url: string, options: FetchOptions = {}): Promise<T> {
-    return this.networkClient.getJson<T>(url, this.toHttpInit(options));
+    return this.observeResponse(this.networkClient.getJson<T>(url, this.toHttpInit(options)));
   }
 
   async fetchPost<T>(url: string, body: unknown, options: FetchOptions = {}): Promise<T> {
-    return this.networkClient.postJson<T>(url, body, this.toHttpInit(options));
+    return this.observeResponse(this.networkClient.postJson<T>(url, body, this.toHttpInit(options)));
   }
 
   async fetchGraphQL<T>(endpoint: string, operation: GraphQLOperation, options: FetchOptions = {}): Promise<T> {
@@ -67,6 +72,12 @@ export class FetchGateway {
       ...this.toHttpInit(requestOptions),
       method,
     });
+  }
+
+  private async observeResponse<T>(response: Promise<T>): Promise<T> {
+    const result = await response;
+    getCrawlerExecutionSource()?.onResponse?.();
+    return result;
   }
 
   private toHeaders(options: { headers?: Record<string, string>; cookies?: string }): Record<string, string> {

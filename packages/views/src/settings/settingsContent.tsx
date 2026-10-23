@@ -202,6 +202,7 @@ export function ScrapePacingSection() {
 export function FilenameFilteringSection() {
   return (
     <>
+      <BoolField name="scrape.aiNumberFallback" />
       <ChipArrayFieldWrapper name="scrape.filenameIgnoreTokens" />
       <ChipArrayFieldWrapper name="scrape.filenameBlacklistTokens" />
       <NumberField name="scrape.minVideoSizeMb" min={0} max={10240} />
@@ -564,6 +565,7 @@ export function TranslateSection() {
   const serviceType = useWatch({ control: form.control, name: "translate.llmServiceType" });
   const baiduService = useWatch({ control: form.control, name: "translate.baiduService" });
   const isLLM = engine === "openai";
+  const aiNumberFallback = useWatch({ control: form.control, name: "scrape.aiNumberFallback" });
 
   const handleTestTranslation = async () => {
     const input = {
@@ -647,7 +649,7 @@ export function TranslateSection() {
           )}
         </>
       )}
-      {shouldMountConditionalSettings(isLLM, search) && (
+      {shouldMountConditionalSettings(isLLM || aiNumberFallback, search) && (
         <>
           <TextField name="translate.llmModelName" />
           <SecretField name="translate.llmApiKey" />

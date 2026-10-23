@@ -371,8 +371,9 @@ export const settings: Messages["settings"] = {
   },
   layout: {
     title: "设置",
+    sections: "设置分类",
+    autoSaveHint: "更改会自动保存",
     matchCount: (count) => `匹配 ${count} 项`,
-    showingAdvanced: "显示高级设置",
     showAdvanced: "显示高级设置",
     hideAdvanced: "隐藏高级设置",
     searchPlaceholder: "搜索设置",

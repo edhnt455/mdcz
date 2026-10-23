@@ -79,6 +79,7 @@ export function SettingsEditor({
         >
           <SettingsSearchProvider defaultConfig={defaultConfig} defaultConfigReady={defaultConfigReady}>
             <SettingsLayout
+              initialSection={initialSection}
               profiles={profiles}
               activeProfile={activeProfile}
               profileLoading={profileLoading}
@@ -94,7 +95,6 @@ export function SettingsEditor({
                   extraContent={extraContent}
                   flatDefaults={flatConfigValues}
                   initialUseCustomTitleBar={initialUseCustomTitleBarRef.current ?? true}
-                  initialSection={initialSection}
                 />
               </Suspense>
             </SettingsLayout>

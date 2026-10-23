@@ -4,6 +4,7 @@ import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form
 import {
   AdvancedSettingsFooterContent,
   AssetDownloadsSection,
+  type FieldAnchor,
   FilenameFilteringSection,
   flattenConfig,
   NamingSection,
@@ -82,10 +83,12 @@ function SettingsSurfaceHarness({
   engine = "openai",
   baiduService = "general",
   isServer = false,
+  initialSection,
 }: {
   engine?: "openai" | "deepl" | "baidu";
   baiduService?: "general" | "llm";
   isServer?: boolean;
+  initialSection?: FieldAnchor;
 }) {
   const configuration = useMemo(
     () => ({
@@ -109,6 +112,7 @@ function SettingsSurfaceHarness({
     <SettingsServicesProvider notifier={settingsNotifier} services={{ ...baseSettingsServices, isServer }}>
       <SettingsEditor
         data={configuration}
+        initialSection={initialSection}
         defaultConfig={configuration}
         defaultConfigReady
         profiles={["default"]}
@@ -124,8 +128,17 @@ function SettingsSurfaceHarness({
   );
 }
 
-test("settings editor renders every visible registry field", async () => {
+test("settings categories preserve fields, search across sections and adapt to the target", async () => {
   const screen = await render(<SettingsSurfaceHarness />);
+  const navigation = screen.getByRole("navigation", { name: "设置分类" });
+  await expect
+    .element(navigation.getByRole("button", { name: "路径", exact: true }))
+    .toHaveAttribute("aria-current", "page");
+  await expect.element(screen.getByRole("region", { name: "路径", exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("region", { name: "网络连接", exact: true, includeHidden: true }))
+    .not.toBeVisible();
+  await expect.element(navigation.getByRole("button", { name: "集成", exact: true })).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "显示高级设置" }).click();
 
   const expectedFields = FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map((entry) => entry.key);
@@ -136,6 +149,11 @@ test("settings editor renders every visible registry field", async () => {
     ).filter((key): key is string => Boolean(key)),
   );
 
+  await screen
+    .getByRole("navigation", { name: "设置分类" })
+    .getByRole("button", { name: "网络连接", exact: true })
+    .click();
+
   for (const [javdbUrl, javbusUrl, javdbHost, javbusHost] of [
     ["localhost:8080", "ftp://example.com", "javdb.com", "www.javbus.com"],
     ["http://localhost:8082", "http://localhost:8081", "localhost:8082", "localhost:8081"],
@@ -144,19 +162,48 @@ test("settings editor renders every visible registry field", async () => {
     await screen.getByPlaceholder("https://www.javbus.com", { exact: true }).fill(javbusUrl);
     const siteField = screen.container.querySelector('[data-field-name="scrape.sites"]');
     if (!siteField) throw new Error("Site priority field is missing");
+    await navigation.getByRole("button", { name: "刮削设置", exact: true }).click();
     await page.elementLocator(siteField).getByRole("button", { name: "编辑", exact: true }).click();
     const dialog = screen.getByRole("dialog");
     await expect.element(dialog.getByText(`javdb · ${javdbHost}`, { exact: true })).toBeVisible();
     await expect.element(dialog.getByText(`javbus · ${javbusHost}`, { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "完成", exact: true }).click();
+    await navigation.getByRole("button", { name: "网络连接", exact: true }).click();
   }
+  const search = screen.getByPlaceholder("搜索设置");
+  await search.fill("代理");
+  await expect.element(navigation).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("region", { name: "网络连接", exact: true })).toBeVisible();
+  await search.fill("no-matching-mdcz-option");
+  await expect.element(screen.getByText("没有匹配的设置")).toBeVisible();
+  await screen.getByRole("button", { name: "清空搜索" }).click();
+  await expect
+    .element(navigation.getByRole("button", { name: "网络连接", exact: true }))
+    .toHaveAttribute("aria-current", "page");
+  await expect
+    .element(screen.getByPlaceholder("https://javdb.com", { exact: true }))
+    .toHaveValue("http://localhost:8082");
+  await navigation.getByRole("button", { name: "高级设置", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "高级设置", exact: true })).toBeVisible();
+  await screen.getByRole("button", { name: "隐藏高级设置" }).click();
+  await expect
+    .element(navigation.getByRole("button", { name: "路径", exact: true }))
+    .toHaveAttribute("aria-current", "page");
   await screen.unmount();
   for (const [engine, baiduService] of [
     ["deepl", "general"],
     ["baidu", "general"],
     ["baidu", "llm"],
   ] as const) {
-    const variant = await render(<SettingsSurfaceHarness engine={engine} baiduService={baiduService} isServer />);
+    const variant = await render(
+      <SettingsSurfaceHarness engine={engine} baiduService={baiduService} isServer initialSection="translate" />,
+    );
+    await expect.element(variant.getByRole("region", { name: "翻译服务", exact: true })).toBeVisible();
+    const serverNavigation = variant.getByRole("navigation", { name: "设置分类" });
+    await expect.element(serverNavigation.getByRole("button", { name: "集成", exact: true })).toBeVisible();
+    await expect
+      .element(serverNavigation.getByRole("button", { name: "界面与快捷键", exact: true }))
+      .not.toBeInTheDocument();
     await variant.getByRole("button", { name: "显示高级设置" }).click();
     for (const element of variant.container.querySelectorAll<HTMLElement>("[data-field-name]")) {
       if (element.dataset.fieldName) renderedFields.add(element.dataset.fieldName);
@@ -331,7 +378,7 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
       values={{ ...defaultConfiguration, translate: { ...defaultConfiguration.translate, engine } }}
       services={createSettingsServices({ testTranslation })}
     >
-      <TranslateTopLevelSection forceOpen />
+      <TranslateTopLevelSection />
     </FormHarness>,
   );
   const credentials =
@@ -367,7 +414,7 @@ test("settings sections expose public labels and the library template notice", a
         },
       }}
     >
-      <NetworkTopLevelSection forceOpen />
+      <NetworkTopLevelSection />
     </FormHarness>,
   );
   await expect.element(network.getByText("网络连接")).toBeVisible();
@@ -377,23 +424,26 @@ test("settings sections expose public labels and the library template notice", a
   const translate = await render(
     <FormHarness
       values={{
+        scrape: { aiNumberFallback: true },
         translate: {
+          ...defaultConfiguration.translate,
           enableTranslation: false,
           engine: "google",
           targetLanguage: "zh-CN",
         },
       }}
     >
-      <TranslateTopLevelSection forceOpen />
+      <TranslateTopLevelSection />
     </FormHarness>,
   );
   await expect.element(translate.getByText("翻译服务")).toBeVisible();
   await expect.element(translate.getByText("翻译引擎")).toBeVisible();
+  await expect.element(translate.getByLabelText("LLM 模型名称", { exact: true })).toBeVisible();
   await expect.element(translate.getByRole("button", { name: "验证元数据翻译" })).toBeVisible();
 
   const paths = await render(
     <FormHarness values={{ paths: { defaultScanExcludeDirs: [] } }}>
-      <PathsTopLevelSection forceOpen />
+      <PathsTopLevelSection />
     </FormHarness>,
   );
   await expect.element(paths.getByText("路径", { exact: true })).toBeVisible();

@@ -2,12 +2,23 @@ import type { Dirent, Stats } from "node:fs";
 import fs from "node:fs/promises";
 import { basename, dirname, join, parse } from "node:path";
 import { canonicalPath, filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
+import type { Configuration } from "@mdcz/shared/config";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
+import type { FileInfo } from "@mdcz/shared/types";
 import { type ParsedNfoSnapshot, parseNfoSnapshot } from "../maintenance/nfoSnapshot";
 import { isPrimaryVideoFile } from "./media/generatedSidecarVideos";
+import { parseFileInfo } from "./utils/number";
 
 export class DirectoryInventory {
   readonly registeredNfos = new Map<string, readonly string[]>();
+  readonly resolvedFileInfos = new Map<string, FileInfo>();
+
+  fileInfo(path: string, rules?: Configuration["scrape"]): FileInfo {
+    return (
+      this.resolvedFileInfos.get(filesystemPathKey(path)) ??
+      parseFileInfo(path, rules?.filenameIgnoreTokens, rules?.numberMappings, rules)
+    );
+  }
   private readonly directoryPaths = new Map<string, Promise<string>>();
   private readonly directories = new Map<string, Promise<readonly Dirent[]>>();
   private readonly fileObservations = new Map<string, Promise<{ entryPath: string; stats: Stats }>>();
