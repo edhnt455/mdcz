@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoField } from "./config";
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
+import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 
 describe("configuration codec", () => {
   it("round-trips actor alias maps through TOML and validates alias groups", () => {
@@ -43,10 +44,11 @@ describe("configuration codec", () => {
       }).success,
     ).toBe(false);
   });
-  it("defaults filename token lists to empty and round-trips configured literal values", () => {
+  it("defaults and round-trips filename filters and classification keyword lists", () => {
     expect(defaultConfiguration.scrape).toMatchObject({
       filenameIgnoreTokens: [],
       filenameBlacklistTokens: [],
+      ...DEFAULT_FILENAME_KEYWORDS,
     });
 
     const configuration = {
@@ -55,16 +57,31 @@ describe("configuration codec", () => {
         ...defaultConfiguration.scrape,
         filenameIgnoreTokens: ["[7SIS-001]+", "AD"],
         filenameBlacklistTokens: ["sample.", "广告"],
+        subtitleKeywords: ["HANZI", "字幕组"],
+        umrKeywords: ["restored", "[破解]+"],
+        uncensoredKeywords: ["RAW", "无修正"],
+        leakKeywords: ["LEAKED", "流出版"],
       },
     };
 
-    expect(parseConfigurationContent(serializeConfiguration(configuration, "toml"), "toml").scrape).toMatchObject({
-      filenameIgnoreTokens: ["[7SIS-001]+", "AD"],
-      filenameBlacklistTokens: ["sample.", "广告"],
-    });
+    for (const format of ["toml", "json"] as const) {
+      expect(parseConfigurationContent(serializeConfiguration(configuration, format), format)).toEqual(configuration);
+      const empty = {
+        ...configuration,
+        scrape: {
+          ...configuration.scrape,
+          subtitleKeywords: [],
+          umrKeywords: [],
+          uncensoredKeywords: [],
+          leakKeywords: [],
+        },
+      };
+      expect(parseConfigurationContent(serializeConfiguration(empty, format), format)).toEqual(empty);
+    }
     expect(parseConfigurationContent("[scrape]\n", "toml").scrape).toMatchObject({
       filenameIgnoreTokens: [],
       filenameBlacklistTokens: [],
+      ...DEFAULT_FILENAME_KEYWORDS,
     });
   });
 

@@ -23,6 +23,9 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
     expect(entry("scrape.filenameIgnoreTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
     expect(entry("scrape.filenameBlacklistTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
+    for (const key of ["subtitleKeywords", "umrKeywords", "uncensoredKeywords", "leakKeywords"]) {
+      expect(entry(`scrape.${key}`)).toMatchObject({ anchor: "scrape", visibility: "public" });
+    }
     expect(entry("jellyfin.url")).toMatchObject({ anchor: "mediaServer", visibility: "public" });
 
     const keys = new Set<string>(FIELD_REGISTRY.map((candidate) => candidate.key));

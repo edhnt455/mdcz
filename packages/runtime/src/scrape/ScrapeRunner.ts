@@ -660,11 +660,17 @@ export class ScrapeRunner {
       directories.set(item.id, filesystemPathKey(await inventory.canonicalDirectory(directory)));
     }
     const retryIds = new Set(
-      expandScrapeRetryItems([...batchItems.values()], seedIds, configuration.scrape.filenameIgnoreTokens, (item) => {
-        const directory = directories.get(item.id);
-        if (!directory) throw new Error(`Retry item has no directory identity: ${item.id}`);
-        return directory;
-      }),
+      expandScrapeRetryItems(
+        [...batchItems.values()],
+        seedIds,
+        configuration.scrape.filenameIgnoreTokens,
+        (item) => {
+          const directory = directories.get(item.id);
+          if (!directory) throw new Error(`Retry item has no directory identity: ${item.id}`);
+          return directory;
+        },
+        configuration.scrape,
+      ),
     );
     const itemsToRetry = [...batchItems.values()].filter((item) => retryIds.has(item.id));
     if (itemsToRetry.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);

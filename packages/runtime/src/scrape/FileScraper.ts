@@ -222,7 +222,12 @@ export class FileScraper {
       ({ filePath, fileInfo: providedFileInfo, groupMovieId, groupFileId, groupAssets, options, progress }, index) => {
         const fileInfo =
           providedFileInfo ??
-          parseFileInfo(filePath, configuration.scrape.filenameIgnoreTokens, configuration.scrape.numberMappings);
+          parseFileInfo(
+            filePath,
+            configuration.scrape.filenameIgnoreTokens,
+            configuration.scrape.numberMappings,
+            configuration.scrape,
+          );
         const fileId = groupFileId ?? buildFileId(fileInfo.filePath);
         return {
           options,
@@ -254,7 +259,11 @@ export class FileScraper {
           throw error;
         });
         if (!facts.isFile()) throw new Error("Scrape source is not a file");
-        const resolved = await resolveFileInfoWithSubtitles(parsedFileInfo.filePath, { parsedFileInfo, inventory });
+        const resolved = await resolveFileInfoWithSubtitles(parsedFileInfo.filePath, {
+          parsedFileInfo,
+          inventory,
+          filenameRules: configuration.scrape,
+        });
         member.fileInfo = resolved.fileInfo;
         member.identity = toScrapeIdentity(member.identity.fileId, resolved.fileInfo, options);
         let localState = options.localState;
@@ -262,8 +271,12 @@ export class FileScraper {
         const videos = await inventory.mediaEntries(directory);
         const singleMovie = videos.every(
           (entry) =>
-            parseFileInfo(entry.name, configuration.scrape.filenameIgnoreTokens, configuration.scrape.numberMappings)
-              .number === parsedFileInfo.number,
+            parseFileInfo(
+              entry.name,
+              configuration.scrape.filenameIgnoreTokens,
+              configuration.scrape.numberMappings,
+              configuration.scrape,
+            ).number === parsedFileInfo.number,
         );
         const candidates = preferredLocalNfoBaseNames(
           parsedFileInfo.fileName,
@@ -374,6 +387,7 @@ export class FileScraper {
               configuration.naming.assetNamingMode === "followVideo" && configuration.download.nfoNaming === "filename",
             existingMetadataDir: path.dirname(member.fileInfo.filePath),
             subtitleSidecars: member.subtitleSidecars,
+            filenameRules: configuration.scrape,
             inventory,
           },
         );

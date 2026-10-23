@@ -3,6 +3,7 @@ import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES } from "./assetNaming";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
+import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 import {
   DEFAULT_LLM_BASE_URL,
   LLM_API_FORMAT_OPTIONS,
@@ -94,6 +95,12 @@ const scrapeSchema = z.object({
   sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
   filenameIgnoreTokens: z.array(z.string()).default([]),
   filenameBlacklistTokens: z.array(z.string()).default([]),
+  subtitleKeywords: z.array(z.string().trim().min(1)).default(() => [...DEFAULT_FILENAME_KEYWORDS.subtitleKeywords]),
+  umrKeywords: z.array(z.string().trim().min(1)).default(() => [...DEFAULT_FILENAME_KEYWORDS.umrKeywords]),
+  uncensoredKeywords: z
+    .array(z.string().trim().min(1))
+    .default(() => [...DEFAULT_FILENAME_KEYWORDS.uncensoredKeywords]),
+  leakKeywords: z.array(z.string().trim().min(1)).default(() => [...DEFAULT_FILENAME_KEYWORDS.leakKeywords]),
   minVideoSizeMb: z.number().int().min(0).max(10240).default(0),
   r18MetadataLanguage: z.enum(R18_METADATA_LANGUAGE_OPTIONS).default(DEFAULT_R18_METADATA_LANGUAGE),
   threadNumber: z.number().int().min(1).max(128).default(2),

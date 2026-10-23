@@ -20,7 +20,7 @@ type MetadataLocation = {
   registeredOutputs?: Map<string, { nfoPaths: string[]; assets?: DiscoveredAssets }>;
   inventory?: DirectoryInventory;
   /** The scrape settings that read numbers out of file names; without them a repaired or ignored name parses differently than it was scraped. */
-  filenameRules?: Pick<Configuration["scrape"], "filenameIgnoreTokens" | "numberMappings">;
+  filenameRules?: Configuration["scrape"];
 };
 
 const fileExists = async (path: string, inventory: DirectoryInventory): Promise<boolean> => {
@@ -274,7 +274,7 @@ export class LocalScanService {
     const rules = metadata?.filenameRules;
     const { fileInfo } = await resolveFileInfoWithSubtitles(videoPath, {
       inventory,
-      parsedFileInfo: rules && parseFileInfo(videoPath, rules.filenameIgnoreTokens, rules.numberMappings),
+      filenameRules: rules,
     });
     const dir = dirname(videoPath);
 
@@ -284,7 +284,7 @@ export class LocalScanService {
     // Registered NFOs may have been deleted since; the files on disk decide, then name preference.
     let nfoPaths = await newestNfosFirst(registeredNfos, (path) => inventory.stats(path));
     if (!nfoPaths.length && (registeredNfos.length || !registered))
-      nfoPaths = await this.findNfos(metadataDir, fileInfo, inventory, signal);
+      nfoPaths = await this.findNfos(metadataDir, fileInfo, inventory, signal, rules);
     const nfoPath = nfoPaths[0];
     let crawlerData: CrawlerData | undefined;
     let nfoLocalState: LocalScanEntry["nfoLocalState"];
@@ -319,6 +319,7 @@ export class LocalScanService {
             nfoPath,
             crawlerData,
             sceneImagesFolder,
+            filenameRules: rules,
             inventory,
             signal,
           }));
@@ -359,12 +360,13 @@ export class LocalScanService {
     sceneImagesFolder: string;
     inventory: DirectoryInventory;
     signal?: AbortSignal;
+    filenameRules?: Configuration["scrape"];
   }): Promise<DiscoveredAssets> {
     throwIfAborted(input.signal);
 
     const allowDirectoryWideAssets =
       resolve(input.dir) !== resolve(input.videoDir) ||
-      (await this.isSingleMovieDirectory(input.videoDir, input.inventory));
+      (await this.isSingleMovieDirectory(input.videoDir, input.inventory, input.filenameRules));
     const movieBaseNames = buildMovieBaseNameCandidates({
       fileName: input.fileInfo.fileName,
       part: input.fileInfo.part,
@@ -426,12 +428,20 @@ export class LocalScanService {
     };
   }
 
-  private async isSingleMovieDirectory(dir: string, inventory: DirectoryInventory): Promise<boolean> {
+  private async isSingleMovieDirectory(
+    dir: string,
+    inventory: DirectoryInventory,
+    rules?: Configuration["scrape"],
+  ): Promise<boolean> {
     try {
       const videoFiles = (await inventory.mediaEntries(dir))
         .map((entry) => join(dir, entry.name))
         .filter((videoPath) => !isGeneratedSidecarVideo(videoPath));
-      const movieNumbers = new Set(videoFiles.map((videoPath) => parseFileInfo(videoPath).number.toUpperCase()));
+      const movieNumbers = new Set(
+        videoFiles.map((videoPath) =>
+          parseFileInfo(videoPath, rules?.filenameIgnoreTokens, rules?.numberMappings, rules).number.toUpperCase(),
+        ),
+      );
       return movieNumbers.size <= 1;
     } catch {
       return false;
@@ -480,6 +490,7 @@ export class LocalScanService {
     fileInfo: LocalScanEntry["fileInfo"],
     inventory: DirectoryInventory,
     signal?: AbortSignal,
+    rules?: Configuration["scrape"],
   ): Promise<string[]> {
     try {
       throwIfAborted(signal);
@@ -487,7 +498,7 @@ export class LocalScanService {
 
       if (nfoEntries.length === 0) return [];
 
-      const singleMovieDirectory = await this.isSingleMovieDirectory(dirname(fileInfo.filePath), inventory);
+      const singleMovieDirectory = await this.isSingleMovieDirectory(dirname(fileInfo.filePath), inventory, rules);
       return selectLocalNfoNames(
         nfoEntries.map((entry) => entry.name),
         preferredLocalNfoBaseNames(fileInfo.fileName, fileInfo.part?.suffix, singleMovieDirectory),

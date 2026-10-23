@@ -1,12 +1,7 @@
 import { CHINESE_SUBTITLE_STRONG_HINTS, normalizeSubtitleText } from "@mdcz/shared/subtitleFilename";
 import type { FileInfo, SubtitleTag } from "@mdcz/shared/types";
 
-export {
-  CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS,
-  CHINESE_SUBTITLE_STRONG_HINTS,
-  detectChineseSubtitleTagInFileName,
-  normalizeSubtitleText,
-} from "@mdcz/shared/subtitleFilename";
+export { normalizeSubtitleText } from "@mdcz/shared/subtitleFilename";
 
 export const SUBTITLE_EXTENSIONS = new Set([
   ".smi",

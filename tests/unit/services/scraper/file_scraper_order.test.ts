@@ -61,10 +61,12 @@ describe("FileScraper site aggregation", () => {
     const crawlerProvider = new OrderedStubCrawlerProvider();
     const directory = await createTempDirectory("scrape-ignore-tokens");
     onTestFinished(directory.cleanup);
-    const filePath = join(directory.path, "[7SiS-001]+ ABF-252.mp4");
+    const filePath = join(directory.path, "[7SiS-001]+ RESTORED-ABF-252-HANZI.mp4");
     await writeFile(filePath, "video");
     const config = createConfig({
       filenameIgnoreTokens: ["[7sis-001]+"],
+      umrKeywords: ["RESTORED", "LTX"],
+      subtitleKeywords: ["HANZI", "字幕组"],
     });
     mockConfigManager(config);
     const scraper = createFileScraper({
@@ -83,7 +85,7 @@ describe("FileScraper site aggregation", () => {
     if (result.status === "prepared") throw new Error("Expected all configured crawlers to miss");
 
     expect(crawlerProvider.calledNumbers).toEqual(["ABF-252", "ABF-252", "ABF-252"]);
-    expect(result.fileName).toBe("[7SiS-001]+ ABF-252");
+    expect(result.fileName).toBe("[7SiS-001]+ RESTORED-ABF-252-HANZI");
     expect(result.relativePath).toBe(filePath);
     expect(result.crawlerData?.number ?? result.fileName).toContain("ABF-252");
   });

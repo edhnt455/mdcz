@@ -69,6 +69,7 @@ interface ResolveOutputPlanOptions {
   allowSharedDirectory?: boolean;
   subtitleSidecars?: SubtitleSidecarMatch[];
   inventory?: DirectoryInventory;
+  filenameRules?: Configuration["scrape"];
 }
 
 export interface OrganizePlanOptions {
@@ -198,14 +199,19 @@ export class FileOrganizer {
     const sourceDir = resolve(dirname(sourceFilePath));
     const sameDirectoryOutput = sourceDir === resolve(outputRoot);
     const inventory = options.inventory ?? new DirectoryInventory();
+    const rules = options.filenameRules;
 
     if (sameDirectoryOutput && !options.allowSharedDirectory) {
-      const sourceFileInfo = parseFileInfo(sourceFilePath);
+      const sourceFileInfo = parseFileInfo(sourceFilePath, rules?.filenameIgnoreTokens, rules?.numberMappings, rules);
       const videoFiles = (await inventory.mediaEntries(sourceDir)).map((entry) => join(sourceDir, entry.name));
       const otherVideos = videoFiles.filter(
         (filePath) =>
           resolve(filePath) !== resolve(sourceFilePath) &&
-          !(sourceFileInfo.number && sourceFileInfo.number === parseFileInfo(filePath).number),
+          !(
+            sourceFileInfo.number &&
+            sourceFileInfo.number ===
+              parseFileInfo(filePath, rules?.filenameIgnoreTokens, rules?.numberMappings, rules).number
+          ),
       );
       if (otherVideos.length > 0) {
         this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
@@ -218,7 +224,7 @@ export class FileOrganizer {
     const moveMedia = plan.mode === "move";
     // Media servers look for subtitles next to the file they play, which is the link in link placements.
     const playedPath = moveMedia ? plan.targetVideoPath : plan.link?.path;
-    const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(sourceFilePath, inventory));
+    const subtitleSidecars = options.subtitleSidecars ?? (await findSubtitleSidecars(sourceFilePath, inventory, rules));
     const sidecars: ResolvedPublicationLayout["sidecars"] = subtitleSidecars.map((subtitle) => {
       const targetPath = playedPath
         ? plan.renameSubtitles

@@ -1,46 +1,19 @@
 import { basename, extname } from "node:path";
-import type { FileInfo } from "@mdcz/shared/types";
 import {
-  CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS,
-  CHINESE_SUBTITLE_STRONG_HINTS,
-  detectChineseSubtitleTagInFileName,
-} from "./subtitles";
+  DEFAULT_FILENAME_KEYWORDS,
+  type FilenameKeywords,
+  filenameKeywordPattern,
+  stripFilenameKeywords,
+} from "@mdcz/shared/filenameKeywords";
+import type { FileInfo, SubtitleTag } from "@mdcz/shared/types";
 
-const FILENAME_DELIMITER_SOURCE = String.raw`[-_.\s\[\](){}【】（）]`;
-
-const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-const joinRegexAlternation = (values: readonly string[]): string => values.map(escapeRegex).join("|");
-
-const SUBTITLE_TOKEN_SOURCE = joinRegexAlternation([
-  ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS,
-  ...CHINESE_SUBTITLE_STRONG_HINTS,
-]);
-const UNCENSORED_PATTERN = new RegExp(
-  `(?:^|${FILENAME_DELIMITER_SOURCE})(?:UC|U)(?:$|${FILENAME_DELIMITER_SOURCE})`,
-  "iu",
-);
-const CRACKED_CU_TOKEN_SOURCE = `C${FILENAME_DELIMITER_SOURCE}U`;
-const CRACKED_CU_PATTERN = new RegExp(
-  `(?:^|${FILENAME_DELIMITER_SOURCE})${CRACKED_CU_TOKEN_SOURCE}(?:$|${FILENAME_DELIMITER_SOURCE})`,
-  "iu",
-);
-const UMR_PATTERN = new RegExp(
-  `(?:^|${FILENAME_DELIMITER_SOURCE})(?:${CRACKED_CU_TOKEN_SOURCE}|UMR|破解)(?:$|${FILENAME_DELIMITER_SOURCE})`,
-  "iu",
-);
 // `\d{3,4}P` also reads back the `<height>p` version labels, whose heights come from probing (e.g. 800p).
 const RESOLUTION_PATTERNS = [/\b8K\b/iu, /\b4K\b/iu, /\b\d{3,4}P\b/iu];
 const PART_PATTERN = /([-_.\s](?:CD|PART|EP)[-_\s]?(\d{1,2}))(?=$|[-_.\s])/giu;
 const FC2_JP_PART_PATTERN = /([-_.\s](前番|前編|後番|後編))(?=$|[-_.\s])/gu;
 const FC2_CIRCLED_PART_DIGITS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"] as const;
-const FC2_RAW_NUMBER_WITH_CIRCLED_SUFFIX_PATTERN = new RegExp(
-  String.raw`(FC2(?:[-_.\s]?PPV)?[-_.\s]?\d{5,})([-_.\s](?:.+?[-_.\s])?([①②③④⑤⑥⑦⑧⑨]))(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
-  "iu",
-);
-const TRAILING_SUBTITLE_PATTERN = new RegExp(`${FILENAME_DELIMITER_SOURCE}(?:${SUBTITLE_TOKEN_SOURCE})$`, "iu");
-const TRAILING_ATTACHED_CHINESE_SUBTITLE_PATTERN = /(?<=\d)(?:CHS|CH)$/iu;
-const TRAILING_UMR_PATTERN = new RegExp(`${FILENAME_DELIMITER_SOURCE}(?:${CRACKED_CU_TOKEN_SOURCE}|UMR|破解)$`, "iu");
-const TRAILING_UNCENSORED_PATTERN = /[-_.\s]U$/iu;
+const FC2_RAW_NUMBER_WITH_CIRCLED_SUFFIX_PATTERN =
+  /(FC2(?:[-_.\s]?PPV)?[-_.\s]?\d{5,})([-_.\s](?:.+?[-_.\s])?([①②③④⑤⑥⑦⑧⑨]))$/iu;
 const TRAILING_PART_PATTERN = /[-_.\s](?:CD|PART|EP)[-_\s]?\d{1,2}$/iu;
 const TRAILING_FC2_JP_PART_PATTERN = /[-_.\s](?:前番|前編|後番|後編)$/u;
 const TRAILING_BARE_PART_PATTERN = /[-_.\s][1-9]$/u;
@@ -69,13 +42,7 @@ const stripTrailingTokens = (value: string, options: { stripBarePart: boolean })
   let current = value;
 
   while (true) {
-    const next = current
-      .replace(TRAILING_SUBTITLE_PATTERN, "")
-      .replace(TRAILING_ATTACHED_CHINESE_SUBTITLE_PATTERN, "")
-      .replace(TRAILING_UMR_PATTERN, "")
-      .replace(TRAILING_UNCENSORED_PATTERN, "")
-      .replace(TRAILING_PART_PATTERN, "")
-      .replace(TRAILING_FC2_JP_PART_PATTERN, "");
+    const next = current.replace(TRAILING_PART_PATTERN, "").replace(TRAILING_FC2_JP_PART_PATTERN, "");
     const stripped = options.stripBarePart ? next.replace(TRAILING_BARE_PART_PATTERN, "") : next;
 
     if (stripped === current) {
@@ -205,13 +172,18 @@ const ORDERED_NUMBER_EXTRACTION_RULES: NumberExtractionRule[] = [
   { pattern: /([A-Z]{2,}).*?(\d{3,})/iu, format: joinFirstTwoCaptures },
 ];
 
-export const extractNumber = (fileName: string, escapeStrings: string[] = []): string => {
-  const taggedDateSequence = extractTaggedDateSequence(fileName);
+export const extractNumber = (
+  fileName: string,
+  escapeStrings: string[] = [],
+  keywords: FilenameKeywords = DEFAULT_FILENAME_KEYWORDS,
+): string => {
+  const cleanedName = stripFilenameKeywords(fileName, keywords);
+  const taggedDateSequence = extractTaggedDateSequence(cleanedName);
   if (taggedDateSequence) {
     return taggedDateSequence;
   }
 
-  const normalized = normalizeRawName(fileName, escapeStrings);
+  const normalized = normalizeRawName(cleanedName, escapeStrings);
   const rule = ORDERED_NUMBER_EXTRACTION_RULES.find(({ pattern }) => pattern.test(normalized));
   const match = rule ? normalized.match(rule.pattern) : null;
   // A name no rule matches has no number; returning the whole name would become a pseudo-number that queries every
@@ -290,14 +262,8 @@ const detectCircledPart = (
   };
 };
 
-const TRAILING_RAW_BARE_PART_PATTERN = new RegExp(
-  String.raw`([-_.\s][1-9])(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
-  "iu",
-);
-const TRAILING_RAW_ALPHA_PART_PATTERN = new RegExp(
-  String.raw`([-_.\s][A-Z])(?:${FILENAME_DELIMITER_SOURCE}(?:${joinRegexAlternation(["U", ...CHINESE_SUBTITLE_FILENAME_TOKEN_HINTS, ...CHINESE_SUBTITLE_STRONG_HINTS])}))*$`,
-  "iu",
-);
+const TRAILING_RAW_BARE_PART_PATTERN = /([-_.\s][1-9])$/u;
+const TRAILING_RAW_ALPHA_PART_PATTERN = /([-_.\s][A-Z])$/iu;
 
 const detectBareNumericPart = (
   stem: string,
@@ -360,6 +326,7 @@ export const parseFileInfo = (
   filePath: string,
   escapeStrings: readonly string[] = [],
   numberMappings: Readonly<Record<string, string>> = {},
+  keywords: FilenameKeywords = DEFAULT_FILENAME_KEYWORDS,
 ): FileInfo => {
   const extension = extname(filePath);
   const stem = basename(filePath, extension);
@@ -369,20 +336,24 @@ export const parseFileInfo = (
     normalizedUpper.includes(match.normalize("NFC").toUpperCase()),
   )?.[1];
 
-  const crackedCuMatch = normalizedUpper.match(CRACKED_CU_PATTERN);
-  const subtitleTag = detectChineseSubtitleTagInFileName(
-    crackedCuMatch ? normalizedStem.replace(CRACKED_CU_PATTERN, "") : normalizedStem,
-  );
-  const uncensoredMatch = normalizedUpper.match(UNCENSORED_PATTERN);
-  const umrMatch = normalizedStem.match(UMR_PATTERN);
+  const normalizedPath = filePath.normalize("NFC");
+  const umrPattern = filenameKeywordPattern(keywords.umrKeywords);
+  const umrMatch = normalizedPath.search(umrPattern) >= 0;
+  const subtitleTag: SubtitleTag | undefined =
+    normalizedPath.replace(umrPattern, "").search(filenameKeywordPattern(keywords.subtitleKeywords)) >= 0
+      ? "中文字幕"
+      : undefined;
+  const uncensoredMatch = normalizedPath.search(filenameKeywordPattern(keywords.uncensoredKeywords)) >= 0;
+  const leakMatch = normalizedPath.search(filenameKeywordPattern(keywords.leakKeywords)) >= 0;
   const resolutionMatch = RESOLUTION_PATTERNS.map((pattern) => normalizedUpper.match(pattern)).find(Boolean);
   const tokens = [...escapeStrings];
-  const number = mapped?.trim().toUpperCase() ?? extractNumber(normalizedStem, tokens);
+  const number = mapped?.trim().toUpperCase() ?? extractNumber(normalizedStem, tokens, keywords);
+  const cleanedStem = stripFilenameKeywords(normalizedStem, keywords);
   const part =
-    detectNamedPart(normalizedStem, number) ??
-    detectBareNumericPart(normalizedStem, number, tokens) ??
-    detectAlphabeticPart(normalizedStem, number, tokens) ??
-    detectCircledPart(normalizedStem, number, tokens);
+    detectNamedPart(cleanedStem, number) ??
+    detectBareNumericPart(cleanedStem, number, tokens) ??
+    detectAlphabeticPart(cleanedStem, number, tokens) ??
+    detectCircledPart(cleanedStem, number, tokens);
 
   return {
     filePath,
@@ -391,8 +362,8 @@ export const parseFileInfo = (
     number,
     isSubtitled: Boolean(subtitleTag),
     subtitleTag,
-    isUncensored: Boolean(uncensoredMatch || umrMatch),
-    filenameUncensoredChoice: umrMatch ? "umr" : uncensoredMatch ? "uncensored" : undefined,
+    isUncensored: uncensoredMatch || umrMatch || leakMatch,
+    filenameUncensoredChoice: umrMatch ? "umr" : leakMatch ? "leak" : uncensoredMatch ? "uncensored" : undefined,
     resolution: resolutionMatch?.[0],
     part,
   };
@@ -408,8 +379,9 @@ export const scrapeRetryMovieKey = (
   item: { relativePath: string; manualUrl?: string | null },
   directoryIdentity: string,
   ignoreTokens: readonly string[] = [],
+  keywords: FilenameKeywords = DEFAULT_FILENAME_KEYWORDS,
 ): string => {
-  const parsed = parseFileInfo(item.relativePath, [...ignoreTokens]);
+  const parsed = parseFileInfo(item.relativePath, ignoreTokens, {}, keywords);
   const movieIdentity = parsed.number.trim().toUpperCase() || item.relativePath;
   return JSON.stringify([directoryIdentity, movieIdentity, item.manualUrl ?? ""]);
 };
@@ -421,8 +393,9 @@ export const expandScrapeRetryItems = <
   itemIds: readonly string[],
   ignoreTokens: readonly string[] = [],
   directoryOf: (item: T) => string = relativeRetryDirectory,
+  keywords: FilenameKeywords = DEFAULT_FILENAME_KEYWORDS,
 ): string[] => {
-  const keyOf = (item: T) => scrapeRetryMovieKey(item, directoryOf(item), ignoreTokens);
+  const keyOf = (item: T) => scrapeRetryMovieKey(item, directoryOf(item), ignoreTokens, keywords);
   const keys = new Set(items.filter((item) => itemIds.includes(item.id)).map(keyOf));
   return items.filter((item) => keys.has(keyOf(item))).map((item) => item.id);
 };

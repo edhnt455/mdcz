@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalScanService } from "@mdcz/runtime/maintenance";
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it } from "vitest";
 
 const tempDirs: string[] = [];
@@ -58,7 +59,7 @@ describe("LocalScanService", () => {
     const source = join(root, "source");
     const metadata = join(root, "metadata");
     await Promise.all([mkdir(source), mkdir(metadata)]);
-    const video = join(source, "ABC-123-original.mp4");
+    const video = join(source, "RESTORED-ABC-123-HANZI.mp4");
     const nfo = join(metadata, "ABC-123-template.nfo");
     await writeFile(video, "video");
     await writeFile(join(source, "DEF-456.mp4"), "another video");
@@ -76,6 +77,11 @@ describe("LocalScanService", () => {
       updatedAt: new Date(),
     };
     const locations = {
+      filenameRules: {
+        ...defaultConfiguration.scrape,
+        umrKeywords: ["RESTORED", "LTX"],
+        subtitleKeywords: ["HANZI", "字幕组"],
+      },
       registeredOutputs: new Map([
         [
           video,
@@ -95,6 +101,7 @@ describe("LocalScanService", () => {
     const [entry] = await scanner.scanFiles(mediaRoot, [video], "extrafanart", undefined, locations);
     expect(entry).toMatchObject({
       nfoPath: nfo,
+      fileInfo: { number: "ABC-123", isSubtitled: true, filenameUncensoredChoice: "umr" },
       crawlerData: { title: "Registered" },
       assets: { poster: join(metadata, "poster.jpg") },
     });
@@ -110,6 +117,7 @@ describe("LocalScanService", () => {
     await writeFile(movieNfo, "<movie><num>ABC-123</num><title>Newer</title></movie>");
     await utimes(nfo, new Date(1_000_000), new Date(1_000_000));
     const both = {
+      filenameRules: locations.filenameRules,
       registeredOutputs: new Map([
         [video, { nfoPaths: [nfo, movieNfo], assets: { sceneImages: [], actorPhotos: [] } }],
       ]),

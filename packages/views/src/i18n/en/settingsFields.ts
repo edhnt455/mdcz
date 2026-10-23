@@ -128,6 +128,26 @@ const fields: Record<FieldKey, FieldText> = {
     description:
       "Videos smaller than this size are excluded from scraping candidates. 0 means no limit; STRM files are unaffected.",
   },
+  "scrape.subtitleKeywords": {
+    label: "Subtitle keywords",
+    description:
+      "Detect Chinese subtitles using multiple case-insensitive keywords in file names and full paths. Short Latin flags require separators. Add with Enter or comma; clear to disable keyword detection.",
+  },
+  "scrape.umrKeywords": {
+    label: "Decensored keywords",
+    description:
+      "Detect decensored versions using multiple case-insensitive keywords in file names and full paths. Short Latin flags require separators. Decensored takes priority over leaked and uncensored.",
+  },
+  "scrape.uncensoredKeywords": {
+    label: "Uncensored keywords",
+    description:
+      "Detect uncensored versions using multiple case-insensitive keywords in file names and full paths. Short Latin flags require separators. Studio detection by catalog code still applies.",
+  },
+  "scrape.leakKeywords": {
+    label: "Leaked keywords",
+    description:
+      "Detect leaked versions using multiple case-insensitive keywords in file names and full paths. Short Latin flags require separators. Leaked takes priority over uncensored, after decensored.",
+  },
   "scrape.threadNumber": { label: "Concurrent threads" },
   "scrape.javdbDelaySeconds": { label: "JavDB request delay (s)" },
   "scrape.restAfterCount": { label: "Pause after consecutive scrapes (items)" },

@@ -205,6 +205,10 @@ export function FilenameFilteringSection() {
       <ChipArrayFieldWrapper name="scrape.filenameIgnoreTokens" />
       <ChipArrayFieldWrapper name="scrape.filenameBlacklistTokens" />
       <NumberField name="scrape.minVideoSizeMb" min={0} max={10240} />
+      <ChipArrayFieldWrapper name="scrape.subtitleKeywords" />
+      <ChipArrayFieldWrapper name="scrape.umrKeywords" />
+      <ChipArrayFieldWrapper name="scrape.uncensoredKeywords" />
+      <ChipArrayFieldWrapper name="scrape.leakKeywords" />
     </>
   );
 }

@@ -91,6 +91,7 @@ const inspectMember = async (
     filePath,
     configuration.scrape.filenameIgnoreTokens,
     configuration.scrape.numberMappings,
+    configuration.scrape,
   );
   const fileInfo = ref.number ? { ...parsed, number: ref.number.trim().toUpperCase() } : parsed;
   const member: MovieMember = {
@@ -135,6 +136,7 @@ const expandLocalParts = async (
       siblingPath,
       configuration.scrape.filenameIgnoreTokens,
       configuration.scrape.numberMappings,
+      configuration.scrape,
     );
     if (parsed.number.trim().toUpperCase() !== member.fileInfo.number.trim().toUpperCase()) continue;
     const relativePath = toRootRelativePath(root, siblingPath);

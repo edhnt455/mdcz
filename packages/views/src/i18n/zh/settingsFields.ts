@@ -60,6 +60,26 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "最小视频大小 (MB)",
       description: "小于该大小的视频不进入刮削候选，0 表示不限制；STRM 文件不受影响。",
     },
+    "scrape.subtitleKeywords": {
+      label: "字幕关键词",
+      description:
+        "识别中文字幕，支持多个关键词，匹配文件名和完整路径，不区分大小写。短英文标记按分隔符匹配；支持 Enter、逗号分割添加，清空可关闭关键词识别。",
+    },
+    "scrape.umrKeywords": {
+      label: "破解关键词",
+      description:
+        "识别无码破解，支持多个关键词，匹配文件名和完整路径，不区分大小写。短英文标记按分隔符匹配；与无码、流出同时命中时优先采用破解。",
+    },
+    "scrape.uncensoredKeywords": {
+      label: "无码关键词",
+      description:
+        "识别无码版本，支持多个关键词，匹配文件名和完整路径，不区分大小写。短英文标记按分隔符匹配；不影响根据番号识别无码片商。",
+    },
+    "scrape.leakKeywords": {
+      label: "流出关键词",
+      description:
+        "识别无码流出，支持多个关键词，匹配文件名和完整路径，不区分大小写。短英文标记按分隔符匹配；优先级低于破解、高于普通无码。",
+    },
     "scrape.threadNumber": { label: "并发线程数" },
     "scrape.javdbDelaySeconds": { label: "JavDB 请求延迟(秒)" },
     "scrape.restAfterCount": { label: "连续刮削后休息(条数)" },

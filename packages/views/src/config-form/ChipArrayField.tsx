@@ -239,10 +239,14 @@ export function ChipArrayField({
                   className="pl-2 pr-1 py-0.5 h-6 text-xs font-medium bg-background border shadow-xs gap-1.5 shrink-0 group"
                 >
                   <span>{value}</span>
-                  <X
-                    className="h-3 w-3 opacity-50 hover:opacity-100 rounded-xs hover:bg-destructive/20 hover:text-destructive transition-all cursor-pointer"
+                  <button
+                    type="button"
+                    aria-label={`${t.common.remove} ${value}`}
+                    className="rounded-xs opacity-50 transition-all hover:bg-destructive/20 hover:text-destructive hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => removeValue(value)}
-                  />
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </Badge>
               ))}
             </div>

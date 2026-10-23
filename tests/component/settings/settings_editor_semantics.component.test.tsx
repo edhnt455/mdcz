@@ -4,6 +4,7 @@ import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form
 import {
   AdvancedSettingsFooterContent,
   AssetDownloadsSection,
+  FilenameFilteringSection,
   flattenConfig,
   NamingSection,
   NetworkTopLevelSection,
@@ -291,6 +292,36 @@ test("paths section surfaces scan exclusions", async () => {
   expect(pathInputs.some((input) => input.value === "E:/Output")).toBe(true);
   expect(pathInputs.some((input) => input.value === "failed_22")).toBe(true);
   expect(pathInputs.length).toBeGreaterThanOrEqual(2);
+});
+
+test("classification keyword lists add, remove and save multiple values independently", async () => {
+  const saveConfig = vi.fn(async () => undefined);
+  const screen = await render(
+    <FormHarness values={defaultConfiguration} services={createSettingsServices({ saveConfig })}>
+      <FilenameFilteringSection />
+    </FormHarness>,
+  );
+  for (const [key, values] of [
+    ["subtitleKeywords", ["HANZI", "字幕组"]],
+    ["umrKeywords", ["LTX", "restored"]],
+    ["uncensoredKeywords", ["RAW", "无修正"]],
+    ["leakKeywords", ["LEAKED", "流出版"]],
+  ] as const) {
+    const field = screen.container.querySelector(`[data-field-name="scrape.${key}"]`);
+    if (!field) throw new Error(`Missing keyword list: ${key}`);
+    const row = page.elementLocator(field);
+    await row.getByRole("textbox").fill(values.join(","));
+    await row.getByRole("button", { name: "添加", exact: true }).click();
+    for (const value of values) await expect.element(row.getByText(value, { exact: true })).toBeVisible();
+    await expect
+      .poll(() => saveConfig.mock.calls)
+      .toContainEqual([{ scrape: { [key]: [...defaultConfiguration.scrape[key], ...values] } }]);
+    await row.getByRole("button", { name: `移除 ${values[0]}`, exact: true }).click();
+    await expect.element(row.getByText(values[0], { exact: true })).not.toBeInTheDocument();
+    await expect
+      .poll(() => saveConfig.mock.calls)
+      .toContainEqual([{ scrape: { [key]: [...defaultConfiguration.scrape[key], values[1]] } }]);
+  }
 });
 
 test.each(["deepl", "baidu"] as const)("translation verification sends edited %s credentials", async (engine) => {

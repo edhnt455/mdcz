@@ -1,4 +1,5 @@
 import { expandScrapeRetryItems, extractNumber, parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
+import type { FilenameKeywords } from "@mdcz/shared/filenameKeywords";
 import { describe, expect, it } from "vitest";
 
 describe("extractNumber", () => {
@@ -6,6 +7,7 @@ describe("extractNumber", () => {
     const cases = [
       { input: "MFC-2001", expected: "MFC-2001" },
       { input: "AFC-2001", expected: "AFC-2001" },
+      { input: "CHS-123", expected: "CHS-123" },
       { input: "S2MBD-047", expected: "S2MBD-047" },
       { input: "H0930-gol205", expected: "H0930-GOL205" },
       { input: "h0930_gol205", expected: "H0930-GOL205" },
@@ -271,7 +273,7 @@ describe("parseFileInfo", () => {
     });
   });
 
-  it("classifies explicit cracked filename tokens without broad text matching", () => {
+  it("classifies cracked words and keeps short Latin flags bounded", () => {
     for (const input of ["/tmp/ABC-123-C-U.mp4", "/tmp/ABC-123-UMR.mp4", "/tmp/ABC-123-破解.mp4"]) {
       expect(parseFileInfo(input)).toMatchObject({
         number: "ABC-123",
@@ -284,11 +286,69 @@ describe("parseFileInfo", () => {
     }
 
     expect(parseFileInfo("/tmp/ABC-123-破解版本.mp4")).toMatchObject({
+      filenameUncensoredChoice: "umr",
+    });
+    expect(parseFileInfo("/tmp/ABC-123-UMREMASTER.mp4")).toMatchObject({
       filenameUncensoredChoice: undefined,
     });
 
     expect(parseFileInfo("/tmp/ABC-123-U.mp4")).toMatchObject({
       filenameUncensoredChoice: "uncensored",
+    });
+  });
+
+  it("uses configurable keyword lists for paths, classification and multipart code extraction", () => {
+    const keywords: FilenameKeywords = {
+      subtitleKeywords: ["HANZI", "字幕组"],
+      umrKeywords: ["LTX", "restored", "[破解]+"],
+      uncensoredKeywords: ["RAW", "无修正"],
+      leakKeywords: ["LEAKED", "流出版"],
+    };
+    for (const [suffix, subtitled, choice] of [
+      ["hanzi", true, undefined],
+      ["字幕组", true, undefined],
+      ["ltx", false, "umr"],
+      ["restored", false, "umr"],
+      ["[破解]+", false, "umr"],
+      ["raw", false, "uncensored"],
+      ["无修正", false, "uncensored"],
+      ["leaked", false, "leak"],
+      ["流出版", false, "leak"],
+      ["RAW-LEAKED-restored-HANZI", true, "umr"],
+      ["RAW-LEAKED", false, "leak"],
+    ] as const) {
+      for (const filePath of [`/tmp/ABC-123-A-${suffix}.mp4`, `/tmp/${suffix}/ABC-123-A.mp4`]) {
+        expect(parseFileInfo(filePath, [], {}, keywords)).toMatchObject({
+          filePath,
+          number: "ABC-123",
+          isSubtitled: subtitled,
+          filenameUncensoredChoice: choice,
+          isUncensored: Boolean(choice),
+          part: { number: 1, suffix: "-A" },
+        });
+      }
+    }
+    expect(parseFileInfo("/tmp/RAWEST/LTXPREFIX/ABC-123.mp4", [], {}, keywords)).toMatchObject({
+      isUncensored: false,
+      filenameUncensoredChoice: undefined,
+    });
+    expect(parseFileInfo("/tmp/FC2-123456-②-restored-HANZI.mp4", [], {}, keywords)).toMatchObject({
+      number: "FC2-123456",
+      isSubtitled: true,
+      filenameUncensoredChoice: "umr",
+      part: { number: 2, suffix: "-②" },
+    });
+    expect(parseFileInfo("/tmp/ABC-123-U-中文字幕-破解-流出.mp4", [], {}, keywords)).toMatchObject({
+      isSubtitled: false,
+      isUncensored: false,
+      filenameUncensoredChoice: undefined,
+    });
+    const empty: FilenameKeywords = { subtitleKeywords: [], umrKeywords: [], uncensoredKeywords: [], leakKeywords: [] };
+    expect(parseFileInfo("/tmp/ABC-123-UC-破解-流出.mp4", [], {}, empty)).toMatchObject({
+      number: "ABC-123",
+      isSubtitled: false,
+      isUncensored: false,
+      filenameUncensoredChoice: undefined,
     });
   });
 
