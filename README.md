@@ -49,6 +49,8 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 
 ## 下载与安装
 
+本 fork 仅发布 Docker Hub 镜像（Linux amd64），发布与部署说明见 [Docker 指南](docker/README.md)。以下桌面客户端与 WebUI 压缩包介绍属于上游项目的发行方式。
+
 ### 桌面客户端
 
 前往 [Releases](https://github.com/ShotHeadman/mdcz/releases) 下载对应文件：
@@ -72,7 +74,7 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 
 推荐使用仓库提供的 [compose.yaml](compose.yaml) 进行部署，详细步骤请参考 [Docker 部署与维护指南](docker/README.md)。
 
-- **快速上手**：将配置模板复制为 `.env`，填写真实版本号与媒体路径后，执行 `docker compose up -d` 即可启动。
+- **快速上手**：将配置模板复制为 `.env`，填写发布镜像的 Docker Hub 用户名、已发布版本号与媒体路径后，执行 `docker compose up -d` 即可启动。
 - **首次访问**：浏览器打开 `http://<服务器IP>:3838`（默认绑定 `127.0.0.1`，NAS 局域网访问请在 `.env` 中调整绑定 IP）。系统无默认密码，首次访问直接按提示设置管理员密码，随后即可在设置中添加媒体库。
 
 ### WebUI 压缩包（不使用 Docker）

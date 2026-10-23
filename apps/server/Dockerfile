@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
 
 # stage 3: minimal runtime
 FROM node:24-bookworm-slim
-LABEL org.opencontainers.image.source="https://github.com/ShotHeadman/mdcz"
+LABEL org.opencontainers.image.source="https://github.com/edhnt455/mdcz"
 LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 ARG MDCZ_RELEASE_VERSION=docker
 ARG MDCZ_REVISION=unknown

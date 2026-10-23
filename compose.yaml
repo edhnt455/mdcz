@@ -1,6 +1,6 @@
 services:
   mdcz:
-    image: ghcr.io/shotheadman/mdcz:${MDCZ_VERSION:?Set MDCZ_VERSION in .env to a published release version (e.g. 0.15.0)}
+    image: docker.io/${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME in .env to the image publisher}/mdcz:${MDCZ_VERSION:?Set MDCZ_VERSION in .env to a published image version}
     restart: unless-stopped
     stop_grace_period: 30s
     ports:

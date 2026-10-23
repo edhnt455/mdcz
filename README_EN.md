@@ -49,6 +49,8 @@ Designed to work seamlessly alongside Emby, Jellyfin, and local media libraries,
 
 ## Download & Install
 
+This fork publishes only Docker Hub images for Linux amd64. See the [Docker guide](docker/README.md) for publishing and deployment. The desktop and WebUI bundle descriptions below refer to upstream releases.
+
 ### Desktop Application
 
 Download the file for your system from [Releases](https://github.com/ShotHeadman/mdcz/releases):
@@ -72,7 +74,7 @@ The portable build keeps its config, database, and logs in `data\`. To upgrade, 
 
 We recommend deploying with the maintained [compose.yaml](compose.yaml). See the [deployment and maintenance guide](docker/README.md) for detailed configuration, permissions, backups, and upgrades.
 
-- **Quick Start**: Copy `docker/compose.env.example` as `.env`, configure your version and media path, and run `docker compose up -d`.
+- **Quick Start**: Copy `docker/compose.env.example` as `.env`, configure the publisher's Docker Hub username, a published image version, and your media path, then run `docker compose up -d`.
 - **First Visit**: Open `http://<server-ip>:3838` in your browser (defaults to `127.0.0.1`; set `MDCZ_BIND_IP` in `.env` for LAN access). There is no default password; set the administrator password directly in the WebUI on first visit, then add your media directory under `/media` in settings.
 
 ### WebUI Bundle (without Docker)

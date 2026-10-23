@@ -1,12 +1,25 @@
 # Docker 部署与维护
 
-推荐使用仓库根目录提供的 `compose.yaml` 进行部署。镜像支持 Linux amd64 与 arm64 架构；服务内置 SQLite 数据库，无需额外部署 MySQL / PostgreSQL 等数据库容器。
+推荐使用仓库根目录提供的 `compose.yaml` 进行部署。本 fork 仅通过 Docker Hub 发布 Linux amd64（x86_64）镜像；服务内置 SQLite 数据库，无需额外部署 MySQL / PostgreSQL 等数据库容器。
+
+## 镜像发布
+
+仓库使用 `.github/workflows/docker-publish.yml` 发布镜像，原有的桌面安装包、WebUI 压缩包、GitHub Release 和 GHCR 发布流程已移除。PR 的 CI 检查继续保留。
+
+1. 在本 fork 的 GitHub **Settings → Secrets and variables → Actions** 中配置两个 Repository secrets：`DOCKERHUB_USERNAME`（Docker Hub 用户名）和 `DOCKERHUB_TOKEN`（有镜像推送权限的访问令牌）。
+2. 修改根目录 `VERSION`（初始为 `0.19.1`），随代码一起提交并推送至本 fork 的 `main` 分支，即可触发构建。版本使用不带 `v` 前缀的语义版本号；支持 `0.20.0-rc.1` 形式的预发布版本，不接受 `+` 构建元数据。
+3. 首次发布或需要重新构建时，也可以在 **Actions → Build and publish Docker image → Run workflow** 手动运行，使用所选分支的源码和 `VERSION`。
+
+构建使用 `apps/server/Dockerfile`，推送 `docker.io/<DOCKERHUB_USERNAME>/mdcz:<VERSION>` 和 `docker.io/<DOCKERHUB_USERNAME>/mdcz:latest`。每次成功发布都会更新 `latest`（包括手动运行及预发布版本）。仅修改代码而未修改 `VERSION` 不会自动发布。
+
+发布流程只读取 GitHub 仓库，不会提交版本变更、推送 Git 标签或创建 Release。镜像版本由 `VERSION` 通过构建参数传入，无需同步修改桌面客户端的版本号。
 
 ## 首次部署
 
 1. 将仓库根目录的 `compose.yaml` 复制到部署目录，并在同级目录下将 `docker/compose.env.example` 复制命名为 `.env`。
 2. 编辑 `.env` 文件：
-   - 前往项目 [Releases](https://github.com/ShotHeadman/mdcz/releases) 页面查看最新版本号并填入 `MDCZ_VERSION`（例如 `0.15.0`，注意不要带 `v` 前缀）。
+   - 填写 `DOCKERHUB_USERNAME`，与发布镜像所用的 Docker Hub 用户名一致。
+   - 前往 Docker Hub 的 `<DOCKERHUB_USERNAME>/mdcz` 仓库查看已发布标签并填入 `MDCZ_VERSION`（例如 `0.19.1`，不带 `v` 前缀）。
    - 填写宿主机上真实的影片目录绝对路径 `MDCZ_MEDIA_PATH`。
    - 配置目录所有者的数字用户与组 ID（`PUID`、`PGID`，可在宿主机终端运行 `id` 命令获取）。
    - 若在 NAS 或局域网服务器部署，建议将 `MDCZ_BIND_IP` 改为 `0.0.0.0` 或 NAS 的局域网 IP。
