@@ -60,8 +60,11 @@ export class ScraperService {
           pending: state.repositories.pending,
           mediaRoots: this.mediaRoots,
         },
-        onPublished: (directories, configuration) =>
-          void notifyMediaServersOfPublish(this.sharedNetworkClient, configuration, directories, this.logger),
+        onPublished: (directories, configuration) => {
+          this.outputLibraryScanner.invalidate();
+          this.signalService.invalidate("library", "overview");
+          void notifyMediaServersOfPublish(this.sharedNetworkClient, configuration, directories, this.logger);
+        },
         onPending: () => this.signalService.invalidate("pending", "overview"),
         recordSiteResults: (number, results) => state.repositories.siteResults.record(number, results),
         getConfiguration: async () => await configManager.getValidated(),

@@ -9,7 +9,7 @@ import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
 import { findSubtitleSidecars } from "@mdcz/runtime/scrape/media/subtitleSidecars";
 import { admitScrapeGroups } from "@mdcz/runtime/scrape/movieGroups";
 import { NumberRecognitionService } from "@mdcz/runtime/scrape/NumberRecognitionService";
-import { resolveScrapeNumbers } from "@mdcz/runtime/scrape/resolveScrapeNumbers";
+import { createScrapeNumberResolver } from "@mdcz/runtime/scrape/resolveScrapeNumbers";
 import { ScrapeFailureError } from "@mdcz/runtime/scrape/scrapeFailure";
 import type { LlmApiClient } from "@mdcz/runtime/scrape/translate/engines/LlmApiClient";
 import { LlmRequestService } from "@mdcz/runtime/scrape/translate/engines/LlmRequestService";
@@ -112,14 +112,15 @@ describe("AI movie code fallback", () => {
     const input = await createInput(["ZZZ-999.mp4"], onTestFinished);
     const { service, crawl } = createAggregation(outcomes);
     const recognize = vi.fn(async () => "ABC-123");
-    const resolved = await resolveScrapeNumbers({
+    const resolver = createScrapeNumberResolver({
       ...input,
       aggregationService: service,
       recognitionService: { recognize },
     });
+    const groups = await resolver.resolveGroups(input.groups);
     expect(recognize).toHaveBeenCalledTimes(shouldRecognize ? 1 : 0);
-    expect(resolved.groups[0].members[0].fileInfo.number).toBe(shouldRecognize ? "ABC-123" : "ZZZ-999");
-    await resolved.aggregationService.aggregate("ZZZ-999").catch(() => undefined);
+    expect(groups[0].members[0].fileInfo.number).toBe(shouldRecognize ? "ABC-123" : "ZZZ-999");
+    await resolver.aggregationService.aggregate("ZZZ-999").catch(() => undefined);
     expect(crawl).toHaveBeenCalledTimes(2);
   });
 
@@ -133,23 +134,24 @@ describe("AI movie code fallback", () => {
       async (number: string) => ({ data: data(number) }) as Awaited<ReturnType<AggregationService["aggregate"]>>,
     );
     const recognize = vi.fn(async () => "ABC-123");
-    const resolved = await resolveScrapeNumbers({
+    const resolver = createScrapeNumberResolver({
       ...input,
       aggregationService: { aggregate },
       recognitionService: { recognize },
     });
+    const groups = await resolver.resolveGroups(input.groups);
     expect(aggregate).not.toHaveBeenCalled();
     expect(recognize).toHaveBeenCalledTimes(2);
-    expect(resolved.groups).toHaveLength(1);
-    expect(resolved.groups[0].members.map((member) => member.fileInfo.part?.number)).toEqual([1, 2]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].members.map((member) => member.fileInfo.part?.number)).toEqual([1, 2]);
     expect(
       (await findSubtitleSidecars(join(input.directory, "recording-CD1.mp4"), input.inventory, config.scrape)).map(
         (entry) => entry.path,
       ),
     ).toEqual([join(input.directory, "recording-CD1.zh.srt")]);
     await Promise.all([
-      resolved.aggregationService.aggregate("ABC-123"),
-      resolved.aggregationService.aggregate("ABC-123"),
+      resolver.aggregationService.aggregate("ABC-123"),
+      resolver.aggregationService.aggregate("ABC-123"),
     ]);
     expect(aggregate).toHaveBeenCalledOnce();
   });
@@ -188,7 +190,12 @@ describe("AI movie code fallback", () => {
     if (mode === "source_pin") await writeFile(join(input.directory, "ZZZ-999.nfo"), "nfo");
     const aggregate = vi.fn();
     const recognize = vi.fn();
-    await resolveScrapeNumbers({ ...input, aggregationService: { aggregate }, recognitionService: { recognize } });
+    const resolver = createScrapeNumberResolver({
+      ...input,
+      aggregationService: { aggregate },
+      recognitionService: { recognize },
+    });
+    await resolver.resolveGroups(input.groups);
     expect(aggregate).not.toHaveBeenCalled();
     expect(recognize).not.toHaveBeenCalled();
   });
@@ -208,18 +215,18 @@ describe("AI movie code fallback", () => {
       if (mode === "cancelled") controller.abort();
       return mode === "empty" ? null : "ZZZ-999";
     });
-    const resolving = resolveScrapeNumbers({
+    const resolver = createScrapeNumberResolver({
       ...input,
       aggregationService: { aggregate },
       recognitionService: { recognize },
-      signal: controller.signal,
     });
+    const resolving = resolver.resolveGroups(input.groups, controller.signal);
     if (mode === "cancelled") {
       await expect(resolving).rejects.toMatchObject({ name: "AbortError" });
     } else {
-      const resolved = await resolving;
-      expect(resolved.groups[0].members[0].fileInfo.number).toBe("ZZZ-999");
-      await expect(resolved.aggregationService.aggregate("ZZZ-999")).rejects.toBe(failure);
+      const groups = await resolving;
+      expect(groups[0].members[0].fileInfo.number).toBe("ZZZ-999");
+      await expect(resolver.aggregationService.aggregate("ZZZ-999")).rejects.toBe(failure);
     }
     expect(recognize).toHaveBeenCalledOnce();
     expect(aggregate).toHaveBeenCalledOnce();

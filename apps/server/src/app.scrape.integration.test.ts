@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type AggregationResult, ImageWatermarkService } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
@@ -181,12 +181,25 @@ describe("buildServer scrape integration", () => {
   it.each([
     "conflict",
     "metadata",
-  ] as const)("prepares the whole selection and isolates failures according to their scope (%s)", async (failure) => {
+  ] as const)("publishes ready movies while a sibling is crawling and isolates failures (%s)", async (failure) => {
     const root = await createTempRoot("scrape-preflight-root");
-    const numbers = ["XYZ-111", "ABF-981", "XYZ-222", "XYZ-333"];
+    const extension = failure === "metadata" ? "strm" : "mp4";
+    let releaseLast!: () => void;
+    const slowLookup = new Promise<void>((resolve) => {
+      releaseLast = resolve;
+    });
+    const numbers = [
+      "XYZ-111",
+      "ABF-981",
+      "XYZ-222",
+      ...(failure === "metadata" ? Array.from({ length: 196 }, (_, index) => `XYZ-${1000 + index}`) : []),
+      "XYZ-333",
+    ];
+    const content = (number: string) =>
+      extension === "strm" ? `https://media.test/${number}.mp4\n` : `source ${number}`;
     const files = new Map<string, string>();
     for (const number of numbers) {
-      files.set(join(root, `${number}.mp4`), `source ${number}`);
+      files.set(join(root, `${number}.${extension}`), content(number));
     }
     for (const number of failure === "conflict" ? ["ABF-981", "XYZ-222"] : [])
       for (const suffix of [".mp4", ".nfo", "-poster.jpg"])
@@ -199,11 +212,14 @@ describe("buildServer scrape integration", () => {
     const aggregateOriginal = aggregation.aggregate.bind(aggregation);
     const aggregate = vi.spyOn(aggregation, "aggregate");
     aggregate.mockImplementation(async (...args) => {
+      if (args[0] === "XYZ-333") await slowLookup;
       if (failure === "metadata" && args[0] === "ABF-981") throw new Error("Metadata failure");
       return await aggregateOriginal(...args);
     });
     const { fastify, services } = await createTestServer({ scrapeAggregation: aggregation });
+    const invalidation = vi.spyOn(services.taskEvents, "invalidate");
     await services.config.update({
+      scrape: { aiNumberFallback: failure === "metadata", threadNumber: 2, restDuration: 0 },
       download: {
         downloadThumb: false,
         downloadPoster: false,
@@ -231,43 +247,72 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: {
         executionMode: "batch",
-        refs: numbers.map((number) => ({ rootId, relativePath: `${number}.mp4` })),
+        refs: numbers.map((number) => ({ rootId, relativePath: `${number}.${extension}` })),
         libraryId,
       },
     });
     expect(response.statusCode).toBe(200);
     const taskId = response.json().result.data.runId;
+    try {
+      await vi.waitFor(
+        async () => {
+          const movies = await state.repositories.library.listEntries();
+          expect(movies.some((movie) => movie.number === "XYZ-111")).toBe(true);
+          expect(invalidation).toHaveBeenCalledWith("library");
+          const live = await services.scrape.snapshot({ taskId });
+          expect(live.task.status).toBe("running");
+          expect(["pending", "processing"]).toContain(
+            live.items.find((item) => item.relativePath === `XYZ-333.${extension}`)?.status,
+          );
+        },
+        { timeout: 5000 },
+      );
+      expect(await readFile(join(root, `JAV_output/fixed/XYZ-111/XYZ-111.${extension}`), "utf8")).toBe(
+        content("XYZ-111"),
+      );
+    } finally {
+      releaseLast();
+    }
     await waitForScrapeRunStatus(fastify, token, taskId, "failed");
     const terminal = await services.scrape.snapshot({ taskId });
     if (failure === "metadata") {
-      expect(terminal.task).toMatchObject({ status: "failed", failedCount: 1, skippedCount: 0, successCount: 3 });
-      expect(aggregate).toHaveBeenCalledTimes(4);
+      expect(terminal.task).toMatchObject({
+        status: "failed",
+        failedCount: 1,
+        skippedCount: 0,
+        successCount: numbers.length - 1,
+      });
+      expect(aggregate).toHaveBeenCalledTimes(numbers.length);
       for (const number of ["XYZ-111", "XYZ-222", "XYZ-333"]) {
-        expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(`source ${number}`);
+        expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.${extension}`), "utf8")).toBe(
+          content(number),
+        );
       }
-      expect(await readFile(join(root, "ABF-981.mp4"), "utf8")).toBe("source ABF-981");
+      expect(await readFile(join(root, `ABF-981.${extension}`), "utf8")).toBe(content("ABF-981"));
       return;
     }
     expect(terminal.task).toMatchObject({ status: "failed", failedCount: 2, skippedCount: 0, successCount: 2 });
     expect(terminal.task.error).toContain("Target directory already contains a movie with the same name");
     for (const number of ["ABF-981", "XYZ-222"])
-      expect(terminal.task.error).toContain(join(root, `JAV_output/fixed/${number}/${number}.mp4`));
+      expect(terminal.task.error).toContain(join(root, `JAV_output/fixed/${number}/${number}.${extension}`));
     expect(aggregate).toHaveBeenCalledTimes(4);
     expect((await services.scrape.liveRuns()).runs).toEqual([]);
     expect((await services.scrape.history({ taskId })).runs).toHaveLength(1);
     expect(await state.repositories.library.getEntryById(entry.id)).toEqual(entry);
     for (const number of ["ABF-981", "XYZ-222"]) {
-      expect(terminal.items.find((item) => item.relativePath === `${number}.mp4`)?.error).toBe(
-        `Target directory already contains a movie with the same name\nPending: ${join(root, `${number}.mp4`)}\nTarget path: ${join(root, `JAV_output/fixed/${number}/${number}.mp4`)}`,
+      expect(terminal.items.find((item) => item.relativePath === `${number}.${extension}`)?.error).toBe(
+        `Target directory already contains a movie with the same name\nPending: ${join(root, `${number}.${extension}`)}\nTarget path: ${await realpath(join(root, `JAV_output/fixed/${number}/${number}.${extension}`))}`,
       );
-      expect(await readFile(join(root, `${number}.mp4`), "utf8")).toBe(`source ${number}`);
-      expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(
-        `existing ${number}.mp4`,
+      expect(await readFile(join(root, `${number}.${extension}`), "utf8")).toBe(`source ${number}`);
+      expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.${extension}`), "utf8")).toBe(
+        `existing ${number}.${extension}`,
       );
     }
     for (const number of ["XYZ-111", "XYZ-333"]) {
-      await expect(stat(join(root, `${number}.mp4`))).rejects.toMatchObject({ code: "ENOENT" });
-      expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.mp4`), "utf8")).toBe(`source ${number}`);
+      await expect(stat(join(root, `${number}.${extension}`))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.${extension}`), "utf8")).toBe(
+        `source ${number}`,
+      );
     }
   });
 

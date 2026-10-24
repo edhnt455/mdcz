@@ -308,8 +308,9 @@ describe("ScrapeCoordinator", () => {
         stage === "prepare" && members[0]?.id === "one"
           ? { status: "failed", result: resultFor(members[0], "failed") }
           : { status: "prepared", prepared: undefined },
-      checkTargets: async () => {
-        if (stage === "preflight") throw new PublicationConflictError("/one", "/two");
+      checkTargets: async (groups) => {
+        if (stage === "preflight" && groups.at(-1)?.group.members[0]?.id === "one")
+          throw new PublicationConflictError("/one", "/two");
       },
       commitItems: async (items) =>
         items.map(({ item, result }) => {
@@ -321,17 +322,12 @@ describe("ScrapeCoordinator", () => {
     const coordinator = new ScrapeCoordinator(store, host);
     await coordinator.start("start");
     await coordinator.waitForIdle();
-    expect(executeItem).toHaveBeenCalledTimes(stage === "preflight" ? 0 : stage === "publication" ? 2 : 1);
+    expect(executeItem).toHaveBeenCalledTimes(stage === "publication" ? 2 : 1);
     expect(host.onTerminal).toHaveBeenCalledWith(
       run,
       expect.objectContaining({
         status: "failed",
-        items:
-          stage === "prepare"
-            ? [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "success" })]
-            : stage === "preflight"
-              ? [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "failed" })]
-              : [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "success" })],
+        items: [expect.objectContaining({ status: "failed" }), expect.objectContaining({ status: "success" })],
       }),
     );
     expect(store.finalize).toHaveBeenCalledOnce();

@@ -119,13 +119,15 @@ export class ScrapeService {
           mediaRoots: this.mediaRoots,
           downloaders: state.repositories.downloaders,
         },
-        onPublished: (directories, configuration) =>
+        onPublished: (directories, configuration) => {
+          this.taskEvents.invalidate("library");
           void notifyMediaServersOfPublish(
             this.networkClient,
             configuration,
             directories,
             runtimeLoggerService.getLogger("MediaServerNotify"),
-          ),
+          );
+        },
         onPending: (count) => {
           this.onPending?.(count);
           this.taskEvents.invalidate("pending");

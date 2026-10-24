@@ -33,7 +33,6 @@ import type {
   FileInfo,
   NfoLocalState,
   ScrapeResult,
-  UncensoredChoice,
   VideoMeta,
 } from "@mdcz/shared/types";
 import { toPublicationTarget } from "../library/mediaLibraryService";
@@ -69,12 +68,12 @@ import { DownloadManager, type ImageHostCooldownStore } from "./download";
 import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./executionPolicy";
 import { assertTargetLayout, FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedMovieGroup, type RuntimeScrapeSignalService } from "./FileScraper";
-import { admitScrapeGroups, type MovieGroup } from "./movieGroups";
+import { admitScrapeGroups, groupMovieMembers, type MovieGroup, type MovieMember } from "./movieGroups";
 import { NumberRecognitionService } from "./NumberRecognitionService";
 import { NfoGenerator } from "./nfo";
 import { versionKey } from "./organize/versionLabels";
 import { checkScrapeTargets } from "./preflightScrapeTask";
-import { resolveScrapeNumbers } from "./resolveScrapeNumbers";
+import { createScrapeNumberResolver } from "./resolveScrapeNumbers";
 import { TranslateService } from "./TranslateService";
 import { LlmApiClient } from "./translate/engines/LlmApiClient";
 import { LlmRequestService } from "./translate/engines/LlmRequestService";
@@ -124,16 +123,8 @@ type ScrapeRunContext = {
   groups?: MovieGroup[];
   rootGuard?: ReturnType<ConfiguredMediaRootService["rootIntegrityGuard"]>;
 };
-type RunnerManualScrape = ReturnType<typeof resolveManualScrapeRoute>;
 export type PrepareScrapeItem = <T extends { fileInfo: Pick<FileInfo, "number">; caseId?: string }>(item: T) => T;
-type RunnerScrapeItem = ScrapeRunItem & {
-  fileId: string;
-  entryIdentity: string;
-  canonicalDirectory: string;
-  fileInfo: FileInfo;
-  manualScrape?: RunnerManualScrape;
-  uncensoredChoice?: UncensoredChoice;
-};
+type RunnerScrapeItem = ScrapeRunItem & MovieMember;
 type RunnerCoordinator = ScrapeCoordinator<
   ScrapeRunnerStartContext,
   ScrapeRunManifest,
@@ -789,9 +780,7 @@ export class ScrapeRunner {
     applyScrapeNetworkPolicy(this.deps.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
 
-    if (configuration.scrape.aiNumberFallback) reporter.stage({ stage: "search" });
-    const { groups, aggregationService } = await resolveScrapeNumbers({
-      groups: context.groups,
+    const numberResolver = createScrapeNumberResolver({
       inventory,
       configuration,
       aggregationService:
@@ -804,10 +793,20 @@ export class ScrapeRunner {
         }),
       recognitionService: this.numberRecognitionService,
       logger: this.logger,
-      signal,
       unpin,
       beforeLookup: (signal) => policy.restGate?.waitBeforeStart(signal) ?? Promise.resolve(),
     });
+
+    // Only missing numbers need resolving before multipart grouping. Known numbers are looked up by each worker.
+    const missingNumbers = context.groups.filter((group) => group.members.some((member) => !member.fileInfo.number));
+    if (configuration.scrape.aiNumberFallback && missingNumbers.length) {
+      reporter.stage({ stage: "search" });
+      await numberResolver.resolveGroups(missingNumbers, signal);
+    }
+    const groups =
+      configuration.scrape.aiNumberFallback && missingNumbers.length
+        ? groupMovieMembers(context.groups.flatMap((group) => group.members))
+        : context.groups;
 
     const roots = new Map<string, MediaRoot>();
     for (const item of manifest.items) {
@@ -821,7 +820,7 @@ export class ScrapeRunner {
 
     const fileScraper = new FileScraper(
       {
-        aggregationService,
+        aggregationService: numberResolver.aggregationService,
         translateService: this.translateService,
         nfoGenerator: this.nfoGenerator,
         buildTags: buildMovieTags,
@@ -931,6 +930,26 @@ export class ScrapeRunner {
       movieGroups,
       prepareGroup: async (group, signal) => {
         if (!configuration.scrape.aiNumberFallback) await policy.restGate?.waitBeforeStart(signal);
+        const resolved = await numberResolver.resolveGroups([group], signal);
+        const error =
+          resolved.length !== 1
+            ? "Files of the same movie resolved to different numbers; please check manually"
+            : resolved[0].error;
+        if (error) {
+          const item = group.members[0];
+          return {
+            status: "failed",
+            result: {
+              fileId: item.id,
+              rootId: item.rootId,
+              relativePath: item.relativePath,
+              fileName: item.fileInfo.fileName,
+              status: "failed",
+              error,
+              assets: [],
+            },
+          };
+        }
         const result = await fileScraper.prepareGroup(
           group.members.map((member) => {
             const uncensoredChoice = member.uncensoredChoice;
@@ -982,6 +1001,12 @@ export class ScrapeRunner {
             })),
           })),
           inventory,
+          movieGroups.flatMap((group) =>
+            group.members.map((member) => ({
+              itemId: member.id,
+              sourcePath: member.sourcePath,
+            })),
+          ),
         );
       },
       executePreparedGroup: async ({ group, prepared }, signal) => {

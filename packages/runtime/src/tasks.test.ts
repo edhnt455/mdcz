@@ -115,12 +115,21 @@ describe("scrape movie groups", () => {
     const networkScrape = async () =>
       await runWithNetworkChannel("media", async () => getNetworkRequestExecutionContext()?.execution);
     const execution = executionFor();
+    const checkTargets = vi.fn(execution.checkTargets);
+    execution.checkTargets = checkTargets;
     const started = deferred();
     const release = deferred();
     const prepared: string[][] = [];
     const networkScrapes: Array<object | undefined> = [];
     execution.prepareGroup = async (group) => {
       prepared.push(group.members.map((item) => item.id));
+      if (group.members[0].id === "independent")
+        expect(
+          session
+            .snapshot()
+            .items.slice(0, 2)
+            .map((item) => item.status),
+        ).toEqual(["success", "success"]);
       if (group.members[0].id === "one") {
         networkScrapes.push(await networkScrape());
         started.resolve();
@@ -157,6 +166,10 @@ describe("scrape movie groups", () => {
       ["independent"],
     ]);
     expect(session.snapshot()).toMatchObject({ status: "completed", progress: { completedItems: 3 } });
+    expect(checkTargets.mock.calls.map(([groups]) => groups.map(({ group }) => group.movieId))).toEqual([
+      ["m1"],
+      ["m1", "m2"],
+    ]);
     // A recording keeps one network scrape per movie, so publishing must stay in the scrape that crawled.
     const [preparedIn, executedIn] = networkScrapes;
     expect(preparedIn).toBeDefined();
@@ -165,6 +178,8 @@ describe("scrape movie groups", () => {
 
   it("keeps a failed preparation's structured pending outcome while publishing independent movies", async () => {
     const execution = executionFor();
+    execution.concurrency = 2;
+    const release = deferred();
     const pendingOutcome = {
       kind: "ambiguous" as const,
       candidates: [
@@ -178,10 +193,12 @@ describe("scrape movie groups", () => {
       for (const entry of entries) if (entry.result) committed.push(entry.result);
       return await commit(entries);
     };
-    execution.prepareGroup = async (group) =>
-      group.members.some((item) => item.id === "one")
-        ? { status: "failed", result: { ...resultFor(group.members[0], "failed"), pending: pendingOutcome } }
-        : { status: "prepared", prepared: group.members.map((item) => item.id).join(",") };
+    execution.prepareGroup = async (group) => {
+      if (group.members.some((item) => item.id === "one"))
+        return { status: "failed", result: { ...resultFor(group.members[0], "failed"), pending: pendingOutcome } };
+      await release.promise;
+      return { status: "prepared", prepared: group.members.map((item) => item.id).join(",") };
+    };
     const execute = vi.fn(execution.executePreparedGroup);
     execution.executePreparedGroup = execute;
     const session = new ScrapeRunSession({
@@ -191,6 +208,12 @@ describe("scrape movie groups", () => {
       onSnapshot: () => undefined,
     });
     await session.start();
+    try {
+      await vi.waitFor(() => expect(session.snapshot().progress.completedItems).toBe(2));
+      expect(session.snapshot().items[2].status).toBe("processing");
+    } finally {
+      release.resolve();
+    }
     await session.waitForIdle();
     expect(execute.mock.calls.map(([entry]) => entry.group.members.map((item) => item.id))).toEqual([["independent"]]);
     expect(session.snapshot().items.map((item) => item.status)).toEqual(["failed", "failed", "success"]);
@@ -201,6 +224,13 @@ describe("scrape movie groups", () => {
 
   it("files a publish failure as failed items and keeps publishing sibling movies", async () => {
     const execution = executionFor();
+    execution.concurrency = 2;
+    const release = deferred();
+    const prepare = execution.prepareGroup;
+    execution.prepareGroup = async (group, signal) => {
+      if (group.members[0].id === "one") await release.promise;
+      return await prepare(group, signal);
+    };
     let publishAttempts = 0;
     const commit = execution.commitItems;
     execution.commitItems = async (entries) => {
@@ -216,6 +246,13 @@ describe("scrape movie groups", () => {
       onSnapshot: () => undefined,
     });
     await session.start();
+    try {
+      await vi.waitFor(() => expect(session.snapshot().items[2].status).toBe("success"));
+      expect(session.snapshot().items[0].status).toBe("processing");
+      expect(publishAttempts).toBe(0);
+    } finally {
+      release.resolve();
+    }
     await session.waitForIdle();
     // The failing movie's files end failed, never skipped, so the pending list can still offer a repair.
     expect(session.snapshot().items.map((item) => item.status)).toEqual(["failed", "failed", "success"]);

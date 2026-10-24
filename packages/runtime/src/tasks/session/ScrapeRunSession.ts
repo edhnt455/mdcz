@@ -109,6 +109,7 @@ type MutableScrapeRunItem<TItem extends ScrapeRunItem> = ScrapeRunItemSnapshot<T
 };
 type RuntimeMovieGroup<TItem extends ScrapeRunItem, TPrepared> = MovieGroup<MutableScrapeRunItem<TItem>> & {
   preparation?: ScrapePreparationResult<TPrepared>;
+  targetsChecked?: boolean;
 };
 type ScrapeGroupExecution<TItem extends ScrapeRunItem> = {
   output?: PreparedMovieOutput;
@@ -180,7 +181,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
   private status: ScrapeRunLiveStatus = "queued";
   private latestStage: ScrapeRunStageSnapshot | null = null;
   private error: string | null = null;
-  private preflightPassed = false;
+  private targetCheck: Promise<void> = Promise.resolve();
   private readonly shutdownController = new AbortController();
   private executor: { pause(): void; stop(): void } | null = null;
   private runPromise: Promise<void> | null = null;
@@ -433,104 +434,13 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       this.completeLiveRunIfSettled();
       return;
     }
-    const unprepared = this.movieGroups.filter(
-      (group) => !group.preparation && group.members.some((item) => item.status === "pending"),
-    );
-    if (unprepared.length > 0) {
-      await this.prepareGroups(unprepared);
-      if (this.status !== "running") return;
-      if (
-        this.movieGroups.some((group) => !group.preparation && group.members.some((item) => item.status === "pending"))
-      )
-        return;
-    }
-
-    for (const group of this.movieGroups) {
-      const preparation = group.preparation;
-      if (!preparation || preparation.status === "prepared") continue;
-      for (const item of group.members) {
-        if (item.status !== "pending") continue;
-        const result = retargetPreparedResult(preparation.result, item);
-        const committed = await this.execution.commitItems([{ item, result }]);
-        this.assertActive(["running", "paused", "stopping"]);
-        this.applyCommittedResults([item], committed);
-      }
-    }
-    const pending = this.items.filter((item) => item.status === "pending");
-    const preparedGroups = this.movieGroups.flatMap((group) => {
-      const pendingMembers = group.members.filter((item) => item.status === "pending");
-      return group.preparation?.status === "prepared" && pendingMembers.length
-        ? [{ group, prepared: group.preparation.prepared }]
-        : [];
-    });
-    if (!this.preflightPassed && preparedGroups.length > 0) {
-      this.recordStage({ stage: "check-output" });
-      try {
-        await this.execution.checkTargets(preparedGroups);
-        this.preflightPassed = true;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const itemIds = new Set(
-          error instanceof ScrapeTargetConflictError ? error.conflicts.map((conflict) => conflict.itemId) : [],
-        );
-        for (const { group } of preparedGroups) {
-          if (group.members.some((m) => itemIds.has(m.id))) {
-            for (const m of group.members) itemIds.add(m.id);
-          }
-        }
-        const conflictedItems = pending.filter((item) => itemIds.has(item.id));
-        const failedItems = conflictedItems.length > 0 ? conflictedItems : pending;
-        if (this.status !== "running") return;
-        this.assertActive(["running"]);
-        const messages = new Set<string>();
-        for (const item of failedItems) {
-          if (item.status !== "pending") continue;
-          const directConflicts =
-            error instanceof ScrapeTargetConflictError
-              ? error.conflicts.filter((conflict) => conflict.itemId === item.id)
-              : [];
-          const groupConflicts =
-            error instanceof ScrapeTargetConflictError
-              ? error.conflicts.filter((conflict) => itemIds.has(conflict.itemId))
-              : [];
-          const itemMessage =
-            directConflicts.length > 0
-              ? new ScrapeTargetConflictError(directConflicts).message
-              : groupConflicts.length > 0
-                ? new ScrapeTargetConflictError(groupConflicts).message
-                : message;
-          if (itemMessage) messages.add(itemMessage);
-          const committed = await this.execution.commitItems([{ item, result: createFailedResult(item, itemMessage) }]);
-          this.applyCommittedResults([item], committed);
-        }
-        if (conflictedItems.length === 0) {
-          this.error = [...messages].join("\n\n") || message;
-          this.setStatus("failed");
-          return;
-        }
-        if (messages.size > 0) this.error = [this.error, ...messages].filter(Boolean).join("\n\n");
-        this.preflightPassed = true;
-      }
-    }
-
-    if (this.status !== "running") return;
-    const remainingPending = this.items.filter((item) => item.status === "pending");
-    if (remainingPending.length === 0) {
-      this.completeLiveRunIfSettled();
-      return;
-    }
-    this.recordStage({ stage: "execute" });
-    const executionGroups = this.movieGroups.flatMap((group) => {
-      const pendingMembers = group.members.filter((item) => item.status === "pending");
-      if (!pendingMembers.length || group.preparation?.status !== "prepared") return [];
-      return [{ group, prepared: group.preparation.prepared }];
-    });
-    const executor = new TaskExecutor<(typeof executionGroups)[number], ScrapeGroupExecution<TItem>>({
+    const executionGroups = this.movieGroups.filter((group) => group.members.some((item) => item.status === "pending"));
+    const executor = new TaskExecutor<RuntimeMovieGroup<TItem, TPrepared>, ScrapeGroupExecution<TItem> | null>({
       concurrency: this.execution.concurrency,
       gate: {
-        beforeItem: async (entry) => {
+        beforeItem: async (group) => {
           this.assertActive(["running"]);
-          for (const item of entry.group.members) {
+          for (const item of group.members) {
             if (item.status === "pending") {
               item.status = "processing";
               item.error = null;
@@ -540,7 +450,65 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
         },
         beforeResult: async () => this.assertActive(["running", "paused", "stopping"]),
       },
-      runItem: async (entry, context) => {
+      runItem: async (group, context) => {
+        if (!group.preparation) {
+          this.recordStage({ stage: "prepare", itemId: group.members[0].id });
+          group.preparation = group.error
+            ? { status: "failed", result: createFailedResult(group.members[0], group.error) }
+            : await runWithScrapeItem(
+                { caseId: group.members[0].caseId, execution: group },
+                async () => await this.execution.prepareGroup(group, context.signal),
+              );
+        }
+        context.signal.throwIfAborted();
+        this.assertActive(["running", "paused"]);
+        if (group.preparation.status === "prepared" && this.status === "running" && !group.targetsChecked) {
+          // Reserve output paths in order before downloads can race, including paths of already committed movies.
+          const previous = this.targetCheck;
+          let releaseCheck!: () => void;
+          this.targetCheck = new Promise<void>((resolve) => {
+            releaseCheck = resolve;
+          });
+          await previous;
+          try {
+            context.signal.throwIfAborted();
+            this.recordStage({ stage: "check-output", itemId: group.members[0].id });
+            await this.execution.checkTargets([
+              ...this.movieGroups.flatMap((checked) =>
+                checked.targetsChecked && checked.preparation?.status === "prepared"
+                  ? [{ group: checked, prepared: checked.preparation.prepared }]
+                  : [],
+              ),
+              { group, prepared: group.preparation.prepared },
+            ]);
+            group.targetsChecked = true;
+          } catch (error) {
+            if (isAbortError(error) || context.signal.aborted) throw error;
+            const conflicts =
+              error instanceof ScrapeTargetConflictError
+                ? error.conflicts.filter((conflict) => group.members.some((item) => item.id === conflict.itemId))
+                : [];
+            const message = conflicts.length ? new ScrapeTargetConflictError(conflicts).message : toErrorMessage(error);
+            this.error = [this.error, message].filter(Boolean).join("\n\n");
+            group.preparation = { status: "failed", result: createFailedResult(group.members[0], message) };
+          } finally {
+            releaseCheck();
+          }
+        }
+        if (group.preparation.status !== "prepared") {
+          const result = group.preparation.result;
+          return {
+            results: group.members.map((item) => ({ item, result: retargetPreparedResult(result, item) })),
+            release: async () => undefined,
+          };
+        }
+        if (this.status === "paused") {
+          for (const item of group.members) if (item.status === "processing") item.status = "pending";
+          this.emitSnapshot();
+          return null;
+        }
+        const entry = { group, prepared: group.preparation.prepared };
+        this.recordStage({ stage: "execute", itemId: group.members[0].id });
         let release: (() => void | Promise<void>) | undefined;
         const releaseResources = async () => {
           const cleanup = release;
@@ -585,15 +553,16 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
           throw error;
         }
       },
-      finalizeResult: async (_entry, execution) => await execution.release(),
-      onFinalizeError: (entry, releaseError) => {
+      finalizeResult: async (_group, execution) => await execution?.release(),
+      onFinalizeError: (group, releaseError) => {
         this.recordLog({
           level: "warn",
           message: `Staging cleanup failed: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
-          itemId: entry.group.members[0]?.id,
+          itemId: group.members[0]?.id,
         });
       },
-      applyResult: async (_entry, execution) => {
+      applyResult: async (_group, execution) => {
+        if (!execution) return;
         this.assertActive(["running", "paused", "stopping"]);
         let committed: Awaited<ReturnType<typeof this.execution.commitItems>>;
         try {
@@ -619,50 +588,6 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
     this.executor = executor;
     try {
       await executor.execute(executionGroups, this.shutdownController.signal);
-    } finally {
-      if (this.executor === executor) this.executor = null;
-    }
-  }
-
-  private async prepareGroups(groups: RuntimeMovieGroup<TItem, TPrepared>[]): Promise<void> {
-    this.recordStage({ stage: "prepare" });
-    const executor = new TaskExecutor<RuntimeMovieGroup<TItem, TPrepared>, ScrapePreparationResult<TPrepared>>({
-      concurrency: this.execution.concurrency,
-      gate: {
-        beforeItem: async (group) => {
-          this.assertActive(["running"]);
-          for (const item of group.members) {
-            item.status = "processing";
-            item.error = null;
-          }
-          this.emitSnapshot();
-        },
-        beforeResult: async () => this.assertActive(["running", "paused", "stopping"]),
-      },
-      runItem: async (group, context) => {
-        const error = group.error;
-        if (error) return { status: "failed", result: createFailedResult(group.members[0], error) };
-        return await runWithScrapeItem(
-          { caseId: group.members[0].caseId, execution: group },
-          async () => await this.execution.prepareGroup(group, context.signal),
-        );
-      },
-      applyResult: async (group, result) => {
-        this.assertActive(["running", "paused", "stopping"]);
-        group.preparation =
-          result.status === "prepared"
-            ? result
-            : {
-                status: result.status,
-                result: retargetPreparedResult(result.result, group.members[0]),
-              };
-        for (const item of group.members) item.status = "pending";
-        this.emitSnapshot();
-      },
-    });
-    this.executor = executor;
-    try {
-      await executor.execute(groups, this.shutdownController.signal);
     } finally {
       if (this.executor === executor) this.executor = null;
     }

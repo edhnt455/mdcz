@@ -1,6 +1,11 @@
 import { EventEmitter } from "node:events";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
-import type { EventChannel, EventPayloadByChannel, TaskSnapshotPayload } from "@mdcz/shared/ipcEvents";
+import type {
+  EventChannel,
+  EventPayloadByChannel,
+  InvalidatePayload,
+  TaskSnapshotPayload,
+} from "@mdcz/shared/ipcEvents";
 import type { AppUpdateStatus } from "@mdcz/shared/ipcTypes";
 import type { BrowserWindow } from "electron";
 import { type LoggerEventPayload, loggerService } from "./LoggerService";
@@ -32,7 +37,7 @@ export class SignalService extends EventEmitter {
     });
   }
 
-  invalidate(...resources: Array<"scrape" | "maintenance" | "overview" | "pending">): void {
+  invalidate(...resources: InvalidatePayload["resources"]): void {
     this.send(IpcChannel.Event_Invalidate, { resources: [...new Set(resources)] });
   }
 

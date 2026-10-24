@@ -79,6 +79,16 @@ describe("inventory target conflicts", () => {
     ).rejects.toMatchObject({
       conflicts: [expect.objectContaining({ itemId: "one" }), expect.objectContaining({ itemId: "two" })],
     });
+    const pendingSource = join(root, "pending.strm");
+    const protectedSources = [{ itemId: "pending", sourcePath: pendingSource }];
+    for (const member of [
+      target("ready", join(root, "ready.strm"), pendingSource),
+      target("ready", join(root, "ready.strm"), join(root, "output", "ready.strm"), [pendingSource]),
+    ]) {
+      await expect(checkScrapeTargets([group(member)], inventory, protectedSources)).rejects.toMatchObject({
+        conflicts: [expect.objectContaining({ itemId: "ready" })],
+      });
+    }
     expect(stats).not.toHaveBeenCalled();
   });
 

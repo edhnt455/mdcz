@@ -46,8 +46,8 @@ const cacheResolveRoot = (resolveRoot: ResolveRoot): ResolveRoot => {
   };
 };
 
-export const groupMovieMembers = (members: readonly MovieMember[]): MovieGroup[] => {
-  const groups = new Map<string, MovieGroup>();
+export const groupMovieMembers = <TMember extends MovieMember>(members: readonly TMember[]): MovieGroup<TMember>[] => {
+  const groups = new Map<string, MovieGroup<TMember>>();
   for (const member of members) {
     const key =
       member.ownerId ??

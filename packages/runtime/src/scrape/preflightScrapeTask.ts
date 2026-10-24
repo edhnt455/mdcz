@@ -58,6 +58,7 @@ const markGroup = (
 export async function checkScrapeTargets(
   groups: readonly ScrapeTargetGroup[],
   inventory: DirectoryInventory,
+  sourceMembers: readonly Pick<ScrapeTargetMember, "itemId" | "sourcePath">[] = [],
 ): Promise<void> {
   const conflicts = new Map<string, ScrapeTargetConflict>();
   const sources = new Map<string, string>();
@@ -65,15 +66,22 @@ export async function checkScrapeTargets(
   const directories = new Set<string>();
   const videos = new Map<string, { group: ScrapeTargetGroup; member: ScrapeTargetMember; kind: "source" | "target" }>();
   const artifacts = new Map<string, { group: ScrapeTargetGroup; path: string }[]>();
+  const protectedSources = new Map<string, string>();
+  for (const member of sourceMembers)
+    protectedSources.set(filesystemPathKey(await inventory.entryPath(member.sourcePath)), member.itemId);
 
   for (const group of groups) {
     const groupArtifacts = new Set<string>();
+    const memberIds = new Set(group.members.map((member) => member.itemId));
     for (const member of group.members) {
       const source = filesystemPathKey(await inventory.entryPath(member.sourcePath));
       sources.set(member.itemId, source);
       videos.set(source, { group, member, kind: "source" });
       const target = await inventory.entryPath(member.targetVideoPath);
       const targetKey = filesystemPathKey(target);
+      const owner = protectedSources.get(targetKey);
+      if (owner && !memberIds.has(owner))
+        addConflict(conflicts, member, target, "Target filename conflicts with another source video");
       videos.set(targetKey, { group, member, kind: "target" });
       const key = filesystemPathKey(join(dirname(target), parse(target).name));
       const siblings = planned.get(key) ?? [];
@@ -119,6 +127,11 @@ export async function checkScrapeTargets(
       for (const owner of distinctGroups)
         markGroup(conflicts, owner.group, owner.path, "Generated file paths for multiple movies conflict");
     }
+    const sourceOwner = protectedSources.get(path);
+    if (sourceOwner)
+      for (const owner of distinctGroups)
+        if (!owner.group.members.some((member) => member.itemId === sourceOwner))
+          markGroup(conflicts, owner.group, owner.path, "Generated file conflicts with source video filename");
     const video = videos.get(path);
     if (video && distinctGroups.some((owner) => owner.group !== video.group)) {
       markGroup(conflicts, video.group, video.member.targetVideoPath, "Generated file conflicts with video filename");

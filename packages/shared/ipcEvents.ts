@@ -21,7 +21,7 @@ export interface LogPayload {
 }
 
 export interface InvalidatePayload {
-  resources: Array<"scrape" | "maintenance" | "overview" | "pending">;
+  resources: Array<"scrape" | "maintenance" | "overview" | "pending" | "library">;
 }
 
 export interface ShortcutPayload {
