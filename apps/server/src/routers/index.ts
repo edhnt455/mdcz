@@ -1,6 +1,7 @@
 import { MediaDirectoryUnavailableError, MediaLibrarySettingsError, toMediaLibraryDto } from "@mdcz/runtime/library";
 import { containsStrmFiles } from "@mdcz/runtime/scrape/utils/strm";
 import { notificationsSchema } from "@mdcz/shared/config";
+import { embyDeletionSettingsSchema } from "@mdcz/shared/embyDeletion";
 import {
   mediaLibraryIdInputSchema,
   mediaLibrarySettingsSchema,
@@ -315,6 +316,14 @@ export const appRouter = t.router({
       cloudDrive: ctx.services.libraryWatch.cloudDriveActivity(),
       qbittorrent: ctx.services.qbittorrent.status(),
     })),
+  }),
+  embyDeletion: t.router({
+    status: protectedProcedure.query(async ({ ctx }) => await ctx.services.embyDeletion.status()),
+    configure: protectedProcedure
+      .input(embyDeletionSettingsSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.embyDeletion.configure(input)),
+    rotateSecret: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.rotateSecret()),
+    reconcile: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.reconcile()),
   }),
   mediaRoots: t.router({
     ensurePath: protectedProcedure

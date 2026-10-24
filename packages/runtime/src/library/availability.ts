@@ -11,6 +11,10 @@ const keyFor = (root: Root, relativePath: string): string => `${root.hostPath}\0
 export class LibraryAvailabilityChecker {
   private readonly cache = new Map<string, { available: boolean; error: string | null; expiresAt: number }>();
 
+  clear(): void {
+    this.cache.clear();
+  }
+
   async check(root: Root, relativePath: string): Promise<boolean> {
     const key = keyFor(root, relativePath);
     const cached = this.cache.get(key);

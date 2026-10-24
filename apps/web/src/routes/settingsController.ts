@@ -9,7 +9,7 @@ import {
 import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
 import type { QueryClient } from "@tanstack/react-query";
 import { clearImportedFile, promptForImportFile, readImportedFile, triggerDownload } from "../browserFile";
-import { api } from "../client";
+import { api, getApiBase } from "../client";
 import { CURRENT_CONFIG_QUERY_KEY } from "../hooks/configQueries";
 import { queryKeys } from "../lib/queryKeys";
 
@@ -69,6 +69,7 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
     status: async () => await api.integrations.status(),
   },
   isServer: true,
+  embyDeletion: { ...api.embyDeletion, origin: getApiBase() },
   settingsTarget: "server",
   subscribeInFlightSaves: useSettingsSavingStore.subscribe,
   get watermarkDirectoryActionLabel() {

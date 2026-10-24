@@ -121,11 +121,17 @@ export const useWebTaskSync = (): void => {
           refreshLiveRuns();
           refreshMaintenanceSession();
           refreshPending();
+          void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all });
           return;
         }
         if (payload.resources.includes("scrape-live")) refreshLiveRuns();
         if (payload.resources.includes("maintenance")) refreshMaintenanceSession();
         if (payload.resources.includes("pending")) refreshPending();
+        if (payload.resources.includes("library")) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all });
+        }
       },
     });
     const livenessTimer = setInterval(() => {

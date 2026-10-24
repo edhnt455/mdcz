@@ -52,13 +52,15 @@ const createHarness = (libraries: MediaLibrary[]) => {
   const knownMediaIdentities = vi.fn((_keys: string[]) => new Set<string>());
   const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const onPending = vi.fn();
+  const registerPathIntent = vi.fn(async (hostPath: string) =>
+    roots.find((root) => hostPath === root.hostPath || hostPath.startsWith(`${root.hostPath}${path.sep}`)),
+  );
   const create = () =>
     new LibraryWatchService({
       config: { get: async () => configuration },
       libraries: { list: async () => libraries } as never,
       mediaRoots: {
-        registerPathIntent: async (hostPath: string) =>
-          roots.find((root) => hostPath === root.hostPath || hostPath.startsWith(`${root.hostPath}${path.sep}`)),
+        registerPathIntent,
         listRoots: async () => roots,
         rootIntegrityGuard: () => async () => {},
         prepareOutputDirectory: async () => ({ id: "output", relativeDirectory: "" }),
@@ -80,16 +82,16 @@ const createHarness = (libraries: MediaLibrary[]) => {
       logger,
       onPending,
     });
-  const settled = () => vi.waitFor(() => expect(vi.getTimerCount()).toBe(libraries.length));
+  const settled = () => vi.waitFor(() => expect(vi.getTimerCount()).toBe(libraries.length), { interval: 0 });
   const advance = async (ms: number) => {
     await vi.advanceTimersByTimeAsync(ms);
     await settled();
   };
-  return { create, settled, advance, scrape, pending, knownMediaIdentities, logger, onPending };
+  return { create, settled, advance, scrape, pending, knownMediaIdentities, registerPathIntent, logger, onPending };
 };
 
 describe("LibraryWatchService", () => {
-  it("submits stable unowned arrivals, acknowledging them only once a submission is accepted", async () => {
+  it("submits STRM arrivals immediately and waits for stable videos, acknowledging accepted files only once", async () => {
     const library = await createLibrary("movies");
     const harness = createHarness([library]);
     const { scrape } = harness;
@@ -98,10 +100,26 @@ describe("LibraryWatchService", () => {
     const service = harness.create();
     try {
       await writeFile(source("existing.mp4"), "baseline");
+      await writeFile(source("existing.strm"), "https://media.example/existing.mp4");
       await service.start();
       await harness.settled();
 
       await writeFile(source("new.mp4"), "first chunk");
+      await writeFile(source("stream.strm"), "https://media.example/stream.mp4");
+      await writeFile(source("uppercase.STRM"), "https://media.example/uppercase.mp4");
+      service.submitCloudDriveChanges([
+        { action: "create", isDir: false, sourceFile: "/cloud/movies/new.mp4", destinationFile: "" },
+      ]);
+      await harness.advance(5_000);
+      expect(scrape.start).toHaveBeenCalledExactlyOnceWith({
+        executionMode: "batch",
+        libraryId: "movies",
+        refs: [
+          { rootId: "movies", relativePath: "stream.strm" },
+          { rootId: "movies", relativePath: "uppercase.STRM" },
+        ],
+      });
+      scrape.start.mockClear();
       await harness.advance(60_000);
       await appendFile(source("new.mp4"), "second chunk");
       await harness.advance(120_000);
@@ -160,7 +178,7 @@ describe("LibraryWatchService", () => {
     }
   });
 
-  it("routes CloudDrive2 changes to the longest matching library and resumes register-only libraries after restart", async () => {
+  it("keeps event, stability and full-scan deadlines across scoped changes and restarts", async () => {
     const outer = await createLibrary("outer", { cloudPath: "/cloud", scanIntervalMinutes: 60 });
     const inner = await createLibrary("inner", {
       cloudPath: "/cloud/inner",
@@ -178,8 +196,15 @@ describe("LibraryWatchService", () => {
       await writeFile(path.join(outer.sourcePath, "outer-new.mp4"), "ready");
       await mkdir(path.join(inner.sourcePath, "release"));
       await writeFile(path.join(inner.sourcePath, "release", "inner-new.mp4"), "ready");
+      await writeFile(path.join(inner.sourcePath, "release", "stream.strm"), "https://media.example/stream.mp4");
+      const arrival = {
+        action: "create" as const,
+        isDir: false,
+        sourceFile: "/cloud/inner/release/inner-new.mp4",
+        destinationFile: "",
+      };
       service.submitCloudDriveChanges([
-        { action: "create", isDir: false, sourceFile: "/cloud/inner/release/inner-new.mp4", destinationFile: "" },
+        arrival,
         { action: "create", isDir: false, sourceFile: "/elsewhere/ignored.mp4", destinationFile: "" },
       ]);
       // Every arrival counts toward the webhook's liveness; only routed changes count toward a library's.
@@ -187,16 +212,55 @@ describe("LibraryWatchService", () => {
         lastEventAt: expect.any(String),
         libraries: { inner: expect.any(String) },
       });
-      await harness.advance(5_000);
-      await harness.advance(120_000);
-      expect(harness.scrape.start).not.toHaveBeenCalled();
+      await harness.advance(4_000);
+      service.submitCloudDriveChanges([arrival]);
+      await harness.advance(1_000);
+      expect(harness.registerPathIntent).toHaveBeenLastCalledWith(path.join(inner.sourcePath, "release"));
+      expect(harness.registerPathIntent).toHaveBeenCalledTimes(3);
       expect(harness.pending.upsert).toHaveBeenCalledExactlyOnceWith({
+        kind: "new_file",
+        rootId: "inner",
+        relativePath: "release/stream.strm",
+        libraryId: "inner",
+      });
+
+      await mkdir(path.join(inner.sourcePath, "other"));
+      await writeFile(path.join(inner.sourcePath, "other", "second.mp4"), "ready");
+      service.submitCloudDriveChanges([{ ...arrival, sourceFile: "/cloud/inner/other/second.mp4" }]);
+      await harness.advance(5_000);
+      expect(harness.registerPathIntent).toHaveBeenLastCalledWith(path.join(inner.sourcePath, "other"));
+
+      await harness.advance(109_000);
+      service.submitCloudDriveChanges([arrival]);
+      await harness.advance(4_000);
+      service.submitCloudDriveChanges([arrival]);
+      await harness.advance(1_000);
+      service.submitCloudDriveChanges([arrival]);
+      await harness.advance(999);
+      expect(harness.pending.upsert).toHaveBeenCalledTimes(1);
+      await harness.advance(1);
+      expect(harness.scrape.start).not.toHaveBeenCalled();
+      expect(harness.pending.upsert).toHaveBeenCalledTimes(2);
+      expect(harness.pending.upsert).toHaveBeenLastCalledWith({
         kind: "new_file",
         rootId: "inner",
         relativePath: "release/inner-new.mp4",
         libraryId: "inner",
       });
       expect(harness.onPending).toHaveBeenCalledWith(1);
+      await harness.advance(5_000);
+      expect(harness.pending.upsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({ relativePath: "other/second.mp4" }),
+      );
+
+      // Subtree events cannot postpone the full rescan that catches a missed webhook.
+      await writeFile(path.join(inner.sourcePath, "missed.mp4"), "ready");
+      await harness.advance(3_469_000);
+      service.submitCloudDriveChanges([arrival]);
+      await harness.advance(1_000);
+      expect(harness.registerPathIntent).toHaveBeenLastCalledWith(inner.sourcePath);
+      await harness.advance(120_000);
+      expect(harness.pending.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ relativePath: "missed.mp4" }));
       await service.close();
 
       // Cloud transfers keep the original modification time, so files that arrived while stopped are not judged by it.
@@ -213,8 +277,8 @@ describe("LibraryWatchService", () => {
       expect(harness.pending.upsert).toHaveBeenLastCalledWith(
         expect.objectContaining({ kind: "new_file", relativePath: "offline.mp4" }),
       );
-      expect(harness.pending.upsert).toHaveBeenCalledTimes(2);
-      // The change routed to the inner library never woke the outer one; its startup scan finds the arrival.
+      expect(harness.pending.upsert).toHaveBeenCalledTimes(5);
+      // The outer library finds its arrival through polling, independently of the inner library's events.
       expect(harness.scrape.start).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ libraryId: "outer", refs: [{ rootId: "outer", relativePath: "outer-new.mp4" }] }),
       );

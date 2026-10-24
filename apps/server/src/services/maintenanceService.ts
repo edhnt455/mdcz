@@ -22,6 +22,10 @@ export class MaintenanceService {
   private readonly runtime: MaintenanceRuntime;
   private readonly coordinator: MaintenanceSessionCoordinator;
 
+  get isBusy(): boolean {
+    return this.coordinator.hasUnfinishedSession;
+  }
+
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,

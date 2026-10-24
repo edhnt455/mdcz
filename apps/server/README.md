@@ -64,6 +64,14 @@ For the systemd / AUR / Deb path, see the bundled `README.md` and `systemd/mdcz.
 
 ## Integrations
 
+### Emby deletion sync
+
+Settings → Media servers → Emby → Deletion sync accepts authenticated `library.deleted` webhooks. Start in observation mode, select a move library, and bind the Emby server ID. Emby and MDCz must see the same output path. Notifications are persisted before acknowledgement; cleanup requires two missing-file checks and a valid library identity marker. Other movie versions, task history, downloader deduplication and disk sidecars are retained. See [setup, cleanup scope and rollback](../../docs/emby-deletion-sync.md).
+
+### Library automation
+
+Library automation batches local change events and CloudDrive2 webhooks for up to five seconds. New `.strm` files (case-insensitive) are registered or scraped as soon as a scan discovers them; other videos must keep the same size and modification time across scans for two minutes before processing. Each directory keeps its earliest scan deadline, so repeated events cannot postpone discovery or stability checks. Full rescans catch missing events at the library's configured interval (15 minutes by default); a missed event can therefore add that interval before discovery. The first scan of a newly watched library records existing files as a baseline without submitting them. A download-finished callback to `/api/automation/scrape/start` bypasses the stability wait because the downloader confirms completion.
+
 MDCz takes new files from downloaders and cloud drives in three ways; every one ends in the same scrape path, so overlapping triggers never scrape a file twice.
 
 - **qBittorrent polling.** Settings → Integrations → qBittorrent: the web UI URL, an API key (qBittorrent 5.2+) or a username and password, and a category. Every minute MDCz lists the category's completed torrents and scrapes each `content_path` that finished after polling began. Torrents already finished when you connect are left alone. The category's save path, after path mappings, must lie inside a library's source directory. Files under that save path are never moved: a `move` library hardlinks them, so torrents keep seeding (the output directory must be on the same volume). Keep that folder outside any MoviePilot download folder with downloader monitoring on, or both tools place the same files.

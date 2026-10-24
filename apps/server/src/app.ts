@@ -9,6 +9,7 @@ import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
+import { embyDeletionNotificationSchema } from "@mdcz/shared/embyDeletion";
 import {
   automationRecentInputSchema,
   automationScrapeStartInputSchema,
@@ -32,6 +33,7 @@ import { AuthenticationError, AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
 import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
+import { EmbyDeletionService } from "./services/embyDeletionService";
 import { LibraryService } from "./services/libraryService";
 import { LibraryWatchService } from "./services/libraryWatchService";
 import { MaintenanceService } from "./services/maintenanceService";
@@ -205,6 +207,16 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     automation,
     auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
+    embyDeletion:
+      options.services?.embyDeletion ??
+      new EmbyDeletionService({
+        persistence,
+        libraries,
+        maintenance,
+        taskEvents,
+        invalidateAvailability: () => library.invalidateAvailability(),
+        logger: runtimeLogs.getLogger("EmbyDeletion"),
+      }),
     config,
     libraries,
     libraryWatch,
@@ -266,6 +278,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     await services.libraryWatch.start();
     services.automation.start();
     services.qbittorrent.start();
+    services.embyDeletion.start();
   });
 
   fastify.addHook("preClose", async () => {
@@ -277,6 +290,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     if (closed) return;
     closed = true;
     services.automation.close();
+    await services.embyDeletion.close();
     // An in-flight poll submits through library watch, so it ends first.
     const results = await Promise.allSettled([services.qbittorrent.close()]);
     results.push(...(await Promise.allSettled([services.libraryWatch.close()])));
@@ -344,6 +358,18 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     services.libraryWatch.submitCloudDriveChanges(cloudDriveNotifySchema.parse(request.body).data);
     return reply.code(204).send();
   });
+
+  fastify.post<{ Params: { token: string } }>(
+    "/api/webhooks/emby/:token",
+    { bodyLimit: 256 * 1024 },
+    async (request, reply) => {
+      await services.embyDeletion.assertToken(request.params.token);
+      const input = embyDeletionNotificationSchema.safeParse(request.body);
+      if (!input.success) return reply.code(400).send({ error: "Invalid Emby notification" });
+      const result = await services.embyDeletion.accept(input.data);
+      return reply.code(result.duplicate ? 200 : 202).send(result);
+    },
+  );
 
   fastify.register(fastifyTRPCPlugin, {
     prefix: "/trpc",

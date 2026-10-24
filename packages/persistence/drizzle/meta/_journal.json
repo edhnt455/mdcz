@@ -57,6 +57,13 @@
       "when": 1792281600000,
       "tag": "0007_publication_temporary_paths",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0008_emby_deletion",
+      "breakpoints": true
     }
   ]
 }

@@ -638,7 +638,7 @@ export type PersonSyncJobDto = z.infer<typeof personSyncJobSchema>;
 export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("invalidate"),
-    resources: z.array(z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending"])),
+    resources: z.array(z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending", "library"])),
   }),
   z.object({ kind: z.literal("log"), log: logEntrySchema }),
   z.object({ kind: z.literal("person-sync"), job: personSyncJobSchema }),

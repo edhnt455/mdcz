@@ -7,10 +7,15 @@ import {
   UrlField,
 } from "../../config-form/FieldRenderer";
 import { useT } from "../../i18n";
+import { useSettingsSearch } from "../SettingsSearchContext";
+import { useSettingsServices } from "../SettingsServices";
 import { Subsection } from "../Subsection";
+import { EmbyDeletionPanel } from "./EmbyDeletionPanel";
 
 export function MediaServerSection() {
   const t = useT();
+  const services = useSettingsServices();
+  const search = useSettingsSearch();
   return (
     <>
       <Subsection title="Jellyfin" className="mb-6 last:mb-0">
@@ -27,6 +32,9 @@ export function MediaServerSection() {
         <TextField name="emby.userId" />
         <BoolField name="emby.refreshPersonAfterSync" />
         <BoolField name="emby.notifyAfterPublish" />
+        {services.embyDeletion && !search.hasActiveFilters ? (
+          <EmbyDeletionPanel service={services.embyDeletion} />
+        ) : null}
       </Subsection>
       <Subsection
         title={t.settings.subsections.sharedPersonSources}

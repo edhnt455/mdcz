@@ -15,11 +15,11 @@ import type { RuntimeLogService } from "./runtimeLogService";
 import type { ScrapeService } from "./scrapeService";
 
 /**
- * A file counts as complete once its size and modification time hold this long. Moving a file a torrent client is
+ * A video counts as complete once its size and modification time hold this long. Moving a file a torrent client is
  * still writing breaks the download, so this errs long; a downloader callback is the precise signal.
  */
 const STABILITY_DELAY_MS = 120_000;
-/** Downloads and cloud uploads arrive as bursts of events; one scan covers the burst. */
+/** Batch bursts without letting a continuous event stream postpone discovery. */
 const EVENT_DEBOUNCE_MS = 5_000;
 
 export interface CloudDriveChange {
@@ -82,7 +82,7 @@ class LibraryWatcher {
   // Undefined until the persisted snapshot is loaded; the first scan of a new library only records a baseline.
   private known?: Set<string>;
   private readonly unstable = new Map<string, { signature: string; since: number }>();
-  private readonly dirtyScopes = new Set<string>();
+  private readonly pendingScopes = new Map<string, number>();
   private timer?: ReturnType<typeof setTimeout>;
   private fsWatcher?: FSWatcher;
   private controller?: AbortController;
@@ -124,10 +124,16 @@ class LibraryWatcher {
   /** Scans `scope` (the source directory or a subtree of it) after `delayMs`, merging with any scan already due. */
   wake(scope: string, delayMs: number): void {
     if (this.closed) return;
-    this.dirtyScopes.add(scope);
+    this.pendingScopes.set(scope, Math.min(this.pendingScopes.get(scope) ?? Infinity, Date.now() + delayMs));
+    this.scheduleScan();
+  }
+
+  private scheduleScan(): void {
     if (this.inFlight) return;
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.run(), delayMs);
+    if (!this.pendingScopes.size) return;
+    const due = Math.min(...this.pendingScopes.values());
+    this.timer = setTimeout(() => this.run(), Math.max(0, due - Date.now()));
     this.timer.unref();
   }
 
@@ -144,11 +150,13 @@ class LibraryWatcher {
   }
 
   private run(): void {
-    const scopes = [...this.dirtyScopes];
-    this.dirtyScopes.clear();
+    const now = Date.now();
+    const scopes = [...this.pendingScopes].filter(([, due]) => due <= now).map(([scope]) => scope);
     // A scan of the whole source directory covers every subtree.
     const fullScan = scopes.includes(this.library.sourcePath);
     const scanScopes = fullScan ? [this.library.sourcePath] : scopes;
+    if (fullScan) this.pendingScopes.clear();
+    else for (const scope of scanScopes) this.pendingScopes.delete(scope);
     const controller = new AbortController();
     this.controller = controller;
     this.inFlight = (async () => {
@@ -161,15 +169,21 @@ class LibraryWatcher {
       .finally(() => {
         this.inFlight = undefined;
         if (this.closed) return;
-        if (this.dirtyScopes.size) {
-          this.wake([...this.dirtyScopes][0] ?? this.library.sourcePath, EVENT_DEBOUNCE_MS);
-          return;
-        }
-        if (!this.unstable.size) {
+        if (fullScan) {
           this.wake(this.library.sourcePath, this.library.scanIntervalMinutes * 60_000);
-          return;
         }
-        for (const scope of scanScopes) this.wake(scope, STABILITY_DELAY_MS);
+        const now = Date.now();
+        for (const scope of scanScopes) {
+          const scopeKey = filesystemPathKey(path.resolve(scope));
+          let due = Infinity;
+          for (const [key, seen] of this.unstable) {
+            if (key !== scopeKey && !key.startsWith(`${scopeKey}${path.sep}`)) continue;
+            const stableAt = seen.since + STABILITY_DELAY_MS;
+            due = Math.min(due, stableAt > now ? stableAt : now + STABILITY_DELAY_MS);
+          }
+          if (Number.isFinite(due)) this.wake(scope, due - now);
+        }
+        this.scheduleScan();
       });
   }
 
@@ -241,7 +255,12 @@ class LibraryWatcher {
         if (known.has(key) || this.sources.has(key)) continue;
         const seen = this.unstable.get(key);
         if (seen?.signature !== signature) this.unstable.set(key, { signature, since: now });
-        else if (now - seen.since >= STABILITY_DELAY_MS) stable.push({ key, ref });
+        if (
+          path.extname(ref.relativePath).toLowerCase() === ".strm" ||
+          (seen?.signature === signature && now - seen.since >= STABILITY_DELAY_MS)
+        ) {
+          stable.push({ key, ref });
+        }
       }
       if (!stable.length) return;
       const maintenance = await this.deps.maintenance.getActiveSession();

@@ -250,6 +250,12 @@ export const api: ServerApiContract = {
   integrations: {
     status: () => trpcQuery("integrations.status"),
   },
+  embyDeletion: {
+    status: () => trpcQuery("embyDeletion.status"),
+    configure: (input) => trpcMutation("embyDeletion.configure", input),
+    rotateSecret: () => trpcMutation("embyDeletion.rotateSecret"),
+    reconcile: () => trpcMutation("embyDeletion.reconcile"),
+  },
   mediaRoots: {
     ensurePath: (input) => trpcMutation("mediaRoots.ensurePath", input),
     list: () => trpcQuery("mediaRoots.list"),

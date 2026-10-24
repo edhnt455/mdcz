@@ -4,6 +4,7 @@ import type { AuthService } from "./services/authService";
 import type { AutomationService } from "./services/automationService";
 import type { BrowserService } from "./services/browserService";
 import type { ServerConfigService } from "./services/configService";
+import type { EmbyDeletionService } from "./services/embyDeletionService";
 import type { LibraryService } from "./services/libraryService";
 import type { LibraryWatchService } from "./services/libraryWatchService";
 import type { MaintenanceService } from "./services/maintenanceService";
@@ -25,6 +26,7 @@ export interface ServerServices {
   automation: AutomationService;
   auth: AuthService;
   browser: BrowserService;
+  embyDeletion: EmbyDeletionService;
   config: ServerConfigService;
   libraries: MediaLibraryService;
   libraryWatch: LibraryWatchService;

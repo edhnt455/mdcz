@@ -31,6 +31,10 @@ import type { ServerPersistenceService } from "./persistenceService";
 export class LibraryService {
   private readonly availabilityChecker = new LibraryAvailabilityChecker();
 
+  invalidateAvailability(): void {
+    this.availabilityChecker.clear();
+  }
+
   constructor(
     private readonly persistence: ServerPersistenceService,
     private readonly mediaRoots: MediaRootService,

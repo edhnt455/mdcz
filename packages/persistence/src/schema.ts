@@ -290,7 +290,42 @@ export const publicationTemporaryPaths = sqliteTable("publication_temporary_path
   restoreTo: text("restore_to"),
 });
 
+export const embyDeletionSettings = sqliteTable("emby_deletion_settings", {
+  id: integer("id").primaryKey(),
+  mode: text("mode").$type<"off" | "observe" | "delete">().notNull().default("off"),
+  serverId: text("server_id").notNull().default(""),
+  librariesJson: text("libraries_json").notNull().default("[]"),
+  secretHash: text("secret_hash"),
+});
+
+export const embyDeletionEvents = sqliteTable(
+  "emby_deletion_events",
+  {
+    id: text("id").primaryKey(),
+    dedupKey: text("dedup_key").notNull().unique(),
+    serverId: text("server_id").notNull(),
+    itemId: text("item_id").notNull(),
+    eventAt: integer("event_at"),
+    receivedAt: integer("received_at").notNull(),
+    path: text("path"),
+    libraryId: text("library_id"),
+    outputPath: text("output_path"),
+    fileId: text("file_id"),
+    fileUpdatedAt: integer("file_updated_at"),
+    movieId: text("movie_id"),
+    status: text("status").$type<"pending" | "completed" | "ignored" | "needs_review">().notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    missingSince: integer("missing_since"),
+    nextAttemptAt: integer("next_attempt_at").notNull(),
+    result: text("result"),
+    completedAt: integer("completed_at"),
+  },
+  (table) => [index("emby_deletion_events_due_idx").on(table.status, table.nextAttemptAt)],
+);
+
 export const schema = {
+  embyDeletionSettings,
+  embyDeletionEvents,
   mediaRoots,
   mediaLibraries,
   scanTasks,

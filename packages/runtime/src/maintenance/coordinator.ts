@@ -515,6 +515,10 @@ export class MaintenanceSessionCoordinator {
     return this.session?.snapshot() ?? null;
   }
 
+  get hasUnfinishedSession(): boolean {
+    return Boolean(this.session?.isActive());
+  }
+
   async rerunDirectory(sessionId: string): Promise<MaintenanceRunHandle<MaintenancePreviewBatch>> {
     if (this.session?.id !== sessionId || !this.directoryDefinition) {
       throw new Error(`Maintenance directory session not found: ${sessionId}`);

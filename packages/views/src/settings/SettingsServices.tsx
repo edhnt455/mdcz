@@ -1,6 +1,7 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
 import type { WatermarkPreviewInput, WatermarkPreviewResult } from "@mdcz/shared/posterBadges";
+import type { ServerApiContract } from "@mdcz/shared/serverApi";
 import type {
   ApiKeyDto,
   IntegrationStatusResponse,
@@ -67,6 +68,7 @@ export interface SettingsServices {
   browsePath: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<SettingsBrowseResult>;
   getPathSuggestions?: (kind: "file" | "directory") => SettingsPathSuggestion[];
   integrations?: SettingsIntegrationServices;
+  embyDeletion?: ServerApiContract["embyDeletion"] & { origin: string };
   isServer?: boolean;
   settingsTarget?: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;

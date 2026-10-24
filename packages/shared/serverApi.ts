@@ -1,4 +1,5 @@
 import type { Configuration } from "./config";
+import type { EmbyDeletionSettings, EmbyDeletionStatus } from "./embyDeletion";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
   MediaLibraryDto,
@@ -213,6 +214,12 @@ export interface ServerApiContract {
   };
   integrations: {
     status(): Promise<IntegrationStatusResponse>;
+  };
+  embyDeletion: {
+    status(): Promise<EmbyDeletionStatus>;
+    configure(input: EmbyDeletionSettings): Promise<EmbyDeletionStatus>;
+    rotateSecret(): Promise<{ token: string }>;
+    reconcile(): Promise<{ queued: number }>;
   };
   mediaRoots: {
     ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;
