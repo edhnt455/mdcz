@@ -121,13 +121,8 @@ export const resolvePublicationAssetLayout = async (input: {
     }
   }
 
-  const sceneSources = input.crawlerData?.scene_images ?? [];
-  if (
-    config.download.downloadSceneImages &&
-    input.assetDecisions?.sceneImages !== "preserve" &&
-    sceneSources.length > 0
-  ) {
-    const targetCount = Math.min(config.aggregation.behavior.maxSceneImages, sceneSources.length);
+  if (config.download.downloadSceneImages && input.assetDecisions?.sceneImages !== "preserve") {
+    const targetCount = config.aggregation.behavior.maxSceneImages;
     for (let index = 0; index < targetCount; index++) {
       for (const ext of imageExtensions) {
         const name = join(

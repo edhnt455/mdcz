@@ -1,10 +1,13 @@
-import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { RuntimeDownloadNetworkClient, RuntimeProbeResult } from "@mdcz/runtime";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
-import { DownloadManager, downloadCrawlerAssets } from "@mdcz/runtime/scrape";
+import { resolvePublicationAssetLayout } from "@mdcz/runtime/publication/assetLayout";
+import { prepareMovieArtifacts } from "@mdcz/runtime/publication/movieArtifacts";
+import { WriteOutput } from "@mdcz/runtime/publication/WriteOutput";
+import { DirectoryInventory, DownloadManager, downloadCrawlerAssets, NfoGenerator } from "@mdcz/runtime/scrape";
 import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
 import { SceneImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/SceneImageAssetDownloader";
 import { TrailerAssetDownloader } from "@mdcz/runtime/scrape/download/assets/TrailerAssetDownloader";
@@ -986,41 +989,203 @@ describe("DownloadManager keep flags", () => {
     }
   });
 
-  it("keeps the scene image set with the most successful downloads when no set completes", async () => {
-    const { root, manager, networkClient } = await createSubject();
-    mockValid();
-    networkClient.download.mockImplementation(async (url, outputPath) => {
-      if (url.endsWith("set-a-3.jpg") || url.endsWith("set-b-2.jpg") || url.endsWith("set-b-3.jpg")) {
-        throw new Error("Request timeout");
-      }
-      return writeDownloadedFile(outputPath, url);
-    });
-    const config = sequentialSceneSet(3);
-    const assets = await manager.downloadAll(
-      root,
-      createCrawlerData({
-        scene_images: [
-          "https://best.example.com/set-a-1.jpg",
-          "https://best.example.com/set-a-2.jpg",
-          "https://best.example.com/set-a-3.jpg",
-        ],
-      }),
-      config,
+  it("publishes selected scene sets within declared destinations and keeps metadata aligned", async () => {
+    const cases = [
       {
-        scene_images: [
-          [
-            "https://fallback.example.com/set-b-1.jpg",
-            "https://fallback.example.com/set-b-2.jpg",
-            "https://fallback.example.com/set-b-3.jpg",
-          ],
-        ],
+        preferred: 20,
+        preferredSuccess: 14,
+        fallback: 21,
+        fallbackSuccess: 21,
+        limit: 30,
+        selected: "fallback",
+        count: 21,
       },
-    );
-    await expectSceneImages(root, assets, [
-      "https://best.example.com/set-a-1.jpg",
-      "https://best.example.com/set-a-2.jpg",
-    ]);
-    await expect(access(scenePath(root, 3))).rejects.toThrow();
+      { preferred: 3, preferredSuccess: 2, fallback: 3, fallbackSuccess: 1, limit: 3, selected: "preferred", count: 2 },
+      {
+        preferred: 2,
+        preferredSuccess: 1,
+        fallback: 5,
+        fallbackSuccess: 5,
+        limit: 3,
+        selected: "fallback",
+        count: 3,
+        folder: "scenes",
+        format: "webp" as const,
+      },
+      { preferred: 0, preferredSuccess: 0, fallback: 3, fallbackSuccess: 3, limit: 4, selected: "fallback", count: 3 },
+      { preferred: 2, preferredSuccess: 1, fallback: 3, fallbackSuccess: 3, limit: 0, selected: "none", count: 0 },
+      {
+        preferred: 2,
+        preferredSuccess: 1,
+        fallback: 3,
+        fallbackSuccess: 3,
+        limit: 4,
+        selected: "none",
+        count: 0,
+        enabled: false,
+      },
+      { preferred: 0, preferredSuccess: 0, fallback: 0, fallbackSuccess: 0, limit: 4, selected: "none", count: 0 },
+      {
+        preferred: 2,
+        preferredSuccess: 1,
+        fallback: 3,
+        fallbackSuccess: 3,
+        limit: 4,
+        selected: "existing",
+        count: 1,
+        preserve: true,
+      },
+    ];
+
+    for (const testCase of cases) {
+      vi.restoreAllMocks();
+      const { root, manager, networkClient } = await createSubject(
+        testCase.preserve ? { "extrafanart/fanart1.jpg": "existing-scene" } : {},
+      );
+      const folder = testCase.folder ?? "extrafanart";
+      const format = testCase.format ?? "jpeg";
+      const extension = format === "webp" ? "webp" : "jpg";
+      vi.spyOn(imageUtils, "validateImage").mockResolvedValue({ valid: true, width: 640, height: 360, format });
+      networkClient.download.mockImplementation(async (url, outputPath) => {
+        const successCount = url.includes("preferred") ? testCase.preferredSuccess : testCase.fallbackSuccess;
+        if (Number.parseInt(url.split("/").at(-1) ?? "", 10) > successCount) throw new Error("Request timeout");
+        return writeDownloadedFile(outputPath, url);
+      });
+      const urls = (source: string, count: number) =>
+        Array.from({ length: count }, (_, index) => `https://${source}.example.com/${index + 1}.jpg`);
+      const data = createCrawlerData({ scene_images: urls("preferred", testCase.preferred) });
+      const config = sequentialSceneSet(testCase.limit);
+      config.paths.sceneImagesFolder = folder;
+      config.download.downloadSceneImages = testCase.enabled ?? true;
+      const assetDecisions = testCase.preserve ? { sceneImages: "preserve" as const } : undefined;
+      const sourcePath = join(root, "ABC-123.mp4");
+      await writeFile(sourcePath, "video");
+      const inventory = new DirectoryInventory();
+      const layout = {
+        mode: "preserve" as const,
+        sourceVideoPath: sourcePath,
+        targetVideoPath: sourcePath,
+        outputDir: root,
+        metadataDir: root,
+        existingMetadataDir: root,
+        nfoPath: join(root, "ABC-123.nfo"),
+        sidecars: [],
+      };
+      const assetLayout = await resolvePublicationAssetLayout({
+        layout,
+        config,
+        crawlerData: data,
+        assetDecisions,
+        inventory,
+      });
+      if (!config.download.downloadSceneImages || testCase.preserve || testCase.limit === 0) {
+        expect(assetLayout.staged.size).toBe(0);
+      } else {
+        const lastName = join(
+          folder,
+          folder === "extrafanart"
+            ? `fanart${testCase.limit}.${extension}`
+            : `scene-${String(testCase.limit).padStart(3, "0")}.${extension}`,
+        );
+        expect(assetLayout.staged.get(lastName)).toBe(join(root, lastName));
+      }
+      const stagingDir = join(root, ".mdcz-staging-scenes");
+      await mkdir(stagingDir);
+      const downloaded = await downloadCrawlerAssets({
+        config,
+        crawlerData: data,
+        downloadManager: manager,
+        fileInfo: {
+          filePath: sourcePath,
+          fileName: "ABC-123",
+          extension: ".mp4",
+          number: "ABC-123",
+          isSubtitled: false,
+        },
+        outputDir: stagingDir,
+        existingAssetDir: root,
+        inventory,
+        imageAlternatives: { scene_images: [urls("fallback", testCase.fallback)] },
+        callbacks: { assetDecisions },
+      });
+      const expectedUrls =
+        testCase.selected === "fallback" || testCase.selected === "preferred"
+          ? urls(testCase.selected, testCase.count)
+          : testCase.preserve
+            ? data.scene_images
+            : [];
+      if (config.download.downloadSceneImages) expect(downloaded.crawlerData.scene_images).toEqual(expectedUrls);
+      expect(downloaded.assets.sceneImages).toHaveLength(testCase.count);
+      if (testCase.selected === "none" || testCase.preserve) expect(networkClient.download).not.toHaveBeenCalled();
+
+      const publicationInput = {
+        inventory,
+        roots: [{ id: "root", hostPath: root }],
+        members: [
+          { source: { rootId: "root", relativePath: "ABC-123.mp4" }, fileId: "movie-file", layout, assetLayout },
+        ],
+        stagingDir,
+        downloadedAssets: downloaded.assets,
+        actorPhotoPaths: [],
+        assetDecisions,
+        nfoNaming: "filename" as const,
+        remoteData: downloaded.crawlerData,
+        writeNfo: async (
+          assets: Awaited<ReturnType<DownloadManager["downloadAll"]>>,
+          writeFile: (path: string, content: string) => Promise<void>,
+        ) =>
+          new NfoGenerator().writeNfo(layout.nfoPath, downloaded.crawlerData, {
+            assets,
+            nfoNaming: "filename",
+            writeFile,
+          }),
+      };
+      const publication = await prepareMovieArtifacts(publicationInput);
+      const expectedPaths = Array.from({ length: testCase.count }, (_, index) =>
+        join(
+          root,
+          folder,
+          folder === "extrafanart"
+            ? `fanart${index + 1}.${extension}`
+            : `scene-${String(index + 1).padStart(3, "0")}.${extension}`,
+        ),
+      );
+      expect(publication.assets.sceneImages).toEqual(expectedPaths);
+      expect(publication.movieAssets.filter((asset) => asset.kind === "scene" && asset.type === "local")).toEqual(
+        expectedPaths.map((path) => ({
+          type: "local",
+          kind: "scene",
+          file: { rootId: "root", relativePath: relative(root, path).replaceAll("\\", "/") },
+        })),
+      );
+      expect(publication.artifacts).toHaveLength(1 + (testCase.preserve ? 0 : testCase.count));
+      const commit = vi.fn();
+      await new WriteOutput().install(publication.artifacts, {
+        commit,
+        protectedMediaFiles: publication.protectedMediaFiles,
+      });
+      expect(commit).toHaveBeenCalledOnce();
+      for (const [index, path] of expectedPaths.entries()) {
+        await expect(readFile(path, "utf8")).resolves.toBe(
+          testCase.preserve ? "existing-scene" : `downloaded:${expectedUrls[index]}`,
+        );
+      }
+      if (testCase.count) expect(await readdir(join(root, folder))).toHaveLength(testCase.count);
+      else await expect(access(join(root, folder))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(
+        (await readdir(stagingDir, { recursive: true, withFileTypes: true })).filter((entry) => entry.isFile()),
+      ).toEqual([]);
+      const nfo = await readFile(layout.nfoPath, "utf8");
+      for (const url of expectedUrls) expect(nfo).toContain(url);
+
+      const undeclared = join(stagingDir, folder, "undeclared.jpg");
+      await expect(
+        prepareMovieArtifacts({
+          ...publicationInput,
+          downloadedAssets: { downloaded: [undeclared], sceneImages: [undeclared] },
+        }),
+      ).rejects.toThrow("Publication asset has no declared destination");
+    }
   });
 
   it("persists image host failures and opens cooldown on the third retryable HTTP failure", async () => {
