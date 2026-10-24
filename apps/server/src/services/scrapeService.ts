@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
@@ -6,11 +7,11 @@ import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   type ActorImageService,
   type AggregationService,
-  applyPosterTagBadgesIfNeeded,
+  applyImageWatermarks,
   type ImageHostCooldownStore,
+  ImageWatermarkService,
   NfoGenerator,
   PosterCropService,
-  PosterWatermarkService,
   type PrepareScrapeItem,
   ScrapeRunner,
 } from "@mdcz/runtime/scrape";
@@ -36,6 +37,7 @@ import type {
   TaskEventDto,
 } from "@mdcz/shared/serverDtos";
 import type { TaskEventBus } from "../taskEvents";
+import { resolveServerBundledMappingDirectory } from "../translationMappingStore";
 import type { ServerConfigService } from "./configService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -66,7 +68,7 @@ export class ScrapeService {
   private readonly mappingStore?: TranslationMappingStore;
   private readonly aggregationService?: ScrapeServiceResources["aggregationService"];
   private readonly prepareScrapeItem?: PrepareScrapeItem;
-  private posterWatermarkService: PosterWatermarkService | null = null;
+  private imageWatermarkService: ImageWatermarkService | null = null;
   private runnerInstance: ScrapeRunner | null = null;
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
   private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,8 +105,11 @@ export class ScrapeService {
     this.runnerInitPromise ??= (async () => {
       const state = await this.persistence.initialize();
       if (this.closed) throw new Error("Scrape queue is closing");
-      this.posterWatermarkService ??= new PosterWatermarkService({ dataDir: this.config.runtimePaths.dataDir });
-      const posterWatermarkService = this.posterWatermarkService;
+      this.imageWatermarkService ??= new ImageWatermarkService({
+        dataDir: this.config.runtimePaths.dataDir,
+        builtinDirectory: join(dirname(resolveServerBundledMappingDirectory()), "watermark"),
+      });
+      const imageWatermarkService = this.imageWatermarkService;
       this.runnerInstance = new ScrapeRunner({
         persistence: {
           scrapeRuns: state.repositories.scrapeRuns,
@@ -141,20 +146,22 @@ export class ScrapeService {
           crawlerData,
           fileInfo,
           localState,
+          videoMeta,
           signal,
           signalService,
         }) =>
-          await applyPosterTagBadgesIfNeeded({
+          await applyImageWatermarks({
             assets,
             config: configuration,
             crawlerData,
             dataDir: this.config.runtimePaths.dataDir,
             fileInfo,
             localState,
+            videoMeta,
             logger: runtimeLoggerService.getLogger("ScrapeRunner"),
             signal,
             signalService,
-            watermarkService: posterWatermarkService,
+            watermarkService: imageWatermarkService,
           }),
         platform: "server",
         logger: runtimeLoggerService.getLogger("ScrapeRunner"),

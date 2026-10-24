@@ -89,6 +89,7 @@ export interface FileScraperDependencies {
     crawlerData: CrawlerData;
     fileInfo: FileInfo;
     localState?: NfoLocalState;
+    videoMeta?: VideoMeta;
     signal?: AbortSignal;
     signalService: Pick<RuntimeScrapeSignalService, "showLogText" | "setProgress">;
   }): Promise<DownloadedAssets>;
@@ -478,6 +479,7 @@ export class FileScraper {
                 crawlerData: resolvedCrawlerData,
                 fileInfo,
                 localState: first.localState,
+                videoMeta: first.videoMeta,
                 signal,
                 signalService,
               })

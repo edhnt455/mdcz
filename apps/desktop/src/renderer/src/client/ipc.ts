@@ -16,6 +16,7 @@ import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
 import type { PendingConfirmUncensoredInput, PendingRetryInput } from "@mdcz/shared/pending";
+import type { WatermarkPreviewInput } from "@mdcz/shared/posterBadges";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type {
   LibraryListInput,
@@ -51,6 +52,7 @@ export const ipc = {
     playMedia: (path: LocalFileTarget) => client[IpcChannel.App_PlayMedia]({ path }),
     showItemInFolder: (path: LocalFileTarget) => client[IpcChannel.App_ShowItemInFolder]({ path }),
     ensureWatermarkDirectory: () => client[IpcChannel.App_EnsureWatermarkDirectory](undefined),
+    previewWatermark: (input: WatermarkPreviewInput) => client[IpcChannel.App_PreviewWatermark](input),
     openWatermarkDirectory: () => client[IpcChannel.App_OpenWatermarkDirectory](undefined),
     relaunch: () => client[IpcChannel.App_Relaunch](undefined),
     syncTitleBarTheme: (isDark: boolean) => client[IpcChannel.App_SyncTitleBarTheme]({ isDark }),

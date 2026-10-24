@@ -28,6 +28,7 @@ const createSettingsServices = (queryClient: QueryClient): SettingsServices => (
   checkCookies: ipc.network.checkCookies,
   decrementInFlightSaves: useSettingsSavingStore.getState().decrementInFlight,
   ensureWatermarkDirectory: ipc.app.ensureWatermarkDirectory,
+  previewWatermark: ipc.app.previewWatermark,
   getInFlightSaves: () => useSettingsSavingStore.getState().inFlight,
   incrementInFlightSaves: useSettingsSavingStore.getState().incrementInFlight,
   listCrawlerSites: async () => {

@@ -1,9 +1,11 @@
 import { arch } from "node:os";
+import { join } from "node:path";
 import type { ServiceContainer } from "@main/container";
-import { ensureWatermarkDirectory } from "@mdcz/runtime/scrape";
+import { ensureWatermarkDirectory, ImageWatermarkService } from "@mdcz/runtime/scrape";
 import { resolvePlayableMediaTarget } from "@mdcz/runtime/scrape/utils/strm";
 import { IpcChannel } from "@mdcz/shared/IpcChannel";
 import type { IpcRouterContract } from "@mdcz/shared/ipcContract";
+import { watermarkPreviewInputSchema } from "@mdcz/shared/posterBadges";
 import { app, shell } from "electron";
 import { getDesktopUserDataPath } from "../../appIdentity";
 import { resolveLocalFileTarget } from "../localFileTarget";
@@ -38,6 +40,7 @@ export const createAppHandlers = (
   | typeof IpcChannel.App_PlayMedia
   | typeof IpcChannel.App_ShowItemInFolder
   | typeof IpcChannel.App_EnsureWatermarkDirectory
+  | typeof IpcChannel.App_PreviewWatermark
   | typeof IpcChannel.App_OpenWatermarkDirectory
   | typeof IpcChannel.App_Relaunch
   | typeof IpcChannel.App_SyncTitleBarTheme
@@ -83,6 +86,15 @@ export const createAppHandlers = (
   [IpcChannel.App_EnsureWatermarkDirectory]: t.procedure.action(async () => ({
     path: await ensureWatermarkDirectory(getDesktopUserDataPath()),
   })),
+  [IpcChannel.App_PreviewWatermark]: t.procedure.input(watermarkPreviewInputSchema).action(
+    async ({ input }) =>
+      await new ImageWatermarkService({
+        dataDir: getDesktopUserDataPath(),
+        builtinDirectory: app.isPackaged
+          ? join(process.resourcesPath, "watermark")
+          : join(app.getAppPath(), "../../packages/runtime/resources/watermark"),
+      }).preview(input),
+  ),
   [IpcChannel.App_OpenWatermarkDirectory]: t.procedure.action(async () => {
     const directoryPath = await ensureWatermarkDirectory(getDesktopUserDataPath());
     const errorMessage = await shell.openPath(directoryPath);

@@ -1,4 +1,5 @@
 import { defaultConfiguration } from "@mdcz/shared/config";
+import type { WatermarkPreviewInput } from "@mdcz/shared/posterBadges";
 import { FIELD_REGISTRY } from "@mdcz/shared/settingsRegistry";
 import { OrderedSiteFieldEditor, ServerPathField } from "@mdcz/views/config-form";
 import {
@@ -21,6 +22,7 @@ import {
   SettingsServicesProvider,
   TranslateTopLevelSection,
 } from "@mdcz/views/settings";
+import { WatermarkSettings } from "@mdcz/views/settings/WatermarkSettings";
 import { type ComponentProps, type ReactNode, useMemo } from "react";
 import { type FieldValues, FormProvider, useForm } from "react-hook-form";
 import { expect, test, vi } from "vitest";
@@ -33,6 +35,7 @@ const baseSettingsServices = {
   browsePath: vi.fn(async () => ({})),
   checkCookies: vi.fn(async () => ({ results: [] })),
   decrementInFlightSaves: vi.fn(),
+  previewWatermark: vi.fn(async () => ({ dataUrl: "data:image/png;base64,", warnings: [] })),
   ensureWatermarkDirectory: vi.fn(async () => ({ path: "" })),
   getInFlightSaves: vi.fn(() => 0),
   incrementInFlightSaves: vi.fn(),
@@ -99,6 +102,7 @@ function SettingsSurfaceHarness({
         downloadPoster: true,
         generateNfo: true,
         tagBadges: true,
+        tagBadgeImageOverrides: true,
       },
       titleRepair: {
         ...defaultConfiguration.titleRepair,
@@ -500,44 +504,66 @@ test("NFO settings render the configured enum list only while NFO generation is 
     .toBeVisible();
 });
 
-test("poster badge controls follow download and badge visibility gates", async () => {
-  const posterDisabled = await render(
-    <FormHarness values={{ download: { downloadPoster: false, tagBadges: true } }}>
-      <AssetDownloadsSection />
-    </FormHarness>,
-  );
-  await expect.element(posterDisabled.getByText("为封面添加标签角标")).not.toBeInTheDocument();
-  await expect.element(posterDisabled.getByText("角标类型", { exact: true })).not.toBeInTheDocument();
-  await expect.element(posterDisabled.getByText("角标位置", { exact: true })).not.toBeInTheDocument();
-  await expect.element(posterDisabled.getByText("覆盖角标图片", { exact: true })).not.toBeInTheDocument();
+test("watermark controls support thumbnail-only downloads and follow the watermark switch", async () => {
+  for (const [downloadPoster, tagBadges] of [
+    [false, true],
+    [true, false],
+    [true, true],
+  ]) {
+    const screen = await render(
+      <FormHarness
+        values={{
+          download: { ...defaultConfiguration.download, downloadPoster, tagBadges, tagBadgeImageOverrides: true },
+        }}
+      >
+        <AssetDownloadsSection />
+      </FormHarness>,
+    );
+    await expect.element(screen.getByText("启用图片水印", { exact: true })).toBeVisible();
+    for (const label of ["角标类型", "角标位置", "覆盖角标图片", "自定义水印目录"]) {
+      if (tagBadges) await expect.element(screen.getByText(label, { exact: true })).toBeVisible();
+      else await expect.element(screen.getByText(label, { exact: true })).not.toBeInTheDocument();
+    }
+    await screen.unmount();
+  }
+});
 
-  const badgeOff = await render(
-    <FormHarness values={{ download: { downloadPoster: true, tagBadges: false } }}>
-      <AssetDownloadsSection />
+test("watermark settings preview responds to edits and exposes loading, error and disabled states", async () => {
+  const previewWatermark = vi.fn(async (_input: WatermarkPreviewInput) => ({
+    dataUrl:
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j2l8AAAAASUVORK5CYII=",
+    warnings: [],
+  }));
+  const services = createSettingsServices({ previewWatermark });
+  const screen = await render(
+    <FormHarness services={services} values={{ download: { ...defaultConfiguration.download, tagBadges: true } }}>
+      <WatermarkSettings />
     </FormHarness>,
   );
-  await expect.element(badgeOff.getByText("为封面添加标签角标")).toBeVisible();
-  await expect.element(badgeOff.getByText("角标类型", { exact: true })).not.toBeInTheDocument();
-  await expect.element(badgeOff.getByText("角标位置", { exact: true })).not.toBeInTheDocument();
-  await expect.element(badgeOff.getByText("覆盖角标图片", { exact: true })).not.toBeInTheDocument();
-
-  const badgeOn = await render(
-    <FormHarness
-      values={{
-        download: {
-          downloadPoster: true,
-          tagBadges: true,
-          tagBadgeTypes: ["subtitle", "leak"],
-          tagBadgePosition: "topRight",
-        },
-      }}
-    >
-      <AssetDownloadsSection />
-    </FormHarness>,
+  await expect.element(screen.getByRole("img", { name: "水印预览" })).toBeVisible();
+  expect(previewWatermark).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      target: "poster",
+      showAll: false,
+      settings: expect.objectContaining({ tagBadgeStyle: "mdcx" }),
+    }),
   );
-  await expect.element(badgeOn.getByText("角标类型", { exact: true })).toBeVisible();
-  await expect.element(badgeOn.getByText("角标位置", { exact: true })).toBeVisible();
-  await expect.element(badgeOn.getByText("覆盖角标图片", { exact: true })).toBeVisible();
-  await expect.element(badgeOn.getByText("中字")).toBeVisible();
-  await expect.element(badgeOn.getByText("流出")).toBeVisible();
+  await screen.getByRole("button", { name: "背景图（fanart）", exact: true }).click();
+  await screen.getByLabelText("显示全部水印").click();
+  await expect.poll(() => previewWatermark.mock.lastCall?.[0]).toMatchObject({ target: "fanart", showAll: true });
+  const scaleField = screen.container.querySelector('[data-field-name="download.tagBadgeScale"]');
+  if (!scaleField) throw new Error("Scale field missing");
+  const scale = page.elementLocator(scaleField).getByRole("spinbutton");
+  await scale.fill("0");
+  await screen.getByText("固定位置", { exact: true }).click();
+  await expect.element(screen.getByText("请输入有效的水印设置。")).toBeVisible();
+  await expect.element(scale).toBeVisible();
+  previewWatermark.mockRejectedValueOnce(new Error("broken custom image"));
+  await scale.fill("10");
+  await screen.getByText("固定位置", { exact: true }).click();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("broken custom image");
+  const toggle = screen.container.querySelector('[data-field-name="download.tagBadges"]');
+  if (!toggle) throw new Error("Watermark switch missing");
+  await page.elementLocator(toggle).getByRole("switch").click();
+  await expect.element(screen.getByRole("region", { name: "水印预览" })).not.toBeInTheDocument();
 });

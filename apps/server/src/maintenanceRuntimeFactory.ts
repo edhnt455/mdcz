@@ -1,3 +1,4 @@
+import { dirname, join } from "node:path";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
@@ -5,9 +6,10 @@ import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/r
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
   type ActorImageService,
-  applyPosterTagBadgesIfNeeded,
+  applyImageWatermarks,
   DownloadManager,
   FileOrganizer,
+  ImageWatermarkService,
   NfoGenerator,
   type SiteResultSink,
   TranslateService,
@@ -15,6 +17,7 @@ import {
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type { ServerConfigService } from "./services/configService";
+import { resolveServerBundledMappingDirectory } from "./translationMappingStore";
 
 export interface ServerMaintenanceRuntimeDependencies {
   config: ServerConfigService;
@@ -31,6 +34,10 @@ export interface ServerMaintenanceRuntimeDependencies {
 
 export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDependencies): MaintenanceRuntime => {
   const logger = runtimeLoggerService.getLogger("maintenance");
+  const watermarkService = new ImageWatermarkService({
+    dataDir: deps.config.runtimePaths.dataDir,
+    builtinDirectory: join(dirname(resolveServerBundledMappingDirectory()), "watermark"),
+  });
   return new MaintenanceRuntime({
     actorImageService: deps.actorImageService,
     actorSourceProvider: deps.actorSourceProvider,
@@ -48,11 +55,12 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
     networkPolicyClient: deps.networkClient,
     nfoGenerator: new NfoGenerator(),
     postProcessAssets: async ({ configuration, ...input }) =>
-      await applyPosterTagBadgesIfNeeded({
+      await applyImageWatermarks({
         ...input,
         config: configuration,
         dataDir: deps.config.runtimePaths.dataDir,
         logger,
+        watermarkService,
       }),
     signalService: {
       setProgress: () => undefined,

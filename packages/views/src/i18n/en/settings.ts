@@ -74,23 +74,37 @@ export const settings = {
   } as Record<NfoField, string>,
   nfoFieldOption: (field: string, label: string) => `${field} (${label})`,
   translateFields: { title: "Title", plot: "Plot", genres: "Genres" } as Record<TranslationField, string>,
-  badgeOverrides: {
-    openFolder: "Open folder",
-    createDirFailed: (error: string) => `Failed to create the badge image directory: ${error}`,
-    openDirFailed: (error: string) => `Failed to open the badge image directory: ${error}`,
-    title: "Override badge images",
-    description:
-      "Put custom images in the directory below. Images with a matching file name take priority; otherwise the built-in badge is used.",
-    directory: "Directory",
-    badge: "Badge",
-    fileNames: "Accepted file names",
-    formats: (formats: string) => `Supported formats: ${formats}.`,
-    ratio: (ratio: string) =>
-      `Recommended ratio: ${ratio}. Badge height is about 8% of the poster's short side, clamped to 28–64px.`,
-    scaling:
-      "Images are scaled proportionally to fit the badge slot and never stretched; square images are placed left-aligned at slot height × slot height.",
-    advice:
-      "Transparent PNG or WebP is recommended. Oversized images are scaled down; broken or unreadable images fall back to the built-in badge.",
+  watermark: {
+    styles: {
+      mdcx: "MDCx · PNG badges",
+      ribbon: "Built-in ribbons",
+    },
+    targets: {
+      poster: "Poster",
+      thumb: "Thumbnail",
+      fanart: "Fanart",
+    },
+    layouts: {
+      horizontal: "Horizontal",
+      clockwise: "Clockwise",
+      counterclockwise: "Counterclockwise",
+    },
+    fixedPositions: "Fixed positions",
+    fixedHint:
+      "Fixed positions take priority; automatic watermarks follow the layout. Watermarks sharing a corner are arranged inward.",
+    auto: "Automatic",
+    preview: "Watermark preview",
+    previewTarget: "Preview image type",
+    showAll: "Show all watermarks",
+    loading: "Rendering preview…",
+    failed: "Preview failed",
+    invalid: "Enter valid settings to preview.",
+    previewHint:
+      "Sample: subtitles + cracked + 4K, filtered by enabled types. Show all is preview-only. Uses the same renderer as downloaded images.",
+    customHelp: "Custom image filenames",
+    customHint:
+      "PNG, WebP and JPEG are supported. Images keep their proportions. Missing types use the selected built-in style; unreadable images report an error.",
+    defaultDirectory: "Open / copy the default directory",
   },
   gotIt: "Got it",
   namingPreview: {

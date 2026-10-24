@@ -1,6 +1,7 @@
 import { IpcChannel } from "../IpcChannel";
 import type { AppInfo, AppUpdateStatus, IpcProcedure, WatermarkDirectoryInfo } from "../ipcTypes";
 import type { LocalFileTarget } from "../mediaRef";
+import type { WatermarkPreviewInput, WatermarkPreviewResult } from "../posterBadges";
 
 export type AppIpcContract = {
   [IpcChannel.App_Info]: IpcProcedure<void, AppInfo>;
@@ -8,6 +9,7 @@ export type AppIpcContract = {
   [IpcChannel.App_PlayMedia]: IpcProcedure<{ path: LocalFileTarget }, { success: true }>;
   [IpcChannel.App_ShowItemInFolder]: IpcProcedure<{ path: LocalFileTarget }, { success: true }>;
   [IpcChannel.App_EnsureWatermarkDirectory]: IpcProcedure<void, WatermarkDirectoryInfo>;
+  [IpcChannel.App_PreviewWatermark]: IpcProcedure<WatermarkPreviewInput, WatermarkPreviewResult>;
   [IpcChannel.App_OpenWatermarkDirectory]: IpcProcedure<void, { success: true }>;
   [IpcChannel.App_Relaunch]: IpcProcedure<void, { success: true }>;
   [IpcChannel.App_SyncTitleBarTheme]: IpcProcedure<{ isDark: boolean }, { success: true }>;

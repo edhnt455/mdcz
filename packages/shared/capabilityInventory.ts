@@ -39,6 +39,7 @@ const CONFIG_TRANSFER_REASON = "Desktop uses native file dialogs; server transfe
 const SCRAPE_EXECUTION_REASON = "Desktop runs an in-process session; server controls persisted scrape tasks.";
 
 export const CROSS_HOST_CAPABILITIES = [
+  { desktop: IpcChannel.App_PreviewWatermark, server: "app.previewWatermark", status: "aligned" },
   {
     desktop: IpcChannel.App_EnsureWatermarkDirectory,
     server: "app.ensureWatermarkDirectory",

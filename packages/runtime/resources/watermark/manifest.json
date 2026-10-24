@@ -1,0 +1,81 @@
+{
+  "repository": "https://github.com/sqzw-x/mdcx",
+  "commit": "58e3f930f2e864fceb8a53ceef818716e2a6413d",
+  "files": [
+    {
+      "path": "LICENSE",
+      "name": "LICENSE",
+      "gitBlobSha1": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7",
+      "size": 35149
+    },
+    {
+      "path": "README.md",
+      "name": "UPSTREAM_README.md",
+      "gitBlobSha1": "5b2eaa8d26ca085909cd1d89e7f33058612caef7",
+      "size": 3259
+    },
+    {
+      "path": "resources/Img/4k.png",
+      "name": "4k.png",
+      "gitBlobSha1": "a08d01479e90caf1a83aee830d3644ea1fdecb55",
+      "size": 275388,
+      "width": 1510,
+      "height": 1370,
+      "alpha": true
+    },
+    {
+      "path": "resources/Img/8k.png",
+      "name": "8k.png",
+      "gitBlobSha1": "386545f2968242342715668551984306918f0e69",
+      "size": 322880,
+      "width": 1510,
+      "height": 1370,
+      "alpha": true
+    },
+    {
+      "path": "resources/Img/leak.png",
+      "name": "leak.png",
+      "gitBlobSha1": "478f1b4233aaeaab187e424b1dfb010c7d630f6a",
+      "size": 67864,
+      "width": 1000,
+      "height": 600,
+      "alpha": true
+    },
+    {
+      "path": "resources/Img/sub.png",
+      "name": "sub.png",
+      "gitBlobSha1": "1631dceb281e34db79d4c00fe72cfe05e860eb64",
+      "size": 61960,
+      "width": 1000,
+      "height": 600,
+      "alpha": true
+    },
+    {
+      "path": "resources/Img/umr.png",
+      "name": "umr.png",
+      "gitBlobSha1": "6c8aa95a66a78341ee7cc4267b81c99d52a5e683",
+      "size": 76082,
+      "width": 1000,
+      "height": 600,
+      "alpha": true
+    },
+    {
+      "path": "resources/Img/wuma.png",
+      "name": "wuma.png",
+      "gitBlobSha1": "3600217cdcfa9ddb7ba9560e7bbbbd66689738e3",
+      "size": 68739,
+      "width": 1000,
+      "height": 600,
+      "alpha": true
+    },
+    {
+      "path": "resources/Img/youma.png",
+      "name": "youma.png",
+      "gitBlobSha1": "f33c204bd206a34e3d8f8eed5b8dfecee31f2cde",
+      "size": 63655,
+      "width": 1000,
+      "height": 600,
+      "alpha": true
+    }
+  ]
+}

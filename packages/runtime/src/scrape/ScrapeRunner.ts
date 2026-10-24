@@ -34,6 +34,7 @@ import type {
   NfoLocalState,
   ScrapeResult,
   UncensoredChoice,
+  VideoMeta,
 } from "@mdcz/shared/types";
 import { toPublicationTarget } from "../library/mediaLibraryService";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
@@ -182,6 +183,7 @@ export interface ScrapeRunnerDependencies {
     crawlerData: CrawlerData;
     fileInfo: FileInfo;
     localState?: NfoLocalState;
+    videoMeta?: VideoMeta;
     signal?: AbortSignal;
     signalService: Pick<RuntimeScrapeSignalService, "showLogText" | "setProgress">;
   }) => Promise<DownloadedAssets>;

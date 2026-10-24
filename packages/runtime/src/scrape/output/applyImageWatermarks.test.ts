@@ -2,7 +2,7 @@ import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
-import { applyPosterTagBadgesIfNeeded } from "./applyPosterTagBadges";
+import { applyImageWatermarks } from "./applyImageWatermarks";
 
 const createCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Sample",
@@ -38,7 +38,31 @@ const createConfiguration = (download: Partial<typeof defaultConfiguration.downl
     },
   });
 
-describe("applyPosterTagBadgesIfNeeded", () => {
+describe("applyImageWatermarks", () => {
+  it("processes selected new image types once and continues after an individual rendering failure", async () => {
+    const applyTagBadges = vi.fn().mockRejectedValueOnce(new Error("invalid poster")).mockResolvedValue(undefined);
+    const warn = vi.fn();
+    const input = {
+      assets: {
+        ...createAssets(true),
+        thumb: "/tmp/thumb.jpg",
+        fanart: "/tmp/fanart.jpg",
+        downloaded: ["/tmp/poster.jpg", "/tmp/thumb.jpg"],
+      },
+      config: createConfiguration({ tagBadgeTypes: ["subtitle"], tagBadgeTargets: ["poster", "thumb", "fanart"] }),
+      crawlerData: createCrawlerData(),
+      dataDir: "/tmp/data",
+      fileInfo: createFileInfo({ isSubtitled: true }),
+      logger: { warn },
+      watermarkService: { applyTagBadges },
+    };
+    await applyImageWatermarks(input);
+    expect(applyTagBadges.mock.calls.map(([path]) => path)).toEqual(["/tmp/poster.jpg", "/tmp/thumb.jpg"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("invalid poster"));
+    applyTagBadges.mockClear();
+    await applyImageWatermarks({ ...input, assets: { ...input.assets, thumb: "/tmp/poster.jpg" } });
+    expect(applyTagBadges).toHaveBeenCalledOnce();
+  });
   it("applies supported tag badges only to newly downloaded posters", async () => {
     const config = createConfiguration({
       tagBadgeTypes: ["subtitle", "fourK"],
@@ -49,7 +73,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
       applyTagBadges: vi.fn().mockResolvedValue(undefined),
     };
 
-    await applyPosterTagBadgesIfNeeded({
+    await applyImageWatermarks({
       assets: createAssets(true),
       config,
       crawlerData: createCrawlerData(),
@@ -68,8 +92,8 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     expect(watermarkService.applyTagBadges).toHaveBeenCalledWith(
       "/tmp/poster.jpg",
       [expect.objectContaining({ label: "中字" }), expect.objectContaining({ label: "4K" })],
-      "bottomRight",
-      expect.objectContaining({ imageOverrides: true, onWarn: expect.any(Function) }),
+      expect.objectContaining({ tagBadgePosition: "bottomRight", tagBadgeImageOverrides: true }),
+      expect.any(Function),
     );
   });
 
@@ -80,7 +104,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     const disabledConfig = createConfiguration({ tagBadges: false });
     const enabledConfig = createConfiguration();
 
-    await applyPosterTagBadgesIfNeeded({
+    await applyImageWatermarks({
       assets: createAssets(true),
       config: disabledConfig,
       crawlerData: createCrawlerData(),
@@ -89,7 +113,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
       logger: { warn: vi.fn() },
       watermarkService,
     });
-    await applyPosterTagBadgesIfNeeded({
+    await applyImageWatermarks({
       assets: createAssets(false),
       config: enabledConfig,
       crawlerData: createCrawlerData(),
@@ -107,7 +131,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
       applyTagBadges: vi.fn().mockResolvedValue(undefined),
     };
 
-    await applyPosterTagBadgesIfNeeded({
+    await applyImageWatermarks({
       assets: createAssets(true),
       config: createConfiguration({ tagBadgeTypes: ["subtitle"] }),
       crawlerData: createCrawlerData(),
@@ -125,7 +149,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     const warn = vi.fn();
 
     await expect(
-      applyPosterTagBadgesIfNeeded({
+      applyImageWatermarks({
         assets,
         config: createConfiguration({ tagBadgeTypes: ["subtitle"] }),
         crawlerData: createCrawlerData(),
@@ -137,7 +161,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
         },
       }),
     ).resolves.toBe(assets);
-    expect(warn).toHaveBeenCalledWith("Failed to apply poster tag badges for /tmp/poster.jpg: render failed");
+    expect(warn).toHaveBeenCalledWith("Failed to apply tag badges for /tmp/poster.jpg: render failed");
   });
 
   it("checks cancellation before and after rendering", async () => {
@@ -157,7 +181,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     };
 
     await expect(
-      applyPosterTagBadgesIfNeeded({
+      applyImageWatermarks({
         ...input,
         signal: beforeController.signal,
         watermarkService: { applyTagBadges },
@@ -166,7 +190,7 @@ describe("applyPosterTagBadgesIfNeeded", () => {
     expect(applyTagBadges).not.toHaveBeenCalled();
 
     await expect(
-      applyPosterTagBadgesIfNeeded({
+      applyImageWatermarks({
         ...input,
         signal: afterController.signal,
         watermarkService: { applyTagBadges },

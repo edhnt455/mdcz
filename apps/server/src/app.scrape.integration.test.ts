@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type AggregationResult, PosterWatermarkService } from "@mdcz/runtime/scrape";
+import { type AggregationResult, ImageWatermarkService } from "@mdcz/runtime/scrape";
+import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -582,7 +583,7 @@ describe("buildServer scrape integration", () => {
     }
   });
 
-  it("applies configured poster tag badges with the same runtime rendering used by desktop", async () => {
+  it("applies configured watermarks to all selected image types using the shared runtime renderer", async () => {
     const root = await createTempRoot("scrape-runtime-watermark");
     await writeFile(join(root, "ABC-123.mp4"), "video");
     const sourcePoster = Buffer.concat([
@@ -614,6 +615,7 @@ describe("buildServer scrape integration", () => {
           downloadTrailer: false,
           tagBadges: true,
           tagBadgeTypes: ["censored"],
+          tagBadgeTargets: ["poster", "thumb", "fanart"],
           tagBadgePosition: "bottomRight",
         },
       },
@@ -633,7 +635,7 @@ describe("buildServer scrape integration", () => {
 
     const expectedPosterPath = join(root, "expected-poster.png");
     await writeFile(expectedPosterPath, sourcePoster);
-    await new PosterWatermarkService({ dataDir: root }).applyTagBadges(
+    await new ImageWatermarkService({ dataDir: root }).applyTagBadges(
       expectedPosterPath,
       [
         {
@@ -644,18 +646,20 @@ describe("buildServer scrape integration", () => {
           accentColor: "#CCFBF1",
         },
       ],
-      "bottomRight",
+      { ...defaultConfiguration.download, tagBadgePosition: "bottomRight" },
     );
 
-    const serverPoster = await readFile(join(root, "JAV_output/Actor A/ABC-123/poster.png"));
     const expectedPoster = await readFile(expectedPosterPath);
-    const [serverPixels, expectedPixels, sourcePixels] = await Promise.all([
-      sharp(serverPoster).raw().toBuffer(),
+    const [expectedPixels, sourcePixels] = await Promise.all([
       sharp(expectedPoster).raw().toBuffer(),
       sharp(sourcePoster).raw().toBuffer(),
     ]);
-    expect(serverPixels.equals(sourcePixels)).toBe(false);
-    expect(serverPixels).toEqual(expectedPixels);
+    for (const target of ["poster", "thumb", "fanart"]) {
+      const serverImage = await readFile(join(root, `JAV_output/Actor A/ABC-123/${target}.png`));
+      const pixels = await sharp(serverImage).raw().toBuffer();
+      expect(pixels.equals(sourcePixels)).toBe(false);
+      expect(pixels).toEqual(expectedPixels);
+    }
   });
 
   it.each([

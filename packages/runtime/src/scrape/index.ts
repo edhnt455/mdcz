@@ -14,17 +14,17 @@ export {
   type ResolvedPublicationLayout,
 } from "./FileOrganizer";
 export * from "./FileScraper";
+export * from "./ImageWatermarkService";
 export * from "./media";
 export * from "./nfo";
 export * from "./organize/NamingEngine";
 export * from "./organize/versionLabels";
-export * from "./output/applyPosterTagBadges";
+export * from "./output/applyImageWatermarks";
 export * from "./output/executeOutputSteps";
 export * from "./output/prepareCrawlerDataForMovieOutput";
 export * from "./output/prepareCrawlerDataForNfo";
 export * from "./output/prepareImageAlternativesForDownload";
 export * from "./PosterCropService";
-export * from "./PosterWatermarkService";
 export * from "./posterBadges";
 export * from "./preflightScrapeTask";
 export * from "./registeredArtifacts";

@@ -8,20 +8,12 @@ import {
 } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS, Website } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
-import {
-  POSTER_TAG_BADGE_ASPECT_HEIGHT,
-  POSTER_TAG_BADGE_ASPECT_WIDTH,
-  POSTER_TAG_BADGE_IMAGE_EXTENSIONS,
-  POSTER_TAG_BADGE_IMAGE_FILENAMES,
-  POSTER_TAG_BADGE_POSITION_OPTIONS,
-  POSTER_TAG_BADGE_TYPE_OPTIONS,
-} from "@mdcz/shared/posterBadges";
+
 import {
   Button,
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -30,7 +22,7 @@ import {
   Input,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
+import { CircleHelp, Loader2, RotateCcw, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -63,26 +55,19 @@ import {
 import { SiteConnectivityPill } from "./SiteConnectivityPill";
 import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_KEYS, isRecord } from "./settingsRegistry";
+import { WATERMARK_FIELD_KEYS, WatermarkSettings } from "./WatermarkSettings";
 
 // ── Constants ──
 
 const PROXY_TYPE_OPTIONS = ["none", "http", "https", "socks5"];
 const LANGUAGE_OPTIONS = [...TRANSLATION_TARGET_OPTIONS];
-const TAG_BADGE_IMAGE_EXTENSION_LABEL = POSTER_TAG_BADGE_IMAGE_EXTENSIONS.map((extension) => `.${extension}`).join(
-  " / ",
-);
-const TAG_BADGE_IMAGE_RATIO_LABEL = `${POSTER_TAG_BADGE_ASPECT_WIDTH}:${POSTER_TAG_BADGE_ASPECT_HEIGHT}`;
-
 const toEnumOptions = (labels: Record<string, string>): Array<{ value: string; label: string }> =>
   Object.entries(labels).map(([value, label]) => ({ value, label }));
 
 const ASSET_DOWNLOAD_FIELD_KEYS = [
   "download.downloadThumb",
   "download.downloadPoster",
-  "download.tagBadges",
-  "download.tagBadgeTypes",
-  "download.tagBadgePosition",
-  "download.tagBadgeImageOverrides",
+  ...WATERMARK_FIELD_KEYS,
   "download.downloadFanart",
   "download.downloadSceneImages",
   "download.downloadTrailer",
@@ -247,26 +232,16 @@ export function NetworkSiteAccessSection() {
 }
 
 export function AssetDownloadsSection() {
-  const t = useT();
   const hasRenderableFields = useHasRenderableFields(ASSET_DOWNLOAD_FIELD_KEYS);
   const search = useOptionalSettingsSearch();
   const form = useFormContext<FieldValues>();
-  const [downloadThumb, downloadPoster, tagBadges, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
+  const [downloadThumb, downloadPoster, downloadFanart, downloadSceneImages, downloadTrailer] = form.watch([
     "download.downloadThumb",
     "download.downloadPoster",
-    "download.tagBadges",
     "download.downloadFanart",
     "download.downloadSceneImages",
     "download.downloadTrailer",
-  ]) as [
-    boolean | undefined,
-    boolean | undefined,
-    boolean | undefined,
-    boolean | undefined,
-    boolean | undefined,
-    boolean | undefined,
-  ];
-  const showTagBadgeSettings = Boolean(downloadPoster) && Boolean(tagBadges);
+  ]) as [boolean | undefined, boolean | undefined, boolean | undefined, boolean | undefined, boolean | undefined];
 
   if (!hasRenderableFields) {
     return null;
@@ -276,24 +251,7 @@ export function AssetDownloadsSection() {
     <>
       <BoolField name="download.downloadThumb" />
       <BoolField name="download.downloadPoster" />
-      {shouldMountConditionalSettings(Boolean(downloadPoster), search) && <BoolField name="download.tagBadges" />}
-      {shouldMountConditionalSettings(showTagBadgeSettings, search) && (
-        <>
-          <ChipArrayFieldWrapper
-            name="download.tagBadgeTypes"
-            options={POSTER_TAG_BADGE_TYPE_OPTIONS.map((value) => ({ value, label: t.domain.posterBadgeTypes[value] }))}
-            showBulkActions
-          />
-          <EnumField
-            name="download.tagBadgePosition"
-            options={POSTER_TAG_BADGE_POSITION_OPTIONS.map((value) => ({
-              value,
-              label: t.domain.posterBadgePositions[value],
-            }))}
-          />
-          <PosterBadgeImageOverridesField />
-        </>
-      )}
+      <WatermarkSettings />
       <BoolField name="download.downloadFanart" />
       <BoolField name="download.downloadSceneImages" />
       <BoolField name="download.downloadTrailer" />
@@ -305,119 +263,6 @@ export function AssetDownloadsSection() {
       )}
       {shouldMountConditionalSettings(Boolean(downloadTrailer), search) && <BoolField name="download.keepTrailer" />}
       <NumberField name="download.sceneImageConcurrency" min={1} max={20} />
-    </>
-  );
-}
-
-function PosterBadgeImageOverridesField() {
-  const t = useT();
-  const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [watermarkDirectoryPath, setWatermarkDirectoryPath] = useState("");
-  const [openingDirectory, setOpeningDirectory] = useState(false);
-  const directoryActionLabel = services.watermarkDirectoryActionLabel ?? t.settings.badgeOverrides.openFolder;
-
-  const handleEnable = async () => {
-    try {
-      const result = await services.ensureWatermarkDirectory();
-      setWatermarkDirectoryPath(result.path);
-      setDialogOpen(true);
-    } catch (error) {
-      notifier.error(
-        t.settings.badgeOverrides.createDirFailed(error instanceof Error ? error.message : t.common.unknownError),
-      );
-    }
-  };
-
-  const handleOpenDirectory = async () => {
-    setOpeningDirectory(true);
-    try {
-      const result = await services.openWatermarkDirectory();
-      if (result?.message) {
-        if (result.unsupported) {
-          notifier.info(result.message);
-        } else {
-          notifier.success(result.message);
-        }
-      }
-    } catch (error) {
-      notifier.error(
-        t.settings.badgeOverrides.openDirFailed(error instanceof Error ? error.message : t.common.unknownError),
-      );
-    } finally {
-      setOpeningDirectory(false);
-    }
-  };
-
-  return (
-    <>
-      <BaseField name="download.tagBadgeImageOverrides" commitMode="immediate">
-        {(field) => (
-          <FormControl>
-            <Switch
-              checked={Boolean(field.value)}
-              onCheckedChange={(checked) => {
-                field.onChange(checked);
-                if (checked) {
-                  void handleEnable();
-                }
-              }}
-            />
-          </FormControl>
-        )}
-      </BaseField>
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl gap-5 rounded-[var(--radius-quiet-xl)] border border-border/50 bg-surface-floating p-6">
-          <DialogHeader className="gap-2 text-left">
-            <DialogTitle>{t.settings.badgeOverrides.title}</DialogTitle>
-            <DialogDescription className="text-sm leading-6">{t.settings.badgeOverrides.description}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 text-sm">
-            <div className="rounded-xl border border-border/50 bg-surface-low px-3 py-2">
-              <div className="text-xs text-muted-foreground">{t.settings.badgeOverrides.directory}</div>
-              <div className="mt-1 break-all font-mono text-xs">{watermarkDirectoryPath || "userdata/watermark"}</div>
-            </div>
-            <div className="overflow-hidden rounded-xl border border-border/50">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-surface-low text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">{t.settings.badgeOverrides.badge}</th>
-                    <th className="px-3 py-2 font-medium">{t.settings.badgeOverrides.fileNames}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {POSTER_TAG_BADGE_TYPE_OPTIONS.map((type) => (
-                    <tr key={type} className="border-t border-border/40">
-                      <td className="px-3 py-2">{t.domain.posterBadgeTypes[type]}</td>
-                      <td className="px-3 py-2 font-mono">{POSTER_TAG_BADGE_IMAGE_FILENAMES[type].join(" / ")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="space-y-1 text-xs leading-5 text-muted-foreground">
-              <p>{t.settings.badgeOverrides.formats(TAG_BADGE_IMAGE_EXTENSION_LABEL)}</p>
-              <p>{t.settings.badgeOverrides.ratio(TAG_BADGE_IMAGE_RATIO_LABEL)}</p>
-              <p>{t.settings.badgeOverrides.scaling}</p>
-              <p>{t.settings.badgeOverrides.advice}</p>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={handleOpenDirectory} disabled={openingDirectory}>
-              {openingDirectory ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FolderOpen className="h-3.5 w-3.5" />
-              )}
-              {directoryActionLabel}
-            </Button>
-            <DialogClose asChild>
-              <Button type="button">{t.settings.gotIt}</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

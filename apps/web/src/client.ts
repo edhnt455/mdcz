@@ -152,6 +152,7 @@ export const api: ServerApiContract = {
   },
   app: {
     ensureWatermarkDirectory: () => trpcMutation("app.ensureWatermarkDirectory"),
+    previewWatermark: (input) => trpcMutation("app.previewWatermark", input),
   },
   browser: {
     list: (input) => trpcQuery("browser.list", input),

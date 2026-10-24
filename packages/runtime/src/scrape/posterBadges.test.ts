@@ -45,6 +45,23 @@ describe("resolvePosterBadgeDefinitions", () => {
   });
 
   it("resolves metadata classifications and supported display resolutions", () => {
+    for (const [width, height, expected] of [
+      [1280, 720, []],
+      [1920, 1080, ["fullHd"]],
+      [3840, 1600, ["fourK"]],
+      [7680, 4320, ["eightK"]],
+    ] as const) {
+      expect(
+        resolvePosterBadgeDefinitions(
+          createCrawlerData(),
+          createFileInfo({ resolution: "4K" }),
+          undefined,
+          ["fullHd", "fourK", "eightK"],
+          { width, height },
+        ).map((badge) => badge.id),
+      ).toEqual(expected);
+    }
+    expect(badgeIds(createCrawlerData({ genres: ["破解", "流出", "无码"] }), createFileInfo())).toEqual(["umr"]);
     expect(badgeIds(createCrawlerData({ genres: ["流出"] }), createFileInfo({ resolution: "1080P" }))).toEqual([
       "leak",
       "fullHd",

@@ -40,6 +40,9 @@ const serverDistributionAssets = (): Plugin => ({
     await cleanServerOutput();
   },
   async closeBundle() {
+    await cp(workspaceResolve("packages/runtime/resources/watermark"), resolve(serverDist, "resources/watermark"), {
+      recursive: true,
+    });
     await cp(workspaceResolve("packages/persistence/drizzle"), resolve(serverDist, "persistence/drizzle"), {
       recursive: true,
     });

@@ -68,6 +68,7 @@ await rm(stagingDir, { recursive: true, force: true });
 await mkdir(stagingDir, { recursive: true });
 
 await cp(resolve(serverDist, "server.js"), resolve(stagingDir, "server.js"));
+await cp(resolve(serverDist, "resources/watermark"), resolve(stagingDir, "resources/watermark"), { recursive: true });
 await cp(resolve(serverDist, "web"), resolve(stagingDir, "web"), { recursive: true });
 await cp(resolve(serverDist, "persistence/drizzle"), resolve(stagingDir, "persistence/drizzle"), { recursive: true });
 await cp(resolve(serverDist, "resources/mapping_table"), resolve(stagingDir, "resources/mapping_table"), {

@@ -4,6 +4,7 @@ import { deterministicMediaRootId } from "@mdcz/media-store";
 import { RECENT_ACQUISITION_LIMIT } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   closeTestServers,
@@ -20,6 +21,33 @@ import {
 import { AuthService } from "./services/authService";
 import type { RuntimeActionService } from "./services/runtimeActionService";
 import { formatSseEvent } from "./taskEvents";
+
+it("renders authenticated watermark previews and rejects invalid settings", async () => {
+  const { fastify } = await createTestServer();
+  const input = { settings: defaultConfiguration.download, target: "poster", showAll: false };
+  const request = { method: "POST" as const, url: "/trpc/app.previewWatermark" };
+  expect((await fastify.inject({ ...request, payload: input })).statusCode).toBe(401);
+  const token = await loginAsAdmin(fastify);
+  const headers = { authorization: `Bearer ${token}` };
+  for (const [target, width, height] of [
+    ["poster", 400, 600],
+    ["thumb", 640, 360],
+    ["fanart", 640, 360],
+  ] as const) {
+    const response = await fastify.inject({ ...request, headers, payload: { ...input, target, showAll: true } });
+    expect(response.statusCode).toBe(200);
+    const result = response.json().result.data;
+    expect(result.warnings).toEqual([]);
+    expect(await sharp(Buffer.from(result.dataUrl.split(",")[1], "base64")).metadata()).toMatchObject({
+      width,
+      height,
+      format: "png",
+    });
+  }
+  for (const settings of [{ tagBadgeScale: 0 }, { tagBadgeGap: -1 }, { tagBadgePositions: { subtitle: "center" } }]) {
+    expect((await fastify.inject({ ...request, headers, payload: { ...input, settings } })).statusCode).toBe(400);
+  }
+});
 
 const textDecoder = new TextDecoder();
 

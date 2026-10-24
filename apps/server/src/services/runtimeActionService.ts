@@ -1,7 +1,9 @@
+import { dirname, join } from "node:path";
 import { type CrawlerProvider, probeSiteConnectivity } from "@mdcz/runtime/crawler";
 import { checkConfiguredSiteCookies, type NetworkClient } from "@mdcz/runtime/network";
-import { ensureWatermarkDirectory } from "@mdcz/runtime/scrape";
+import { ensureWatermarkDirectory, ImageWatermarkService } from "@mdcz/runtime/scrape";
 import { testTranslation } from "@mdcz/runtime/translate";
+import type { WatermarkPreviewInput, WatermarkPreviewResult } from "@mdcz/shared/posterBadges";
 import type {
   AppEnsureWatermarkDirectoryResponse,
   CrawlerListSitesResponse,
@@ -11,9 +13,16 @@ import type {
   TranslateTestInputDto,
   TranslateTestResponse,
 } from "@mdcz/shared/serverDtos";
+import { resolveServerBundledMappingDirectory } from "../translationMappingStore";
 import type { ServerConfigService } from "./configService";
 
 export class RuntimeActionService {
+  async previewWatermark(input: WatermarkPreviewInput): Promise<WatermarkPreviewResult> {
+    return await new ImageWatermarkService({
+      dataDir: this.config.runtimePaths.dataDir,
+      builtinDirectory: join(dirname(resolveServerBundledMappingDirectory()), "watermark"),
+    }).preview(input);
+  }
   constructor(
     private readonly config: ServerConfigService,
     private readonly networkClient: NetworkClient,

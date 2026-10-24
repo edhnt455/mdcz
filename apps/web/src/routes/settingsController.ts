@@ -18,6 +18,7 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
   checkCookies: async () => await api.network.checkCookies(),
   decrementInFlightSaves: useSettingsSavingStore.getState().decrementInFlight,
   ensureWatermarkDirectory: async () => await api.app.ensureWatermarkDirectory(),
+  previewWatermark: async (input) => await api.app.previewWatermark(input),
   getInFlightSaves: () => useSettingsSavingStore.getState().inFlight,
   incrementInFlightSaves: useSettingsSavingStore.getState().incrementInFlight,
   listCrawlerSites: async () => {

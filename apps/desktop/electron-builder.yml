@@ -47,6 +47,8 @@ extraResources:
     to: native/better_sqlite3.node
   - from: ../../packages/runtime/resources/mapping_table
     to: mapping_table
+  - from: ../../packages/runtime/resources/watermark
+    to: watermark
 
 win:
   executableName: MDCz

@@ -1,5 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { Website } from "@mdcz/shared/enums";
+import type { WatermarkPreviewInput, WatermarkPreviewResult } from "@mdcz/shared/posterBadges";
 import type {
   ApiKeyDto,
   IntegrationStatusResponse,
@@ -72,6 +73,7 @@ export interface SettingsServices {
   watermarkDirectoryActionLabel?: string;
   checkCookies: () => Promise<NetworkCheckCookiesResponse>;
   ensureWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryInfo>;
+  previewWatermark: (input: WatermarkPreviewInput) => Promise<WatermarkPreviewResult>;
   getInFlightSaves: () => number;
   subscribeInFlightSaves?: (listener: () => void) => () => void;
   incrementInFlightSaves: () => void;

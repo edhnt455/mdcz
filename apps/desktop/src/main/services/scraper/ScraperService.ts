@@ -15,7 +15,7 @@ import { type ActorImageService, type PrepareScrapeItem, ScrapeRunner } from "@m
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { app } from "electron";
-import { applyDesktopPosterTagBadges } from "./output";
+import { applyDesktopImageWatermarks } from "./output";
 import { resolveSingleFilePaths } from "./pathResolver";
 import { ScraperServiceError } from "./ScraperServiceError";
 import { translationMappingStore } from "./translationMappingStore";
@@ -80,15 +80,17 @@ export class ScraperService {
           crawlerData,
           fileInfo,
           localState,
+          videoMeta,
           signal,
           signalService,
         }) =>
-          await applyDesktopPosterTagBadges({
+          await applyDesktopImageWatermarks({
             assets,
             config: configuration,
             crawlerData,
             fileInfo,
             localState,
+            videoMeta,
             logger: this.logger,
             signal,
             signalService,

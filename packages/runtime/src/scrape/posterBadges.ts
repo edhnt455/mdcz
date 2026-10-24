@@ -1,5 +1,5 @@
 import { POSTER_TAG_BADGE_TYPE_OPTIONS, type PosterTagBadgeType } from "@mdcz/shared/posterBadges";
-import type { CrawlerData, FileInfo, NfoLocalState } from "@mdcz/shared/types";
+import type { CrawlerData, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { buildMovieTags, normalizeNfoLocalState } from "../maintenance/movieTags";
 import { classifyMovie, type MovieClassification } from "./utils/movieClassification";
 
@@ -25,7 +25,7 @@ const matchesResolution = (fileInfo: FileInfo | undefined, candidates: readonly 
   return candidates.includes(resolution);
 };
 
-const POSTER_BADGE_DEFINITIONS: Array<
+export const POSTER_BADGE_DEFINITIONS: Array<
   PosterBadgeDefinition & { matches: (context: PosterBadgeMatchContext) => boolean }
 > = [
   {
@@ -95,7 +95,7 @@ const POSTER_BADGE_DEFINITIONS: Array<
     colorStart: "#7C2D12",
     colorEnd: "#9A3412",
     accentColor: "#FFEDD5",
-    matches: ({ fileInfo }) => matchesResolution(fileInfo, ["8K"]),
+    matches: ({ fileInfo }) => matchesResolution(fileInfo, ["8K", "4320P"]),
   },
 ];
 
@@ -104,13 +104,32 @@ export const resolvePosterBadgeDefinitions = (
   fileInfo: FileInfo | undefined,
   localState: NfoLocalState | undefined,
   enabledTypes: readonly PosterTagBadgeType[] = POSTER_TAG_BADGE_TYPE_OPTIONS,
+  videoMeta?: VideoMeta,
 ): PosterBadgeDefinition[] => {
   const tags = new Set(buildMovieTags(data, fileInfo, localState));
   const enabledTypeSet = new Set(enabledTypes);
   const normalizedLocalState = normalizeNfoLocalState(localState);
   const classification = fileInfo ? classifyMovie(fileInfo, data, normalizedLocalState) : undefined;
 
+  const category = tags.has("破解") ? "umr" : tags.has("流出") ? "leak" : tags.has("无码") ? "uncensored" : "censored";
+  let resolvedFileInfo = fileInfo;
+  if (fileInfo && (videoMeta?.width || videoMeta?.height)) {
+    const width = videoMeta.width ?? 0;
+    const height = videoMeta.height ?? 0;
+    const resolution =
+      width >= 7680 || height >= 4320
+        ? "8K"
+        : width >= 3840 || height >= 2160
+          ? "4K"
+          : width >= 1920 || height >= 1080
+            ? "1080P"
+            : `${height}P`;
+    resolvedFileInfo = { ...fileInfo, resolution };
+  }
   return POSTER_BADGE_DEFINITIONS.filter(
-    (definition) => enabledTypeSet.has(definition.id) && definition.matches({ tags, fileInfo, classification }),
+    (definition) =>
+      enabledTypeSet.has(definition.id) &&
+      (!["censored", "umr", "leak", "uncensored"].includes(definition.id) || definition.id === category) &&
+      definition.matches({ tags, fileInfo: resolvedFileInfo, classification }),
   ).map(({ matches: _matches, ...definition }) => definition);
 };

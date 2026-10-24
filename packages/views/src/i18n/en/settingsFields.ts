@@ -267,18 +267,55 @@ const fields: Record<FieldKey, FieldText> = {
     description: "Total time allowed to aggregate one movie; must be greater than the per-site timeout.",
     aliases: ["aggregation", "timeout", "global timeout"],
   },
+  "download.tagBadgeTargets": {
+    label: "Target image types",
+    description: "Only newly downloaded or generated images are processed.",
+  },
+  "download.tagBadgeStyle": { label: "Watermark style" },
+  "download.tagBadgeResolutionStyle": {
+    label: "Resolution watermark style",
+    description: "Used for 1080P, 4K and 8K. MDCx uses the ribbon for 1080P.",
+  },
+  "download.tagBadgeLayout": {
+    label: "Layout",
+    description: "Horizontal: arrange at the starting corner. Clockwise/counterclockwise: distribute across corners.",
+  },
+  "download.tagBadgeScale": {
+    label: "Scale divisor",
+    description: "Watermark height = image height / divisor. Crowded layouts shrink to fit.",
+  },
+  "download.tagBadgeOffsetX": {
+    label: "Horizontal margin (px)",
+    description: "Minimum distance from the left and right edges.",
+  },
+  "download.tagBadgeOffsetY": {
+    label: "Vertical margin (px)",
+    description: "Minimum distance from the top and bottom edges.",
+  },
+  "download.tagBadgeGap": { label: "Watermark gap (px)" },
+  "download.tagBadgeDirectory": {
+    label: "Custom watermark directory",
+    description: "Leave empty for the data directory’s watermark folder. On Web, enter a server directory.",
+  },
+  "download.tagBadgePositions.subtitle": { label: "Subtitle position" },
+  "download.tagBadgePositions.censored": { label: "Censored position" },
+  "download.tagBadgePositions.umr": { label: "Cracked position" },
+  "download.tagBadgePositions.leak": { label: "Leaked position" },
+  "download.tagBadgePositions.uncensored": { label: "Uncensored position" },
+  "download.tagBadgePositions.fullHd": { label: "1080P position" },
+  "download.tagBadgePositions.fourK": { label: "4K position" },
+  "download.tagBadgePositions.eightK": { label: "8K position" },
   "download.downloadThumb": { label: "Download landscape thumbnail" },
   "download.downloadPoster": { label: "Download poster" },
   "download.tagBadges": {
-    label: "Add tag badges to posters",
-    description:
-      "Add badges based on the movie's existing tags; badge types and corner are configurable. Only newly downloaded posters are processed.",
+    label: "Enable image watermarks",
+    description: "Add watermarks based on movie information to selected image types.",
     aliases: ["badge", "badges", "mark", "corner"],
   },
   "download.tagBadgeTypes": {
     label: "Badge types",
     description:
-      "Built-in badge types allowed to render. Unselected types are never drawn on posters, even when detected.",
+      "Built-in badge types allowed to render. Unselected types are never drawn on images, even when detected.",
     aliases: [
       "badge types",
       "badge filters",

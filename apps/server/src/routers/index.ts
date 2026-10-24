@@ -12,6 +12,7 @@ import {
   pendingIdInputSchema,
   pendingRetryInputSchema,
 } from "@mdcz/shared/pending";
+import { watermarkPreviewInputSchema } from "@mdcz/shared/posterBadges";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   activityListInputSchema,
@@ -82,6 +83,9 @@ export const appRouter = t.router({
     }),
   }),
   app: t.router({
+    previewWatermark: protectedProcedure
+      .input(watermarkPreviewInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.runtimeActions.previewWatermark(input)),
     ensureWatermarkDirectory: protectedProcedure.mutation(
       async ({ ctx }) => await ctx.services.runtimeActions.ensureWatermarkDirectory(),
     ),

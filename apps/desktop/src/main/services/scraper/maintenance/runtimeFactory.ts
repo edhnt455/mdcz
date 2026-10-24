@@ -8,7 +8,7 @@ import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/r
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService, SiteResultSink } from "@mdcz/runtime/scrape";
 import { DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "@mdcz/runtime/scrape";
-import { applyDesktopPosterTagBadges } from "../output";
+import { applyDesktopImageWatermarks } from "../output";
 import { translationMappingStore } from "../translationMappingStore";
 
 export interface DesktopMaintenanceRuntimeOptions {
@@ -44,7 +44,7 @@ export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRunti
     networkPolicyClient: options.networkClient,
     nfoGenerator: new NfoGenerator(),
     postProcessAssets: async ({ configuration, ...input }) =>
-      await applyDesktopPosterTagBadges({
+      await applyDesktopImageWatermarks({
         ...input,
         config: configuration,
         logger,

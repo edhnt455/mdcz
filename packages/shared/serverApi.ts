@@ -17,6 +17,7 @@ import type {
   PendingRetryInput,
   PendingRetryResponse,
 } from "./pending";
+import type { WatermarkPreviewInput, WatermarkPreviewResult } from "./posterBadges";
 import type {
   ActivityListInput,
   ActivityListResponse,
@@ -115,6 +116,7 @@ export interface ServerApiContract {
   };
   app: {
     ensureWatermarkDirectory(): Promise<AppEnsureWatermarkDirectoryResponse>;
+    previewWatermark(input: WatermarkPreviewInput): Promise<WatermarkPreviewResult>;
   };
   browser: {
     list(input: RootBrowserInput): Promise<RootBrowserResponse>;

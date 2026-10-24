@@ -12,11 +12,7 @@ import {
   LLM_SERVICE_TYPE_OPTIONS,
 } from "./llm";
 import { localPathStyle } from "./localPath";
-import {
-  DEFAULT_POSTER_TAG_BADGE_TYPES,
-  POSTER_TAG_BADGE_POSITION_OPTIONS,
-  POSTER_TAG_BADGE_TYPE_OPTIONS,
-} from "./posterBadges";
+import { tagBadgeSettingsSchema } from "./posterBadges";
 import { DEFAULT_R18_METADATA_LANGUAGE, R18_METADATA_LANGUAGE_OPTIONS } from "./r18";
 
 const DEFAULT_SITES: Website[] = [
@@ -161,10 +157,7 @@ const translateSchema = z.object({
 const downloadSchema = z.object({
   downloadThumb: z.boolean().default(true),
   downloadPoster: z.boolean().default(true),
-  tagBadges: z.boolean().default(false),
-  tagBadgeTypes: z.array(z.enum(POSTER_TAG_BADGE_TYPE_OPTIONS)).default(() => [...DEFAULT_POSTER_TAG_BADGE_TYPES]),
-  tagBadgePosition: z.enum(POSTER_TAG_BADGE_POSITION_OPTIONS).default("topLeft"),
-  tagBadgeImageOverrides: z.boolean().default(false),
+  ...tagBadgeSettingsSchema.shape,
   downloadFanart: z.boolean().default(true),
   downloadSceneImages: z.boolean().default(true),
   downloadTrailer: z.boolean().default(true),
