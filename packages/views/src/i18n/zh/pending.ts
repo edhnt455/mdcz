@@ -2,6 +2,15 @@ import type { Messages } from "../en";
 
 export const pending: Messages["pending"] = {
   title: "待处理",
+  selectAll: "全选",
+  selectItem: (name: string) => `选择 ${name}`,
+  selectedCount: (count: number) => `已选 ${count} 项`,
+  batchRetry: "批量处理",
+  batchIgnore: "批量忽略",
+  batchRetryHint: "按各文件原媒体库重新刮削；需补番号、选择作品或确认类型的条目请单独处理。",
+  batchIgnoreConfirm: (count: number) => `忽略选中的 ${count} 个文件？`,
+  batchIgnoreDescription: "仅从待处理列表移除所选条目，文件本身保持不变。",
+  batchResult: (succeeded: number, failed: number) => `成功 ${succeeded} 项 · 失败 ${failed} 项`,
   empty: "没有需要处理的项目。",
   loadFailed: (error: string) => `无法加载待处理列表：${error}`,
   kinds: {

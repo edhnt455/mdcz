@@ -43,6 +43,11 @@ export function PendingPage() {
       onRetry={async (input) => await act(() => ipc.pending.retry(input), t.pending.submitted)}
       onConfirmUncensored={async (input) => await act(() => ipc.pending.confirmUncensored(input), t.pending.confirmed)}
       onIgnore={async (id) => await act(() => ipc.pending.ignore(id), t.pending.ignored)}
+      onBatch={async (input) => {
+        const result = await ipc.pending.batch(input);
+        await queryClient.invalidateQueries({ queryKey: ["pending"] });
+        return result;
+      }}
     />
   );
 }

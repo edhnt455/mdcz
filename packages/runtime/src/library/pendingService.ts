@@ -8,9 +8,12 @@ import type {
   SiteResultRepository,
 } from "@mdcz/persistence";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
+import { toErrorMessage } from "@mdcz/shared/error";
 import {
   type AmbiguousCandidate,
   ambiguousCandidateSchema,
+  type PendingBatchInput,
+  type PendingBatchResponse,
   type PendingConfirmUncensoredInput,
   type PendingDetailResponse,
   type PendingItemDto,
@@ -154,6 +157,45 @@ export class PendingService {
   async ignore(id: string): Promise<void> {
     (await this.deps.repositories()).pending.delete([id]);
     this.deps.onChanged?.();
+  }
+
+  async batch(input: PendingBatchInput): Promise<PendingBatchResponse> {
+    const repositories = await this.deps.repositories();
+    const ids = [...new Set(input.ids)];
+    if (input.action === "ignore") {
+      repositories.pending.delete(ids);
+      this.deps.onChanged?.();
+      return { succeededIds: ids, failures: [] };
+    }
+
+    const result: PendingBatchResponse = { succeededIds: [], failures: [] };
+    const groups = new Map<string, PendingItemRecord[]>();
+    for (const id of ids) {
+      try {
+        const item = repositories.pending.get(id);
+        if (["uncensored", "ambiguous", "no_number"].includes(item.kind))
+          throw new Error("This entry needs manual input; process it individually");
+        if (!item.libraryId) throw new Error("Choose a library to scrape this file into");
+        const group = groups.get(item.libraryId) ?? [];
+        group.push(item);
+        groups.set(item.libraryId, group);
+      } catch (error) {
+        result.failures.push({ id, message: toErrorMessage(error) });
+      }
+    }
+    for (const [libraryId, items] of groups) {
+      try {
+        await this.deps.startScrape({
+          executionMode: "batch",
+          libraryId,
+          refs: items.map(({ rootId, relativePath }) => ({ rootId, relativePath })),
+        });
+        result.succeededIds.push(...items.map((item) => item.id));
+      } catch (error) {
+        result.failures.push(...items.map(({ id }) => ({ id, message: toErrorMessage(error) })));
+      }
+    }
+    return result;
   }
 
   private async saveRule(rule: NonNullable<PendingRetryInput["rule"]>, number: string | undefined): Promise<void> {

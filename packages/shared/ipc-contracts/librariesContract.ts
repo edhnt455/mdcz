@@ -10,6 +10,8 @@ import type {
   MediaLibraryUpdateInput,
 } from "../mediaLibrary";
 import type {
+  PendingBatchInput,
+  PendingBatchResponse,
   PendingConfirmUncensoredInput,
   PendingDetailResponse,
   PendingIdInput,
@@ -20,6 +22,7 @@ import type {
 import type { NamingPreviewItem } from "../types";
 
 export type LibrariesIpcContract = {
+  [IpcChannel.Pending_Batch]: IpcProcedure<PendingBatchInput, PendingBatchResponse>;
   [IpcChannel.Libraries_List]: IpcProcedure<void, MediaLibraryListResponse>;
   [IpcChannel.Libraries_Create]: IpcProcedure<MediaLibrarySettingsInput, MediaLibraryDto>;
   [IpcChannel.Libraries_Update]: IpcProcedure<MediaLibraryUpdateInput, MediaLibraryDto>;

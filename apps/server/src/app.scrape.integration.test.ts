@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { type AggregationResult, ImageWatermarkService } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import type { PendingBatchResponse, PendingKindDto } from "@mdcz/shared/pending";
+import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildServer } from "./app";
@@ -1092,6 +1094,65 @@ describe("buildServer scrape integration", () => {
       if (procedure === "pending.ignore") expect(response.statusCode).toBe(200);
       else expect(response.json().error.message).toContain("Pending item not found");
     }
+  });
+
+  it("batches pending work by library, reports individual failures and ignores only selected records", async () => {
+    const root = await createTempRoot("pending-batch-root");
+    const otherRoot = await createTempRoot("pending-batch-other");
+    await writeFile(join(root, "failed.mp4"), "keep this file");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const headers = { authorization: `Bearer ${token}` };
+    const first = await createTestLibrary(fastify, token, root);
+    const second = await createTestLibrary(fastify, token, otherRoot);
+    const { pending } = (await services.persistence.getState()).repositories;
+    for (const kind of ["failed", "not_found", "new_file", "ambiguous", "no_number", "uncensored"] as const) {
+      pending.upsert({ kind, ...first, relativePath: `${kind}.mp4` });
+    }
+    pending.upsert({ kind: "failed", ...second, relativePath: "other.mp4" });
+    pending.upsert({ kind: "failed", rootId: first.rootId, relativePath: "unassigned.mp4" });
+    const items = pending.list();
+    const ids = items.map((item) => item.id);
+    const untouched = items.find((item) => item.kind === "uncensored");
+    if (!untouched) throw new Error("Expected an uncensored entry");
+    const start = vi.spyOn(services.scrape, "start").mockImplementation(async (input) => {
+      if (input.libraryId === second.libraryId) throw new Error("Library unavailable");
+      return { task: { id: "batch-task" } } as ScrapeRunSnapshotDto;
+    });
+    const batch = (payload: { action: string; ids: string[] }, requestHeaders: Record<string, string> = headers) =>
+      fastify.inject({ method: "POST", url: "/trpc/pending.batch", headers: requestHeaders, payload });
+    expect((await batch({ action: "ignore", ids }, {})).statusCode).toBe(401);
+    expect((await batch({ action: "ignore", ids: [] })).statusCode).toBe(400);
+    const response = await batch({ action: "retry", ids: [...ids, ids[0], "missing"] });
+    expect(response.statusCode).toBe(200);
+    const result = response.json().result.data as PendingBatchResponse;
+    const automaticKinds: PendingKindDto[] = ["failed", "not_found", "new_file"];
+    expect(new Set(result.succeededIds)).toEqual(
+      new Set(
+        items
+          .filter((item) => item.libraryId === first.libraryId && automaticKinds.includes(item.kind))
+          .map((item) => item.id),
+      ),
+    );
+    expect(result.failures).toHaveLength(6);
+    expect(result.failures).toContainEqual({
+      id: items.find((item) => item.libraryId === second.libraryId)?.id,
+      message: "Library unavailable",
+    });
+    expect(start).toHaveBeenCalledTimes(2);
+    expect(start).toHaveBeenCalledWith({
+      executionMode: "batch",
+      libraryId: first.libraryId,
+      refs: expect.arrayContaining(
+        ["failed", "not_found", "new_file"].map((kind) => ({ rootId: first.rootId, relativePath: `${kind}.mp4` })),
+      ),
+    });
+    expect(pending.list()).toHaveLength(items.length);
+    const ignoredIds = ids.filter((id) => id !== untouched.id);
+    const ignored = await batch({ action: "ignore", ids: [...ignoredIds, ignoredIds[0], "missing"] });
+    expect(ignored.json().result.data).toEqual({ succeededIds: [...ignoredIds, "missing"], failures: [] });
+    expect(pending.list()).toEqual([untouched]);
+    expect(await readFile(join(root, "failed.mp4"), "utf8")).toBe("keep this file");
   });
 
   it("accepts scrape refs that span multiple registered media roots", async () => {

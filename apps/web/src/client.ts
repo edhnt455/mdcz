@@ -233,6 +233,7 @@ export const api: ServerApiContract = {
     probeStubs: (input) => trpcQuery("libraries.probeStubs", input),
   },
   pending: {
+    batch: (input) => trpcMutation("pending.batch", input),
     list: () => trpcQuery("pending.list"),
     detail: (input) => trpcQuery("pending.detail", input),
     retry: (input) => trpcMutation("pending.retry", input),

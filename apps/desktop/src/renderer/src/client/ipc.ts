@@ -15,7 +15,7 @@ import type {
 import type { MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type { MediaLibrarySettingsInput } from "@mdcz/shared/mediaLibrary";
 import type { LocalFileTarget, RootFileRef } from "@mdcz/shared/mediaRef";
-import type { PendingConfirmUncensoredInput, PendingRetryInput } from "@mdcz/shared/pending";
+import type { PendingBatchInput, PendingConfirmUncensoredInput, PendingRetryInput } from "@mdcz/shared/pending";
 import type { WatermarkPreviewInput } from "@mdcz/shared/posterBadges";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import type {
@@ -85,6 +85,7 @@ export const ipc = {
     probeStubs: (sourcePath: string) => client[IpcChannel.Libraries_ProbeStubs]({ sourcePath }),
   },
   pending: {
+    batch: (input: PendingBatchInput) => client[IpcChannel.Pending_Batch](input),
     list: () => client[IpcChannel.Pending_List](undefined),
     detail: (id: string) => client[IpcChannel.Pending_Detail]({ id }),
     retry: (input: PendingRetryInput) => client[IpcChannel.Pending_Retry](input),

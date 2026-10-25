@@ -193,6 +193,7 @@ export const CROSS_HOST_CAPABILITIES = [
   { desktop: IpcChannel.Libraries_PreviewNaming, server: "libraries.previewNaming", status: "aligned" },
   { desktop: IpcChannel.Libraries_ProbeStubs, server: "libraries.probeStubs", status: "aligned" },
   { desktop: IpcChannel.Pending_List, server: "pending.list", status: "aligned" },
+  { desktop: IpcChannel.Pending_Batch, server: "pending.batch", status: "aligned" },
   { desktop: IpcChannel.Pending_Detail, server: "pending.detail", status: "aligned" },
   { desktop: IpcChannel.Pending_Retry, server: "pending.retry", status: "aligned" },
   { desktop: IpcChannel.Pending_ConfirmUncensored, server: "pending.confirmUncensored", status: "aligned" },

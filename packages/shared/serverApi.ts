@@ -12,6 +12,8 @@ import type {
 } from "./mediaLibrary";
 import type { MoviePilotSettings } from "./moviePilot";
 import type {
+  PendingBatchInput,
+  PendingBatchResponse,
   PendingConfirmUncensoredInput,
   PendingDetailResponse,
   PendingIdInput,
@@ -199,6 +201,7 @@ export interface ServerApiContract {
     probeStubs(input: MediaLibrarySourceInput): Promise<MediaLibraryStubProbeResponse>;
   };
   pending: {
+    batch(input: PendingBatchInput): Promise<PendingBatchResponse>;
     list(): Promise<PendingListResponse>;
     detail(input: PendingIdInput): Promise<PendingDetailResponse>;
     retry(input: PendingRetryInput): Promise<PendingRetryResponse>;

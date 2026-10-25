@@ -55,6 +55,12 @@ export function PendingPage() {
       }
       onConfirmUncensored={async (input) => await act(() => api.pending.confirmUncensored(input), t.pending.confirmed)}
       onIgnore={async (id) => await act(() => api.pending.ignore({ id }), t.pending.ignored)}
+      onBatch={async (input) => {
+        const result = await api.pending.batch(input);
+        if (input.action === "retry" && result.succeededIds.length) requestScrapeLiveRunsRefresh();
+        await refresh();
+        return result;
+      }}
     />
   );
 }

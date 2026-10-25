@@ -75,6 +75,7 @@ export enum IpcChannel {
   Libraries_ProbeStubs = "libraries:probe-stubs",
 
   Pending_List = "pending:list",
+  Pending_Batch = "pending:batch",
   Pending_Detail = "pending:detail",
   Pending_Retry = "pending:retry",
   Pending_ConfirmUncensored = "pending:confirm-uncensored",

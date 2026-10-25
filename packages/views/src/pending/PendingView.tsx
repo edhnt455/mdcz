@@ -1,6 +1,9 @@
+import { toErrorMessage } from "@mdcz/shared/error";
 import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
 import type {
   AmbiguousCandidate,
+  PendingBatchInput,
+  PendingBatchResponse,
   PendingConfirmUncensoredInput,
   PendingDetailResponse,
   PendingItemDto,
@@ -88,6 +91,7 @@ export interface PendingViewProps {
   onRetry: (input: PendingRetryInput) => Promise<void>;
   onConfirmUncensored: (input: PendingConfirmUncensoredInput) => Promise<void>;
   onIgnore: (id: string) => Promise<void>;
+  onBatch: (input: PendingBatchInput) => Promise<PendingBatchResponse>;
 }
 
 export function PendingView({
@@ -102,9 +106,51 @@ export function PendingView({
   onRetry,
   onConfirmUncensored,
   onIgnore,
+  onBatch,
 }: PendingViewProps) {
   const t = useT();
-  if (!loading && items.length === 0 && !errorMessage) {
+  const selectAllId = useId();
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [batchAction, setBatchAction] = useState<PendingBatchInput["action"] | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [batchResult, setBatchResult] = useState<PendingBatchResponse | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const selectedItems = items.filter((item) => checkedIds.has(item.id));
+  const busy = batchAction !== null || detailBusy;
+  useEffect(() => {
+    const availableIds = new Set(items.map((item) => item.id));
+    setCheckedIds((current) => {
+      if ([...current].every((id) => availableIds.has(id))) return current;
+      return new Set([...current].filter((id) => availableIds.has(id)));
+    });
+  }, [items]);
+  const runBatch = async (action: PendingBatchInput["action"]) => {
+    if (busy || !selectedItems.length) return;
+    const ids = selectedItems.map((item) => item.id);
+    setBatchAction(action);
+    try {
+      if (
+        action === "ignore" &&
+        !(await confirmDialog({
+          title: t.pending.batchIgnoreConfirm(ids.length),
+          description: t.pending.batchIgnoreDescription,
+          confirmLabel: t.pending.batchIgnore,
+        }))
+      )
+        return;
+      setBatchError(null);
+      setBatchResult(null);
+      const result = await onBatch({ action, ids });
+      setBatchResult(result);
+      const succeeded = new Set(result.succeededIds);
+      setCheckedIds((current) => new Set([...current].filter((id) => !succeeded.has(id))));
+    } catch (error) {
+      setBatchError(toErrorMessage(error));
+    } finally {
+      setBatchAction(null);
+    }
+  };
+  if (!loading && items.length === 0 && !errorMessage && !batchResult && !batchError) {
     return (
       <main className="flex h-full min-h-0 flex-col bg-surface-canvas p-4 text-foreground">
         <h1 className="px-1 text-lg font-bold tracking-tight">{t.pending.title}</h1>
@@ -117,31 +163,111 @@ export function PendingView({
   }
   return (
     <main className="grid h-full min-h-0 grid-cols-1 gap-0 bg-surface-canvas text-foreground lg:grid-cols-[22rem_minmax(0,1fr)]">
-      <section className="min-h-0 overflow-y-auto border-border/60 p-4 lg:border-r">
-        <div className="mb-3 flex items-center justify-between px-1">
+      <section className="flex min-h-0 flex-col border-border/60 p-4 lg:border-r">
+        <div className="mb-3 flex shrink-0 items-center justify-between px-1">
           <h1 className="text-lg font-bold tracking-tight">{t.pending.title}</h1>
           <span className="rounded-full bg-surface-low px-2.5 py-0.5 font-numeric text-xs font-bold text-muted-foreground">
             {items.length}
           </span>
         </div>
+        <div className="mb-3 shrink-0 space-y-3 rounded-quiet-lg border border-border/60 bg-surface-low/60 p-3">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <label htmlFor={selectAllId} className="flex cursor-pointer items-center gap-2">
+              <Checkbox
+                id={selectAllId}
+                aria-label={t.pending.selectAll}
+                checked={
+                  selectedItems.length > 0 && selectedItems.length === items.length
+                    ? true
+                    : selectedItems.length > 0
+                      ? "indeterminate"
+                      : false
+                }
+                disabled={busy || loading || !items.length}
+                onCheckedChange={(checked) =>
+                  setCheckedIds(new Set(checked === true ? items.map((item) => item.id) : []))
+                }
+              />
+              {t.pending.selectAll}
+            </label>
+            <span className="text-muted-foreground">{t.pending.selectedCount(selectedItems.length)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Button size="sm" disabled={busy || !selectedItems.length} onClick={() => void runBatch("retry")}>
+              {batchAction === "retry" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="size-3.5" />
+              )}
+              {t.pending.batchRetry}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || !selectedItems.length}
+              onClick={() => void runBatch("ignore")}
+            >
+              {batchAction === "ignore" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              {t.pending.batchIgnore}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">{t.pending.batchRetryHint}</p>
+        </div>
+        {batchResult ? (
+          <div role="status" className="mb-3 shrink-0 space-y-2 rounded-quiet border border-border/60 p-3 text-xs">
+            <p>{t.pending.batchResult(batchResult.succeededIds.length, batchResult.failures.length)}</p>
+            {batchResult.failures.length > 0 ? (
+              <ul className="max-h-36 space-y-1 overflow-y-auto text-destructive">
+                {batchResult.failures.map(({ id, message }) => (
+                  <li key={id} className="break-words">
+                    {items.find((item) => item.id === id)?.fileName ?? id}: {message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+        {batchError ? (
+          <p role="alert" className="mb-3 text-xs text-destructive">
+            {batchError}
+          </p>
+        ) : null}
         {errorMessage ? (
           <div className="mb-3 flex items-center gap-2 rounded-quiet border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {t.pending.loadFailed(errorMessage)}
           </div>
         ) : null}
-        <ul className="space-y-2">
+        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-1">
           {items.map((item) => {
             const active = item.id === selectedId;
             return (
-              <li key={item.id}>
+              <li key={item.id} className="flex items-center gap-2">
+                <Checkbox
+                  aria-label={t.pending.selectItem(item.fileName)}
+                  checked={checkedIds.has(item.id)}
+                  disabled={busy}
+                  onCheckedChange={(checked) =>
+                    setCheckedIds((current) => {
+                      const next = new Set(current);
+                      if (checked === true) next.add(item.id);
+                      else next.delete(item.id);
+                      return next;
+                    })
+                  }
+                />
                 <button
                   type="button"
+                  disabled={busy}
                   aria-pressed={active}
                   onClick={() => onSelect(item.id)}
                   className={cn(
                     quietPanelSurfaceClass,
-                    "w-full rounded-quiet-lg px-3.5 py-3 text-left transition-all",
+                    "min-w-0 flex-1 rounded-quiet-lg px-3.5 py-3 text-left transition-all",
                     active
                       ? "border-foreground/35 bg-surface-floating shadow-sm ring-1 ring-foreground/10"
                       : "bg-surface/60 hover:border-border hover:bg-surface-floating/80",
@@ -167,6 +293,9 @@ export function PendingView({
             );
           })}
         </ul>
+        {!loading && !items.length ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">{t.pending.empty}</p>
+        ) : null}
       </section>
       <section className="min-h-0 overflow-y-auto p-6 lg:p-8">
         {detailLoading && !detail ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : null}
@@ -178,6 +307,8 @@ export function PendingView({
             onRetry={onRetry}
             onConfirmUncensored={onConfirmUncensored}
             onIgnore={onIgnore}
+            busy={busy}
+            onBusyChange={setDetailBusy}
           />
         ) : null}
       </section>
@@ -202,24 +333,27 @@ function PendingDetail({
   onRetry,
   onConfirmUncensored,
   onIgnore,
+  busy,
+  onBusyChange,
 }: {
   detail: PendingDetailResponse;
   libraries: MediaLibraryDto[];
   onRetry: PendingViewProps["onRetry"];
   onConfirmUncensored: PendingViewProps["onConfirmUncensored"];
   onIgnore: PendingViewProps["onIgnore"];
+  busy: boolean;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const t = useT();
   const { item, siteResults } = detail;
-  const [busy, setBusy] = useState(false);
   const [libraryId, setLibraryId] = useState(item.libraryId ?? libraries[0]?.id ?? "");
   useEffect(() => setLibraryId(item.libraryId ?? libraries[0]?.id ?? ""), [item.libraryId, libraries]);
   const run = async (action: () => Promise<void>) => {
-    setBusy(true);
+    onBusyChange(true);
     try {
       await action();
     } finally {
-      setBusy(false);
+      onBusyChange(false);
     }
   };
   const retry = (input: Omit<PendingRetryInput, "id" | "libraryId">) =>

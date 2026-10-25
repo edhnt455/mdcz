@@ -10,6 +10,7 @@ import {
 } from "@mdcz/shared/mediaLibrary";
 import { deletionRetrySchema, moviePilotSettingsSchema } from "@mdcz/shared/moviePilot";
 import {
+  pendingBatchInputSchema,
   pendingConfirmUncensoredInputSchema,
   pendingIdInputSchema,
   pendingRetryInputSchema,
@@ -278,6 +279,9 @@ export const appRouter = t.router({
       .query(async ({ input }) => ({ hasStubs: await containsStrmFiles(input.sourcePath) })),
   }),
   pending: t.router({
+    batch: protectedProcedure
+      .input(pendingBatchInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.batch(input)),
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.pending.list()),
     detail: protectedProcedure
       .input(pendingIdInputSchema)

@@ -10,6 +10,7 @@ import {
   mediaLibraryUpdateInputSchema,
 } from "@mdcz/shared/mediaLibrary";
 import {
+  pendingBatchInputSchema,
   pendingConfirmUncensoredInputSchema,
   pendingIdInputSchema,
   pendingRetryInputSchema,
@@ -28,6 +29,7 @@ export const createLibrariesHandlers = (
   | typeof IpcChannel.Libraries_PreviewNaming
   | typeof IpcChannel.Libraries_ProbeStubs
   | typeof IpcChannel.Pending_List
+  | typeof IpcChannel.Pending_Batch
   | typeof IpcChannel.Pending_Detail
   | typeof IpcChannel.Pending_Retry
   | typeof IpcChannel.Pending_ConfirmUncensored
@@ -71,6 +73,11 @@ export const createLibrariesHandlers = (
     [IpcChannel.Pending_List]: t.procedure.action(() =>
       withIpcErrorHandling("list pending", async () => await pendingService.list()),
     ),
+    [IpcChannel.Pending_Batch]: t.procedure
+      .input(pendingBatchInputSchema)
+      .action(({ input }) =>
+        withIpcErrorHandling("batch pending entries", async () => await pendingService.batch(input)),
+      ),
     [IpcChannel.Pending_Detail]: t.procedure
       .input(pendingIdInputSchema)
       .action(({ input }) =>

@@ -3,6 +3,16 @@ import type { SkipReason } from "@mdcz/shared/siteResults";
 
 export const pending = {
   title: "Pending",
+  selectAll: "Select all",
+  selectItem: (name: string) => `Select ${name}`,
+  selectedCount: (count: number) => `${count} selected`,
+  batchRetry: "Process selected",
+  batchIgnore: "Ignore selected",
+  batchRetryHint:
+    "Retries scraping into each file's library. Missing numbers, ambiguous works and release types need individual review.",
+  batchIgnoreConfirm: (count: number) => `Ignore ${count} selected files?`,
+  batchIgnoreDescription: "Remove the selected entries from the pending list. Files stay where they are.",
+  batchResult: (succeeded: number, failed: number) => `${succeeded} processed · ${failed} failed`,
   empty: "Nothing needs your attention.",
   loadFailed: (error: string) => `Could not load the pending list: ${error}`,
   kinds: {

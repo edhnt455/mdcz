@@ -57,6 +57,17 @@ export type PendingDetailResponse = z.infer<typeof pendingDetailResponseSchema>;
 export const pendingIdInputSchema = z.object({ id: z.string().trim().min(1) });
 export type PendingIdInput = z.infer<typeof pendingIdInputSchema>;
 
+export const pendingBatchInputSchema = z.object({
+  ids: z.array(z.string().trim().min(1)).min(1),
+  action: z.enum(["retry", "ignore"]),
+});
+export type PendingBatchInput = z.infer<typeof pendingBatchInputSchema>;
+
+export interface PendingBatchResponse {
+  succeededIds: string[];
+  failures: { id: string; message: string }[];
+}
+
 /** A repair learned from one file, so files named the same way parse on their own next time. */
 export const pendingRuleSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ignoreToken"), token: z.string().trim().min(1) }),
