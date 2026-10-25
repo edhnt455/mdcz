@@ -19,7 +19,7 @@ export * from "./SettingsSearchContext";
 export * from "./SettingsSectionModeContext";
 export * from "./SettingsServices";
 export * from "./SiteConnectivityPill";
-export * from "./SitePriorityEditorField";
+export * from "./SiteListSection";
 export * from "./Subsection";
 export * from "./sections/MediaServerSections";
 export * from "./settingsBrowseState";
@@ -31,7 +31,6 @@ export {
   type SettingsSuggestion,
 } from "./settingsFilter";
 export * from "./settingsRegistry";
-export * from "./sitePriorityOptions";
 export * from "./TopLevelSections";
 export * from "./useAutoSaveField";
 export * from "./useCrossFieldErrors";

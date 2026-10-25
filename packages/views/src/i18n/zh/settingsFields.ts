@@ -5,6 +5,7 @@ export const settingsFields: Messages["settingsFields"] = {
   sections: {
     paths: { label: "路径", aliases: ["路径", "目录", "排除", "演员头像"] },
     scrape: { label: "刮削设置" },
+    sites: { label: "站点", aliases: ["网站", "刮削站点", "cookie", "镜像"] },
     network: { label: "网络连接" },
     translate: { label: "翻译服务" },
     naming: { label: "命名规则" },
@@ -42,10 +43,11 @@ export const settingsFields: Messages["settingsFields"] = {
     "paths.outputSummaryPath": { label: "概览统计目录", description: "留空则使用整理目标目录", aliases: ["概览目录"] },
     "paths.configDirectory": { label: "配置文件目录", aliases: ["配置目录"] },
     "scrape.sites": {
-      label: "启用站点与优先级",
-      description: "按分组显示 DMM/FANZA 系、厂商官网和常用聚合站点，并保持保存值仍为具体站点顺序。",
+      label: "站点顺序",
+      description: "勾选决定是否参与刮削，上下移动调整优先级。未勾选的站保留位置，刮削时跳过。",
       aliases: ["网站优先级", "站点优先级", "排序"],
     },
+    "scrape.siteOrder": { label: "站点位置" },
     "scrape.r18MetadataLanguage": { label: "R18.dev 元数据语言" },
     "scrape.aiNumberFallback": {
       label: "AI 番号识别兜底",
@@ -402,9 +404,13 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "同步后刷新人物",
       description: "同步简介或头像后，额外请求 Emby 刷新人物元数据与图片。",
     },
+    "emby.autoSyncActorPhotos": {
+      label: "自动同步演员头像",
+      description: "整理成功后自动通知 Emby 扫描并补全缺失头像，启动及每 30 分钟补查。已有头像不覆盖，无需打开工具页。",
+    },
     "emby.notifyAfterPublish": {
       label: "入库后增量刷新目录",
-      description: "影片整理入库后，请求 Emby 仅刷新该影片所在目录，无需全局扫描媒体库即可即时显示。",
+      description: "影片整理入库后，请求 Emby 刷新该影片所在目录。开启自动头像同步时始终发送扫描通知。",
     },
     "jellyfin.notifyAfterPublish": {
       label: "入库后增量刷新目录",

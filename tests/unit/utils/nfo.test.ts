@@ -126,8 +126,9 @@ describe("parseNfo", () => {
     const parsed = parseNfoSnapshot(xml).crawlerData;
     expect(parsed.actor_profiles?.[0]).toMatchObject({
       name: "Actor A",
-      photo_url: "actor-a.jpg",
     });
+    expect(parsed.actor_profiles?.[0]?.photo_url).toBeUndefined();
+    expect(xml).not.toContain("actor-a.jpg");
     expect(parsed.publisher).toBe("PRESTIGE");
     expect(parsed.content_type).toBe("VR");
     expect(parsed.durationSeconds).toBe(5400);

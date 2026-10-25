@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
+import { normalizeActorName as normalizeActorKey } from "@mdcz/shared/actorAliases";
 import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
@@ -58,41 +59,11 @@ const renderPathTemplate = (template: string, data: Record<string, string | numb
     return value === undefined || value === null ? "" : String(value);
   });
 
-const normalizeActorKey = (value: string): string =>
-  value
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "")
-    .trim();
-
-const profileMap = (
-  profiles: CrawlerData["actor_profiles"] | undefined,
-): Map<string, NonNullable<CrawlerData["actor_profiles"]>[number]> => {
-  const map = new Map<string, NonNullable<CrawlerData["actor_profiles"]>[number]>();
-  for (const profile of profiles ?? []) {
-    const key = normalizeActorKey(profile.name);
-    if (key) {
-      map.set(key, profile);
-    }
-  }
-  return map;
-};
-
-const buildActorNodes = (actors: string[], profiles: CrawlerData["actor_profiles"] | undefined) => {
-  const profileByName = profileMap(profiles);
-  return actors
+const buildActorNodes = (actors: string[]) =>
+  actors
     .map((name) => name.trim())
-    .filter((name) => name.length > 0)
-    .map((name, index) => {
-      const profile = profileByName.get(normalizeActorKey(name));
-      return {
-        name,
-        type: "Actor",
-        thumb: profile?.photo_url,
-        order: index,
-        sortorder: index,
-      };
-    });
-};
+    .filter(Boolean)
+    .map((name, index) => ({ name, type: "Actor", order: index, sortorder: index }));
 
 const parseReleaseYear = (releaseDate: string | undefined): number | undefined => {
   if (!releaseDate) return undefined;
@@ -246,7 +217,7 @@ export class NfoGenerator {
     movie.uniqueid = { "@_type": data.website, "@_default": "true", "#text": data.number };
     movie.genre = isNfoFieldEnabled(enabledFields, "genres") ? genres : undefined;
     movie.tag = isNfoFieldEnabled(enabledFields, "tags") && tags.length > 0 ? tags : undefined;
-    movie.actor = buildActorNodes(toArray(data.actors), data.actor_profiles);
+    movie.actor = buildActorNodes(toArray(data.actors));
 
     const thumbs: Array<Record<string, unknown>> = [];
     if (isNfoFieldEnabled(enabledFields, "poster")) {

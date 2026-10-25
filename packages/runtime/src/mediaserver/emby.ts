@@ -30,7 +30,7 @@ import {
 import type { RuntimeInfoActorSourceProvider } from "./infoSync";
 import { runMediaServerInfoSync } from "./infoSync";
 import type { MediaServerSignalService } from "./jellyfin";
-import type { RuntimePhotoActorSourceProvider } from "./photoSync";
+import type { PhotoSyncOptions, RuntimePhotoActorSourceProvider } from "./photoSync";
 import { runMediaServerPhotoSync } from "./photoSync";
 import type { PlannedPersonSyncState } from "./planner";
 
@@ -509,9 +509,10 @@ export class EmbyActorPhotoService {
     this.networkClient = deps.networkClient;
   }
 
-  async run(configuration: Configuration, mode: EmbyMode): Promise<EmbyBatchResult> {
+  async run(configuration: Configuration, mode: EmbyMode, options: PhotoSyncOptions = {}): Promise<EmbyBatchResult> {
     const resolvedUserId = await resolveEmbyUserId(this.networkClient, configuration);
     return await runMediaServerPhotoSync({
+      ...options,
       configuration,
       mode,
       serviceName: "Emby",
@@ -526,6 +527,13 @@ export class EmbyActorPhotoService {
       getPersonName: (person) => person.Name,
       getPersonId: (person) => person.Id,
       hasPrimaryImage: hasEmbyPrimaryImage,
+      hasPrimaryImageNow: async (person) => {
+        const detail = await fetchEmbyPersonDetail(this.networkClient, configuration, person, resolvedUserId);
+        return hasEmbyPrimaryImage({
+          ...person,
+          ImageTags: isRecord(detail.ImageTags) ? toStringRecord(detail.ImageTags) : undefined,
+        });
+      },
       uploadPrimaryImage: async (personId, bytes, contentType) => {
         await uploadEmbyPrimaryImage(this.networkClient, configuration, personId, bytes, contentType);
       },

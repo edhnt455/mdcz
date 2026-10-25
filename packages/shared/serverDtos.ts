@@ -628,12 +628,36 @@ export const personSyncJobSchema = personSyncStartInputSchema.extend({
   current: z.number().int(),
   total: z.number().int(),
   startedAt: z.string(),
+  trigger: z.enum(["automatic", "manual"]).default("manual"),
   finishedAt: z.string().nullable(),
-  result: z.object({ processedCount: z.number(), failedCount: z.number(), skippedCount: z.number() }).nullable(),
+  result: z
+    .object({
+      processedCount: z.number(),
+      failedCount: z.number(),
+      skippedCount: z.number(),
+      failures: z
+        .array(z.object({ personId: z.string(), name: z.string(), stage: z.string(), message: z.string() }))
+        .optional(),
+    })
+    .nullable(),
   error: z.string().nullable(),
 });
 
 export type PersonSyncJobDto = z.infer<typeof personSyncJobSchema>;
+
+export const actorPhotoAutoSyncStatusSchema = z.object({
+  status: z.enum(["disabled", "unconfigured", "idle", "scheduled", "waiting", "running", "blocked"]),
+  nextRunAt: z.string().nullable(),
+  lastRunAt: z.string().nullable(),
+  waitingActors: z.number().int(),
+  error: z.string().nullable(),
+});
+export type ActorPhotoAutoSyncStatus = z.infer<typeof actorPhotoAutoSyncStatusSchema>;
+export const personSyncStateSchema = z.object({
+  job: personSyncJobSchema.nullable(),
+  automatic: actorPhotoAutoSyncStatusSchema,
+});
+export type PersonSyncStateDto = z.infer<typeof personSyncStateSchema>;
 
 export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({

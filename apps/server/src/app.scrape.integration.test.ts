@@ -404,6 +404,7 @@ describe("buildServer scrape integration", () => {
       }),
     });
     const taskEvents: unknown[] = [];
+    const publishedActors = vi.spyOn(services.personSync, "published");
     const unsubscribeTaskEvents = services.taskEvents.subscribe((event) => {
       taskEvents.push(event);
     });
@@ -513,7 +514,7 @@ describe("buildServer scrape integration", () => {
     const outputRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.mp4";
     const nfoRelativePath = "JAV_output/Actor A/ABC-123/ABC-123.nfo";
     const nfoContent = await readFile(join(root, nfoRelativePath), "utf8");
-    const actorPhotoContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/.actors/Actor A.jpg"));
+    expect(await readdir(join(root, "JAV_output/Actor A/ABC-123"))).not.toContain(".actors");
     const posterContent = await readFile(join(root, "JAV_output/Actor A/ABC-123/poster.png"));
 
     expect(libraryResponse.statusCode).toBe(200);
@@ -573,9 +574,9 @@ describe("buildServer scrape integration", () => {
       url: "https://example.com/runtime-trailer-source.mp4",
     });
     expect(nfoContent).toContain("Runtime Title ABC-123");
-    expect(nfoContent).toContain(".actors/Actor A.jpg");
+    expect(publishedActors).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ actors: ["Actor A"] }));
+    expect(nfoContent).not.toContain(".actors/");
     expect(nfoContent).not.toContain("<director>Runtime Director</director>");
-    expect(actorPhotoContent.length).toBeGreaterThan(8000);
     expect(posterContent.length).toBeGreaterThan(0);
     expect(assetResponse.statusCode).toBe(200);
     expect(assetResponse.headers["content-type"]).toContain("image/png");

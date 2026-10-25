@@ -2,7 +2,6 @@ import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
-import type { RuntimeActorImageService } from "../actorOutput";
 import type { DownloadCallbacks, DownloadManager } from "../download";
 import type { NfoGenerator, NfoOptions } from "../nfo";
 import {
@@ -44,30 +43,19 @@ describe("shared output steps", () => {
   });
 
   it("preserves absent or disabled crawler data without actor output work", async () => {
-    const actorImageService = {
-      prepareActorProfilesForMovie: vi.fn(),
-    } as unknown as RuntimeActorImageService;
     const crawlerData = createCrawlerData();
 
     await expect(
       prepareOutputCrawlerData({
-        actorImageService,
-        config,
         enabled: true,
-        sourceVideoPath: "/library/missing.mp4",
       }),
-    ).resolves.toEqual({ data: undefined, actorPhotoPaths: [] });
+    ).resolves.toEqual({ data: undefined });
     await expect(
       prepareOutputCrawlerData({
-        actorImageService,
-        config,
         crawlerData,
         enabled: false,
-        movieDir: "/library/ABC-123",
-        sourceVideoPath: "/library/ABC-123.mp4",
       }),
-    ).resolves.toEqual({ data: crawlerData, actorPhotoPaths: [] });
-    expect(actorImageService.prepareActorProfilesForMovie).not.toHaveBeenCalled();
+    ).resolves.toEqual({ data: crawlerData });
   });
 
   it("publishes resolved scene metadata before host asset post-processing", async () => {

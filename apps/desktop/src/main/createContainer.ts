@@ -1,4 +1,4 @@
-import { getActorImageCacheDirectory, resolveDesktopDataFile } from "@main/appIdentity";
+import { resolveDesktopDataFile } from "@main/appIdentity";
 import type { ServiceContainer } from "@main/container";
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
@@ -25,12 +25,7 @@ import { siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
-import {
-  EmbyActorInfoService,
-  EmbyActorPhotoService,
-  JellyfinActorInfoService,
-  JellyfinActorPhotoService,
-} from "@mdcz/runtime/mediaserver";
+import { notifyMediaServersOfPublish, PersonSyncManager } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { AmazonJpImageService } from "@mdcz/runtime/tools";
@@ -70,11 +65,7 @@ export const createContainer = ({
     configManager.getValidated(),
   );
   const amazonJpImageService = new AmazonJpImageService(networkClient, loggerService.getLogger("AmazonJpImageService"));
-  const actorImageService = new ActorImageService({
-    cacheRoot: getActorImageCacheDirectory(),
-    logger: loggerService.getLogger("ActorImageService"),
-    networkClient,
-  });
+  const actorImageService = new ActorImageService();
   const avjohoCookieResolver = createElectronCookieResolver({
     expectedCookieNames: ["wsidchk"],
   });
@@ -93,26 +84,47 @@ export const createContainer = ({
     ]),
   });
 
+  const personSync = new PersonSyncManager({
+    getConfiguration: () => configManager.getValidated(),
+    networkClient,
+    actorSourceProvider,
+    logger: loggerService.getLogger("PersonSync"),
+  });
+  const unsubscribePersonConfig = configManager.onChange((configuration) =>
+    personSync.configurationChanged(configuration),
+  );
+  personSync.activate();
+  const onPublished = (
+    directories: readonly string[],
+    configuration: import("@mdcz/shared/config").Configuration,
+    data: import("@mdcz/shared/types").CrawlerData,
+  ) => {
+    personSync.published(configuration, data);
+    void notifyMediaServersOfPublish(
+      networkClient,
+      configuration,
+      directories,
+      loggerService.getLogger("MediaServerNotify"),
+    );
+  };
   const scraperService = new ScraperService(
     signalService,
     networkClient,
     crawlerProvider,
-    actorImageService,
-    actorSourceProvider,
     imageHostCooldownStore,
     libraries,
     outputLibraryScanner,
     persistenceService,
     mediaRoots,
     prepareScrapeItem,
+    onPublished,
   );
   const maintenanceService = new MaintenanceService({
+    onPublished,
     signalService,
     networkClient,
     crawlerProvider,
     persistenceService,
-    actorImageService,
-    actorSourceProvider,
     imageHostCooldownStore,
     mediaRoots,
     prepareScrapeItem,
@@ -143,46 +155,7 @@ export const createContainer = ({
     crawlerProvider,
     actorSourceProvider,
     actorImageService,
-    jellyfinActorPhotoService: new JellyfinActorPhotoService({
-      signalService: {
-        showLogText: (message, level) => signalService.showLogText(message, level),
-        resetProgress: () => undefined,
-        setProgress: () => undefined,
-      },
-      networkClient,
-      actorSourceProvider,
-      logger: loggerService.getLogger("JellyfinActorPhoto"),
-    }),
-    jellyfinActorInfoService: new JellyfinActorInfoService({
-      signalService: {
-        showLogText: (message, level) => signalService.showLogText(message, level),
-        resetProgress: () => undefined,
-        setProgress: () => undefined,
-      },
-      networkClient,
-      actorSourceProvider,
-      logger: loggerService.getLogger("JellyfinActorInfo"),
-    }),
-    embyActorPhotoService: new EmbyActorPhotoService({
-      signalService: {
-        showLogText: (message, level) => signalService.showLogText(message, level),
-        resetProgress: () => undefined,
-        setProgress: () => undefined,
-      },
-      networkClient,
-      actorSourceProvider,
-      logger: loggerService.getLogger("EmbyActorPhoto"),
-    }),
-    embyActorInfoService: new EmbyActorInfoService({
-      signalService: {
-        showLogText: (message, level) => signalService.showLogText(message, level),
-        resetProgress: () => undefined,
-        setProgress: () => undefined,
-      },
-      networkClient,
-      actorSourceProvider,
-      logger: loggerService.getLogger("EmbyActorInfo"),
-    }),
+    personSync,
     symlinkService: new SymlinkService({ signalService }),
     amazonPosterToolService: new AmazonPosterToolService(
       networkClient,
@@ -193,6 +166,8 @@ export const createContainer = ({
     batchTranslateToolService: new BatchTranslateToolService(networkClient, persistenceService, {}, mediaRoots),
     updateService: new UpdateService(signalService),
     shutdown: async () => {
+      unsubscribePersonConfig();
+      await personSync.close();
       let firstError: unknown;
       for (const shutdown of [
         async () => await scraperService.shutdown(),

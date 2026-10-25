@@ -6,6 +6,7 @@ export * from "./errors";
 export * from "./infoSync";
 export * from "./jellyfin";
 export * from "./libraryNotify";
+export * from "./PersonSyncManager";
 export * from "./personSync";
 export * from "./photoSync";
 export * from "./planner";

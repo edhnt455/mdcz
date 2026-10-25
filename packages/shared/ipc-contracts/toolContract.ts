@@ -11,8 +11,10 @@ import type {
   MediaServerConnectionCheckResult,
   PersonSyncResult,
 } from "../ipcTypes";
+import type { PersonSyncStateDto } from "../serverDtos";
 
 export type ToolIpcContract = {
+  [IpcChannel.Tool_PersonSyncStatus]: IpcProcedure<void, PersonSyncStateDto>;
   [IpcChannel.Tool_AmazonPosterScan]: IpcProcedure<{ directory?: string }, { items: AmazonPosterScanItem[] }>;
   [IpcChannel.Tool_AmazonPosterLookup]: IpcProcedure<{ nfoPath?: string; title?: string }, AmazonPosterLookupResult>;
   [IpcChannel.Tool_AmazonPosterApply]: IpcProcedure<

@@ -59,8 +59,6 @@ import type {
   ScrapeRunSnapshot,
 } from "../tasks/session/ScrapeRunSession";
 import { toScrapeRunSnapshotDto } from "../tasks/session/scrapeRunSnapshotDto";
-import type { ActorImageService } from "./ActorImageService";
-import type { RuntimeActorSourceProvider } from "./actorOutput";
 import { AggregationService, type CrawlerPort, type SiteResultSink } from "./aggregation";
 import { DirectoryInventory } from "./DirectoryInventory";
 import { createDirectoryScope, discoverDirectoryFiles } from "./directoryDiscovery";
@@ -149,7 +147,7 @@ export interface ScrapeRunnerDependencies {
     downloaders?: Pick<DownloaderRepository, "ownsPath">;
   };
   /** Directories that received published movies, for media servers to scan. */
-  onPublished?: (directories: readonly string[], configuration: Configuration) => void;
+  onPublished?: (directories: readonly string[], configuration: Configuration, data: CrawlerData) => void;
   /** Files that newly entered the pending list. */
   onPending?: (count: number) => void;
   recordSiteResults: SiteResultSink;
@@ -157,8 +155,6 @@ export interface ScrapeRunnerDependencies {
   networkClient: NetworkClient;
   crawlerProvider: CrawlerPort;
   imageHostCooldownStore: ImageHostCooldownStore;
-  actorImageService: ActorImageService;
-  actorSourceProvider?: RuntimeActorSourceProvider;
   mappingStore?: TranslationMappingStore;
   platform?: "desktop" | "server";
   logger?: {
@@ -875,8 +871,6 @@ export class ScrapeRunner {
           showScrapeStep: () => undefined,
           showFailedInfo: () => undefined,
         },
-        actorImageService: this.deps.actorImageService,
-        actorSourceProvider: this.deps.actorSourceProvider,
         getConfiguration: async () => configuration,
         logger: this.logger,
         postProcessAssets: this.deps.postProcessAssets,
@@ -1145,6 +1139,7 @@ export class ScrapeRunner {
             ? [publishedDirectory(output.scrape.nfo)]
             : [...new Set(output.files.map((file) => publishedDirectory(file.target)))],
           configuration,
+          output.scrape.crawlerData,
         );
 
         return entries.map((entry) => {

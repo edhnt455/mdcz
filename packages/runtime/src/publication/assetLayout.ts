@@ -5,7 +5,6 @@ import type { CrawlerData, DiscoveredAssets, MaintenanceAssetDecisions } from "@
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { buildSceneImageFileName, SCENE_IMAGE_FILE_PATTERN } from "../scrape/download/assets/helpers";
 import type { ResolvedPublicationLayout } from "../scrape/FileOrganizer";
-import { sanitizePathSegment } from "../scrape/utils/path";
 
 export interface PublicationAssetLayout {
   staged: ReadonlyMap<string, string>;
@@ -31,9 +30,10 @@ export const resolvePublicationAssetLayout = async (input: {
   const imageExtensions = [".jpg", ".jpeg", ".png", ".webp"] as const;
 
   for (const [kind, value] of Object.entries(input.existingAssets ?? {})) {
+    if (kind === "actorPhotos") continue;
     for (const source of Array.isArray(value) ? value : value ? [value] : []) {
       const name = relative(layout.existingMetadataDir, source);
-      const collection = kind === "sceneImages" || kind === "actorPhotos";
+      const collection = kind === "sceneImages";
       const targetName = collection
         ? name && name !== ".." && !name.startsWith("../") && !isAbsolute(name)
           ? name
@@ -54,15 +54,6 @@ export const resolvePublicationAssetLayout = async (input: {
           isSourceDir && layout.mode === "move"
             ? join(layout.metadataDir, config.paths.sceneImagesFolder, entry.name)
             : source;
-        retained.set(source, target);
-      }
-    }
-
-    const actorsFolder = join(directory, ".actors");
-    for (const entry of await inventory.files(actorsFolder)) {
-      const source = join(actorsFolder, entry.name);
-      if (!retained.has(source)) {
-        const target = isSourceDir && layout.mode === "move" ? join(layout.metadataDir, ".actors", entry.name) : source;
         retained.set(source, target);
       }
     }
@@ -129,17 +120,6 @@ export const resolvePublicationAssetLayout = async (input: {
           config.paths.sceneImagesFolder,
           buildSceneImageFileName(config.paths.sceneImagesFolder, index, `image${ext}`),
         );
-        staged.set(name, join(layout.metadataDir, name));
-      }
-    }
-  }
-
-  const personImageSources = config.personSync?.personImageSources ?? [];
-  const actors = input.crawlerData?.actors ?? [];
-  if (personImageSources.length > 0 && actors.length > 0) {
-    for (const actor of actors) {
-      for (const ext of imageExtensions) {
-        const name = join(".actors", `${sanitizePathSegment(actor) || "actor"}${ext}`);
         staged.set(name, join(layout.metadataDir, name));
       }
     }

@@ -1,7 +1,11 @@
+const validPhoto = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6DbkAAAAASUVORK5CYII=",
+  "base64",
+);
+
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getActorImageCacheDirectory } from "@main/appIdentity";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@main/services/config";
 import { checkConnection, isUuid } from "@main/services/mediaServer/jellyfin";
 import {
@@ -72,7 +76,7 @@ const createActorSourceProvider = (
     registry: new ActorSourceRegistry([
       // Local image resolution is rooted in the mocked desktop user data directory.
       new LocalActorSource({
-        actorImageService: new ActorImageService({ cacheRoot: getActorImageCacheDirectory() }),
+        actorImageService: new ActorImageService(),
       }),
       new GfriendsActorSource({
         networkClient: networkClient as unknown as NetworkClient,
@@ -493,7 +497,7 @@ describe("Jellyfin services", () => {
     const root = await createTempDir();
     await createUserDataDir();
     const photoPath = join(root, "Actor A.jpg");
-    await writeFile(photoPath, "photo-bytes", "utf8");
+    await writeFile(photoPath, validPhoto);
 
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {

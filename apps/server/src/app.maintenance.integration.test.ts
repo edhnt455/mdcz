@@ -98,9 +98,6 @@ const createMaintenanceRuntime = (
   downloadAll: DownloadManager["downloadAll"] = async () => ({ sceneImages: [], downloaded: [] }),
 ): MaintenanceRuntime =>
   new MaintenanceRuntime({
-    actorImageService: {
-      prepareActorProfilesForMovie: async () => undefined,
-    } as never,
     aggregationService,
     config,
     downloadManager: {

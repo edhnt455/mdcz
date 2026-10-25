@@ -1,6 +1,5 @@
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type {
-  ActorImageService,
   AggregationService,
   DownloadManager,
   FileOrganizer,
@@ -75,13 +74,7 @@ describe("FileScraper plan timing", () => {
       plan: vi.fn().mockReturnValue(plan),
       resolveOutputPlan: vi.fn(resolveTestOutputPlan),
     } as unknown as FileOrganizer;
-    const actorImageService = {
-      prepareActorProfilesForMovie: vi.fn().mockResolvedValue(undefined),
-    } as unknown as ActorImageService;
-    const downloadAll = vi.fn().mockResolvedValue({
-      downloaded: [],
-      sceneImages: [],
-    });
+    const downloadAll = vi.fn().mockResolvedValue({ downloaded: [], sceneImages: [] });
     const aggregate = vi.fn().mockResolvedValue({
       data: aggregatedData,
       sources: {},
@@ -118,7 +111,6 @@ describe("FileScraper plan timing", () => {
         downloadAll,
       } as unknown as DownloadManager,
       fileOrganizer,
-      actorImageService,
       getConfiguration: async () => currentConfig,
     });
 

@@ -280,7 +280,7 @@ describe("LocalScanService", () => {
     expect(secondEntry?.assets.poster).toBeUndefined();
   });
 
-  it("keeps shared .actors photos discoverable even when multiple movies share a directory", async () => {
+  it("does not adopt movie-local actor photos as managed movie assets", async () => {
     const root = await createTempDir();
     const actorDir = join(root, "Actor A");
     const firstVideoPath = join(actorDir, "ABC-123.mp4");
@@ -296,7 +296,7 @@ describe("LocalScanService", () => {
     const firstEntry = entries.find((entry) => entry.fileInfo.filePath === firstVideoPath);
     const secondEntry = entries.find((entry) => entry.fileInfo.filePath === secondVideoPath);
 
-    expect(firstEntry?.assets.actorPhotos).toEqual([actorPhotoPath]);
-    expect(secondEntry?.assets.actorPhotos).toEqual([actorPhotoPath]);
+    expect(firstEntry?.assets.actorPhotos).toEqual([]);
+    expect(secondEntry?.assets.actorPhotos).toEqual([]);
   });
 });

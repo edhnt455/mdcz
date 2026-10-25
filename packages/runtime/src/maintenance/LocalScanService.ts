@@ -375,7 +375,7 @@ export class LocalScanService {
     const followVideoAssetCandidates = buildFollowVideoAssetCandidates(input.dir, movieBaseNames);
     const fixedAssetNames = buildMovieAssetFileNames("", "fixed");
 
-    const [thumb, poster, fanart, trailer, sceneImages, actorPhotos] = await Promise.all([
+    const [thumb, poster, fanart, trailer, sceneImages] = await Promise.all([
       findFirstExistingPath(
         uniqueDefinedPaths([
           resolveLocalAssetReference(input.dir, input.crawlerData?.thumb_url),
@@ -415,7 +415,6 @@ export class LocalScanService {
         allowDirectoryWideAssets,
         input.inventory,
       ),
-      this.resolveActorPhotos(input.dir, input.crawlerData, input.inventory),
     ]);
 
     return {
@@ -424,7 +423,7 @@ export class LocalScanService {
       fanart,
       sceneImages,
       trailer,
-      actorPhotos,
+      actorPhotos: [],
     };
   }
 
@@ -464,24 +463,6 @@ export class LocalScanService {
     }
 
     return allowDirectoryWideAssets ? await listSubdirFiles(dir, sceneImagesFolder, IMAGE_EXTENSIONS, inventory) : [];
-  }
-
-  private async resolveActorPhotos(
-    dir: string,
-    crawlerData: CrawlerData | undefined,
-    inventory: DirectoryInventory,
-  ): Promise<string[]> {
-    const explicitActorPhotos = await listExistingPaths(
-      uniqueDefinedPaths(
-        (crawlerData?.actor_profiles ?? []).map((profile) => resolveLocalAssetReference(dir, profile.photo_url)),
-      ),
-      inventory,
-    );
-    if (explicitActorPhotos.length > 0) {
-      return explicitActorPhotos;
-    }
-
-    return await listSubdirFiles(dir, ".actors", IMAGE_EXTENSIONS, inventory);
   }
 
   /** Find the NFO file in a directory, preferring one that matches the video filename. */

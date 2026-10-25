@@ -7,6 +7,7 @@ import {
   type DeepPartial,
   defaultConfiguration,
   getConfigurationPathDefault,
+  withNormalizedScrapeSites,
 } from "@mdcz/shared/config";
 import {
   CONFIGURATION_FILE_EXTENSIONS,
@@ -89,7 +90,7 @@ export const setRuntimeConfigProperty = (obj: Record<string, unknown>, propertyP
 export const parseRuntimeConfiguration = (value: unknown): Configuration => {
   const parsed = configurationSchema.safeParse(value);
   if (parsed.success) {
-    return parsed.data;
+    return withNormalizedScrapeSites(parsed.data);
   }
 
   const fieldErrors: Record<string, string> = {};

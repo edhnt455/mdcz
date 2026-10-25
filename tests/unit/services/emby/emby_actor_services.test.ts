@@ -1,3 +1,8 @@
+const validPhoto = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6DbkAAAAASUVORK5CYII=",
+  "base64",
+);
+
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import {
@@ -155,6 +160,10 @@ const createMockGetJson =
       if (detail !== undefined) {
         return detail;
       }
+      const person = (options.filteredPersons ?? options.persons ?? []).find(
+        (person) => (person as { Id: string }).Id === personId,
+      );
+      if (person) return person;
     }
 
     const metadataEditorMatch = parsed.pathname.match(/^\/Items\/([^/]+)\/MetadataEditor$/u);
@@ -372,7 +381,7 @@ describe("Emby actor services", () => {
         persons: [{ Id: "person-1", Name: "神木麗", ImageTags: {} }],
       }),
     );
-    networkClient.getContent.mockResolvedValue(new TextEncoder().encode("photo-bytes"));
+    networkClient.getContent.mockResolvedValue(validPhoto);
 
     const actorSourceProvider = new FakeActorSourceProvider();
     actorSourceProvider.lookup.mockResolvedValue({
@@ -433,7 +442,7 @@ describe("Emby actor services", () => {
         },
       }),
     );
-    networkClient.getContent.mockResolvedValue(new TextEncoder().encode("photo-bytes"));
+    networkClient.getContent.mockResolvedValue(validPhoto);
 
     const actorSourceProvider = new FakeActorSourceProvider();
     actorSourceProvider.lookup.mockResolvedValue({
@@ -484,7 +493,7 @@ describe("Emby actor services", () => {
         ],
       }),
     );
-    networkClient.getContent.mockImplementation(async (url: string) => new TextEncoder().encode(`photo:${url}`));
+    networkClient.getContent.mockResolvedValue(validPhoto);
 
     const actorSourceProvider = new FakeActorSourceProvider();
     actorSourceProvider.lookup.mockImplementation(async (_configuration, query) => {
@@ -657,7 +666,7 @@ describe("Emby actor services", () => {
         filteredPersons: [{ Id: "actor-1", Name: "神木麗", ImageTags: {} }],
       }),
     );
-    networkClient.getContent.mockResolvedValue(new TextEncoder().encode("photo-bytes"));
+    networkClient.getContent.mockResolvedValue(validPhoto);
 
     const actorSourceProvider = new FakeActorSourceProvider();
     actorSourceProvider.lookup.mockResolvedValue({

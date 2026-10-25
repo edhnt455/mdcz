@@ -1,11 +1,9 @@
 import { dirname, join } from "node:path";
-import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
-  type ActorImageService,
   applyImageWatermarks,
   DownloadManager,
   FileOrganizer,
@@ -21,12 +19,11 @@ import { resolveServerBundledMappingDirectory } from "./translationMappingStore"
 
 export interface ServerMaintenanceRuntimeDependencies {
   config: ServerConfigService;
+  onPublished?: MaintenanceRuntimeDependencies["onPublished"];
   prepareScrapeItem?: MaintenanceRuntimeDependencies["prepareScrapeItem"];
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
   imageHostCooldownStore: PersistentCooldownStore;
-  actorImageService: ActorImageService;
-  actorSourceProvider: ActorSourceProvider;
   mappingStore?: TranslationMappingStore;
   recordSiteResults: SiteResultSink;
   loadSiteResults: MaintenanceRuntimeDependencies["loadSiteResults"];
@@ -39,8 +36,7 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
     builtinDirectory: join(dirname(resolveServerBundledMappingDirectory()), "watermark"),
   });
   return new MaintenanceRuntime({
-    actorImageService: deps.actorImageService,
-    actorSourceProvider: deps.actorSourceProvider,
+    onPublished: deps.onPublished,
     crawlerProvider: deps.crawlerProvider,
     recordSiteResults: deps.recordSiteResults,
     loadSiteResults: deps.loadSiteResults,

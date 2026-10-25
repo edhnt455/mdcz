@@ -1,7 +1,6 @@
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
-import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
@@ -14,7 +13,6 @@ import {
   resolveMaintenanceTarget,
 } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import type { ActorImageService } from "@mdcz/runtime/scrape";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
 import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import type {
@@ -28,12 +26,11 @@ import type { MaintenancePresetId, MaintenanceStatus } from "@mdcz/shared/types"
 import { createDesktopMaintenanceRuntime } from "./runtimeFactory";
 
 export interface MaintenanceServiceDependencies {
+  onPublished?: MaintenanceRuntimeDependencies["onPublished"];
   signalService: SignalService;
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
   persistenceService: DesktopPersistenceService;
-  actorImageService: ActorImageService;
-  actorSourceProvider?: ActorSourceProvider;
   imageHostCooldownStore: PersistentCooldownStore;
   mediaRoots?: ConfiguredMediaRootService;
   prepareScrapeItem?: MaintenanceRuntimeDependencies["prepareScrapeItem"];
@@ -66,8 +63,7 @@ export class MaintenanceService {
     this.runtime =
       deps.runtime ??
       createDesktopMaintenanceRuntime({
-        actorImageService: deps.actorImageService,
-        actorSourceProvider: deps.actorSourceProvider,
+        onPublished: deps.onPublished,
         crawlerProvider: deps.crawlerProvider,
         imageHostCooldownStore: this.imageHostCooldownStore,
         networkClient: deps.networkClient,

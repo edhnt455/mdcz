@@ -1,19 +1,6 @@
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
-import { createServerActorSourceProvider, serverActorImageCacheRoot } from "./actorSourceFactory";
-import type { ServerConfigService } from "./services/configService";
-
-const runtimeRoot = join(tmpdir(), "mdcz-actor-source");
-const fakeConfig = {
-  runtimePaths: {
-    configDir: join(runtimeRoot, "config"),
-    dataDir: join(runtimeRoot, "data"),
-    configPath: join(runtimeRoot, "config", "default.toml"),
-    databasePath: join(runtimeRoot, "data", "mdcz.sqlite"),
-  },
-} as ServerConfigService;
+import { createServerActorSourceProvider } from "./actorSourceFactory";
 
 class FakeNetworkClient {
   readonly getJson = vi.fn(async () => ({}));
@@ -29,18 +16,11 @@ class FakeNetworkClient {
 }
 
 describe("createServerActorSourceProvider", () => {
-  it("roots the actor image cache under runtimePaths.dataDir", () => {
-    expect(serverActorImageCacheRoot(fakeConfig)).toBe(join(fakeConfig.runtimePaths.dataDir, "actor-image-cache"));
-  });
-
   it("wires server actor sources for lookup", async () => {
     const provider = createServerActorSourceProvider(
       new FakeNetworkClient() as never,
       {
-        cacheRoot: serverActorImageCacheRoot(fakeConfig),
         resolveLocalImage: async () => undefined,
-        materializeForMovie: async () => undefined,
-        prepareActorProfilesForMovie: async () => undefined,
       } as never,
     );
     const configuration = configurationSchema.parse({

@@ -21,7 +21,6 @@ export * from "./organize/NamingEngine";
 export * from "./organize/versionLabels";
 export * from "./output/applyImageWatermarks";
 export * from "./output/executeOutputSteps";
-export * from "./output/prepareCrawlerDataForMovieOutput";
 export * from "./output/prepareCrawlerDataForNfo";
 export * from "./output/prepareImageAlternativesForDownload";
 export * from "./PosterCropService";

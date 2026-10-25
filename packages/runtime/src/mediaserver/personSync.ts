@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
+import type { Configuration } from "@mdcz/shared/config";
 import type { PersonSyncResult } from "@mdcz/shared/ipcTypes";
 import type { RuntimeNetworkClient } from "../network";
-import { pathExists } from "../scrape/utils/filesystem";
+import { detectImageFormat, parseImageDimensions } from "../scrape/utils/image";
 
 export type PersonSyncBatchOutcome = "processed" | "skipped";
 
@@ -21,31 +22,20 @@ export const createEmptyPersonSyncResult = (): PersonSyncResult => ({
   skippedCount: 0,
 });
 
-export const formatPersonSyncError = (error: unknown): string => {
+export const formatPersonSyncError = (error: unknown, configuration?: Configuration): string => {
+  let text = error instanceof Error ? error.message : String(error);
   if (error && typeof error === "object" && "code" in error && "message" in error) {
     const code = (error as { code?: unknown }).code;
     const message = (error as { message?: unknown }).message;
     if (typeof code === "string" && typeof message === "string") {
-      return `${code}: ${message}`;
+      text = `${code}: ${message}`;
     }
   }
 
-  if (error instanceof Error) {
-    return error.message;
+  for (const key of [configuration?.emby.apiKey, configuration?.jellyfin.apiKey]) {
+    if (key) text = text.replaceAll(key, "[redacted]");
   }
-
-  return String(error);
-};
-
-const imageContentTypeFromPath = (path: string): string => {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".png")) {
-    return "image/png";
-  }
-  if (lower.endsWith(".webp")) {
-    return "image/webp";
-  }
-  return "image/jpeg";
+  return text.replace(/([?&](?:api_key|apiKey|token)=)[^\s&]+/giu, "$1[redacted]");
 };
 
 export const loadPrimaryImageFromSource = async (
@@ -57,21 +47,24 @@ export const loadPrimaryImageFromSource = async (
     return null;
   }
 
-  const content = (await pathExists(normalizedSource))
-    ? await readFile(normalizedSource)
-    : await networkClient.getContent?.(normalizedSource, {
+  const content = /^https?:\/\//iu.test(normalizedSource)
+    ? await networkClient.getContent?.(normalizedSource, {
         headers: {
           accept: "image/*",
         },
-      });
+      })
+    : await readFile(normalizedSource);
 
   if (!content) {
     return null;
   }
 
+  const format = detectImageFormat(content);
+  if (!format || !parseImageDimensions(content)) throw new Error("Invalid actor image content");
+
   return {
     content,
-    contentType: imageContentTypeFromPath(normalizedSource),
+    contentType: `image/${format}`,
   };
 };
 

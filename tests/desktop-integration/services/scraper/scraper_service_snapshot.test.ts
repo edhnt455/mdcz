@@ -8,7 +8,6 @@ import { createMediaRoot } from "@mdcz/media-store";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService } from "@mdcz/runtime/scrape";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const directories: string[] = [];
@@ -24,8 +23,6 @@ const createHarness = async () => {
     new SignalService(null),
     networkClient,
     new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
-    new ActorImageService({ cacheRoot: join(directory, "actors"), networkClient }),
-    undefined,
     new PersistentCooldownStore({ filePath: join(directory, "image-host-cooldowns.json") }),
     { list: async () => [], findBySourcePath: async () => undefined },
     undefined,

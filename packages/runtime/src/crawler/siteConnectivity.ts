@@ -1,36 +1,17 @@
-import { type Configuration, isMirrorableSite, type MirrorableSite, resolveSiteUrl } from "@mdcz/shared/config";
+import {
+  type Configuration,
+  isMirrorableSite,
+  type MirrorableSite,
+  resolveSiteUrl,
+  SITE_HOMEPAGE_URLS,
+} from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { SiteConnectivityProbeResponse } from "@mdcz/shared/serverDtos";
 import { failureReasonOf, type RuntimeNetworkClient, runWithCrawlerSource } from "../network";
 import { buildCrawlerOptions } from "../scrape/crawlerOptions";
 import { toErrorMessage } from "../shared";
 
-const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Exclude<Website, MirrorableSite>, string> = {
-  [Website.DAHLIA]: "https://dahlia-av.jp",
-  [Website.DMM]: "https://www.dmm.co.jp/",
-  [Website.DMM_TV]: "https://video.dmm.co.jp/",
-  [Website.FALENO]: "https://faleno.jp",
-  [Website.FANTIA]: "https://fantia.jp",
-  [Website.FC2]: "https://adult.contents.fc2.com",
-  [Website.FC2HUB]: "https://javten.com",
-  [Website.H0930]: "https://www.h0930.com",
-  [Website.H4610]: "https://www.h4610.com",
-  [Website.PPVDATABANK]: "https://ppvdatabank.com",
-  [Website.JAV321]: "https://www.jav321.com",
-  [Website.KINGDOM]: "https://kingdom.vc",
-  [Website.KM_PRODUCE]: "https://www.km-produce.com",
-  [Website.MGSTAGE]: "https://www.mgstage.com",
-  [Website.PRESTIGE]: "https://www.prestige-av.com",
-  [Website.R18_DEV]: "https://r18.dev",
-  [Website.SOKMIL]: "https://www.sokmil.com",
-  [Website.AVBASE]: "https://www.avbase.net",
-  [Website.AVWIKIDB]: "https://avwikidb.com",
-  [Website.OFFICIAL]: "https://s1s1s1.com",
-  [Website.ONEPONDO]: "https://www.1pondo.tv",
-  [Website.TENMUSUME]: "https://www.10musume.com",
-  [Website.CARIBBEANCOM]: "https://www.caribbeancom.com",
-  [Website.HEYZO]: "https://www.heyzo.com",
-};
+const DEFAULT_SITE_CONNECTIVITY_URLS: Record<Exclude<Website, MirrorableSite>, string> = SITE_HOMEPAGE_URLS;
 
 const appendCookie = (headers: Record<string, string>, cookie: string | undefined): void => {
   const normalized = cookie?.trim();

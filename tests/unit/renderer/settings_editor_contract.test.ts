@@ -20,7 +20,7 @@ describe("settings editor metadata and filtering", () => {
     expect(entry("download.tagBadgeTypes")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("download.nfoIgnoreFields")).toMatchObject({ anchor: "download", visibility: "public" });
     expect(entry("paths.defaultScanExcludeDirs")).toMatchObject({ anchor: "paths", visibility: "public" });
-    expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "scrape", visibility: "hidden" });
+    expect(entry("scrape.r18MetadataLanguage")).toMatchObject({ anchor: "sites", visibility: "hidden" });
     expect(entry("scrape.filenameIgnoreTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
     expect(entry("scrape.filenameBlacklistTokens")).toMatchObject({ anchor: "scrape", visibility: "public" });
     for (const key of ["subtitleKeywords", "umrKeywords", "uncensoredKeywords", "leakKeywords"]) {

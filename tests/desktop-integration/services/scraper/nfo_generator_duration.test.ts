@@ -97,7 +97,7 @@ describe("NfoGenerator", () => {
     }
   });
 
-  it("prefers local assets and preserves actor photos in the generated XML", () => {
+  it("prefers local movie assets and leaves actor photos to the media server", () => {
     const xml = buildXml(
       createCrawlerData({
         actors: ["Actor A"],
@@ -138,7 +138,7 @@ describe("NfoGenerator", () => {
     expect(xml).not.toContain("<mpaa>XXX</mpaa>");
     expect(xml).toContain("<name>Actor A</name>");
     expect(xml).toContain("<type>Actor</type>");
-    expect(xml).toContain("<thumb>https://img.example.com/actor-a.jpg</thumb>");
+    expect(xml).not.toContain("https://img.example.com/actor-a.jpg");
     expect(xml).toContain("<order>0</order>");
     expect(xml).toContain("<sortorder>0</sortorder>");
     expect(xml).not.toContain("<tag>Drama</tag>");

@@ -1,11 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
-import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
-  type ActorImageService,
   type AggregationService,
   applyImageWatermarks,
   type ImageHostCooldownStore,
@@ -17,6 +15,7 @@ import {
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
+import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type {
   FileActionInput,
@@ -36,6 +35,7 @@ import type {
   ScrapeTaskControlInput,
   TaskEventDto,
 } from "@mdcz/shared/serverDtos";
+import type { CrawlerData } from "@mdcz/shared/types";
 import type { TaskEventBus } from "../taskEvents";
 import { resolveServerBundledMappingDirectory } from "../translationMappingStore";
 import type { ServerConfigService } from "./configService";
@@ -48,8 +48,7 @@ export interface ScrapeServiceResources {
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
   imageHostCooldownStore: ImageHostCooldownStore & { clear?: () => void; flush?: () => Promise<void> };
-  actorImageService: ActorImageService;
-  actorSourceProvider?: ActorSourceProvider;
+  onActorPhotosPublished?: (configuration: Configuration, data: CrawlerData) => void;
   mappingStore?: TranslationMappingStore;
   aggregationService?: Pick<AggregationService, "aggregate">;
   prepareScrapeItem?: PrepareScrapeItem;
@@ -63,8 +62,7 @@ export class ScrapeService {
   private readonly networkClient: NetworkClient;
   private readonly crawlerProvider: CrawlerProvider;
   private readonly imageHostCooldownStore: ImageHostCooldownStore & { clear?: () => void; flush?: () => Promise<void> };
-  private readonly actorImageService: ActorImageService;
-  private readonly actorSourceProvider?: ActorSourceProvider;
+  private readonly onActorPhotosPublished?: ScrapeServiceResources["onActorPhotosPublished"];
   private readonly mappingStore?: TranslationMappingStore;
   private readonly aggregationService?: ScrapeServiceResources["aggregationService"];
   private readonly prepareScrapeItem?: PrepareScrapeItem;
@@ -85,8 +83,7 @@ export class ScrapeService {
     this.networkClient = resources.networkClient;
     this.crawlerProvider = resources.crawlerProvider;
     this.imageHostCooldownStore = resources.imageHostCooldownStore;
-    this.actorImageService = resources.actorImageService;
-    this.actorSourceProvider = resources.actorSourceProvider;
+    this.onActorPhotosPublished = resources.onActorPhotosPublished;
     this.mappingStore = resources.mappingStore;
     this.aggregationService = resources.aggregationService;
     this.prepareScrapeItem = resources.prepareScrapeItem;
@@ -119,7 +116,8 @@ export class ScrapeService {
           mediaRoots: this.mediaRoots,
           downloaders: state.repositories.downloaders,
         },
-        onPublished: (directories, configuration) => {
+        onPublished: (directories, configuration, data) => {
+          this.onActorPhotosPublished?.(configuration, data);
           this.taskEvents.invalidate("library");
           void notifyMediaServersOfPublish(
             this.networkClient,
@@ -137,8 +135,6 @@ export class ScrapeService {
         networkClient: this.networkClient,
         crawlerProvider: this.crawlerProvider,
         imageHostCooldownStore: this.imageHostCooldownStore,
-        actorImageService: this.actorImageService,
-        actorSourceProvider: this.actorSourceProvider,
         mappingStore: this.mappingStore,
         aggregationService: this.aggregationService,
         prepareScrapeItem: this.prepareScrapeItem,

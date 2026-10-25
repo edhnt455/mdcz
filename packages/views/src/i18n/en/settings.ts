@@ -310,89 +310,56 @@ export const settings = {
   relaunchFailed: (error: string) => `Restart failed: ${error}`,
   relaunchApp: "Restart app",
   sitePriority: {
-    options: {
-      dmm_family: {
-        label: "DMM/FANZA family",
-        description:
-          "Official DMM/FANZA store and streaming sources, the authoritative source for mainstream Japanese AV; titles, labels and covers are highly reliable, but affected by region, login/age checks and delistings.",
-      },
-      official: {
-        label: "Official studio sites",
-        description:
-          "Official studio websites, queried only for their own codes. Clean titles without actor names and unmasked plots, though typically not split into paragraphs.",
-      },
-      [Website.AVBASE]: {
-        label: "avbase",
-        description:
-          "Aggregator with broad field coverage; titles, plots, actors and images are usually complete. A good general primary source.",
-      },
-      [Website.R18_DEV]: { label: "R18.dev", description: "R18.dev JSON metadata source, with fewer images." },
-      [Website.AVWIKIDB]: {
-        label: "avwikidb",
-        description:
-          "Community-curated database, good for filling in plots, tags and release info; may be region-restricted or return 403 on some networks.",
-      },
-      [Website.JAVDB]: {
-        label: "javdb",
-        description:
-          "Aggregator that is strong at covers, scene images and trailers; may be region-restricted, configure a cookie if needed.",
-      },
-      [Website.JAVBUS]: {
-        label: "javbus",
-        description:
-          "Aggregator with usually stable covers and sample images; some networks hit an age check, configure a cookie if needed.",
-      },
-      [Website.JAV321]: {
-        label: "jav321",
-        description:
-          "Search-based aggregator, useful as an extra fallback; field completeness and stability are usually lower than the main aggregators.",
-      },
-      h0930_family: {
-        label: "H0930 / H4610",
-        description: "Self-run independent production sites that use their own codes (e.g. H0930/H4610).",
-      },
-      uncensored_official: {
-        label: "Uncensored studio sites",
-        description:
-          "1pondo, 10musume, Caribbeancom and HEYZO official metadata. Uses 1PON, 10MU, CARIB and HEYZO codes without a login.",
-      },
-      [Website.FC2]: {
-        label: "fc2",
-        description:
-          "Official FC2 product pages; seller names and release info are highly reliable. Good for FC2 codes, but can't handle delisted titles.",
-      },
-      [Website.FC2HUB]: {
-        label: "fc2hub",
-        description:
-          "FC2 aggregator that actively fills in titles, runtime and ratings; one of the main sources for FC2 codes.",
-      },
-      [Website.PPVDATABANK]: {
-        label: "ppvdatabank",
-        description:
-          "FC2 supplementary database, often used to backfill seller, date, cover and sample images; a good FC2 fallback.",
-      },
-      [Website.SOKMIL]: {
-        label: "sokmil",
-        description: "Supplements gravure and specific streaming content; not recommended as a general primary source.",
-      },
-      [Website.KINGDOM]: {
-        label: "kingdom",
-        description:
-          "Official Kingdom group site, good for specific titles from Empress, Princess, Queen, Kingdom, bambini, etc.; low general coverage.",
-      },
-      [Website.FANTIA]: {
-        label: "fantia",
-        description: "Official Fantia site, good for Fantia codes; low general coverage.",
-      },
-    },
-    partiallyEnabled: (enabled: number, total: number) => `${enabled}/${total} enabled`,
+    sites: {
+      [Website.DMM]:
+        "Official DMM/FANZA store. Titles, labels and covers are highly reliable, but affected by region, login, age checks and delistings.",
+      [Website.DMM_TV]:
+        "DMM TV streaming source, complementary to the DMM store. Also affected by region, login, age checks and delistings.",
+      [Website.OFFICIAL]:
+        "Opens the matching studio site for each code. Clean titles and unmasked plots. There is no single homepage.",
+      [Website.MGSTAGE]:
+        "MGStage official site, queried only for its own codes. Clean titles and unmasked plots, usually not split into paragraphs.",
+      [Website.PRESTIGE]:
+        "Prestige official site, queried only for its own codes. Clean titles and unmasked plots, usually not split into paragraphs.",
+      [Website.FALENO]:
+        "Faleno official site, queried only for its own codes. Clean titles and unmasked plots, usually not split into paragraphs.",
+      [Website.DAHLIA]:
+        "Dahlia official site, queried only for its own codes. Clean titles and unmasked plots, usually not split into paragraphs.",
+      [Website.KM_PRODUCE]:
+        "KM Produce official site, queried only for its own codes. Clean titles and unmasked plots, usually not split into paragraphs.",
+      [Website.AVBASE]:
+        "Aggregator with broad field coverage; titles, plots, actors and images are usually complete. A good general primary source.",
+      [Website.R18_DEV]: "R18.dev JSON metadata source, with fewer images.",
+      [Website.AVWIKIDB]:
+        "Community-curated database, good for filling in plots, tags and release info; may be region-restricted or return 403 on some networks.",
+      [Website.JAVDB]:
+        "Aggregator that is strong at covers, scene images and trailers; may be region-restricted, configure a cookie if needed.",
+      [Website.JAVBUS]:
+        "Aggregator with usually stable covers and sample images; some networks hit an age check, configure a cookie if needed.",
+      [Website.JAV321]:
+        "Search-based aggregator, useful as an extra fallback; field completeness and stability are usually lower than the main aggregators.",
+      [Website.H0930]: "Self-run independent production site that uses H0930 codes.",
+      [Website.H4610]: "Self-run independent production site that uses H4610 codes.",
+      [Website.ONEPONDO]: "1pondo official metadata. Uses 1PON codes and does not require a login.",
+      [Website.TENMUSUME]: "10musume official metadata. Uses 10MU codes and does not require a login.",
+      [Website.CARIBBEANCOM]: "Caribbeancom official metadata. Uses CARIB codes and does not require a login.",
+      [Website.HEYZO]: "HEYZO official metadata. Uses HEYZO codes and does not require a login.",
+      [Website.FC2]:
+        "Official FC2 product pages; seller names and release info are highly reliable. Good for FC2 codes, but can't handle delisted titles.",
+      [Website.FC2HUB]:
+        "FC2 aggregator that actively fills in titles, runtime and ratings; one of the main sources for FC2 codes.",
+      [Website.PPVDATABANK]:
+        "FC2 supplementary database, often used to backfill seller, date, cover and sample images; a good FC2 fallback.",
+      [Website.SOKMIL]:
+        "Supplements gravure and specific streaming content; not recommended as a general primary source.",
+      [Website.KINGDOM]:
+        "Official Kingdom group site, good for specific titles from Empress, Princess, Queen, Kingdom, bambini, etc.; low general coverage.",
+      [Website.FANTIA]: "Official Fantia site, good for Fantia codes; low general coverage.",
+    } satisfies Record<Website, string>,
     enabledSummary: (enabled: number, total: number) => `Enabled ${enabled}/${total}`,
     r18Language: "R18.dev metadata language",
     r18Languages: { ja: "Japanese", en: "English" } as Record<R18MetadataLanguage, string>,
-    eyebrow: "Scrape sites",
-    hint: "Check sites to enable them; move them up or down to set priority.",
-    connectivityTitle: "Site connectivity",
-    connectivityHint: "Checks enabled sites using the current network, proxy and cookie settings.",
+    hint: "Check a site to scrape it. Move a row to set priority. Unchecked sites stay put and are skipped.",
   },
   aggregationPriority: {
     candidatesSummary: (enabled: number, total: number) => `Candidates ${enabled}/${total}`,
@@ -438,12 +405,9 @@ export const settings = {
     } satisfies Record<ConfigIssueCode, string> as Record<string, string | undefined>,
   },
   subsections: {
-    scrapeSites: "Scrape sites",
-    scrapeSitesDescription: "Enabled sites and priority",
     scrapePacing: "Scrape pacing",
     filenameFiltering: "File filtering",
     proxyAndRequests: "Proxy and requests",
-    siteAccess: "Site access",
     assetDownloads: "Asset downloads",
     interface: "Interface",
     shortcuts: "Shortcuts",

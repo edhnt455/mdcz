@@ -1,6 +1,6 @@
 {
   "name": "mdcz",
-  "version": "0.19.7",
+  "version": "0.19.8",
   "description": "MDCz - media metadata scraper built on Electron",
   "private": true,
   "type": "module",

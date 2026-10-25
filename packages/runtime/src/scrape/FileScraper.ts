@@ -24,7 +24,6 @@ import {
 } from "../publication/movieArtifacts";
 import { toRootFileRef } from "../publication/outputRefs";
 import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
-import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "./actorOutput";
 import type { AggregationResult, AggregationService, ManualScrapeOptions } from "./aggregation";
 import { DirectoryInventory } from "./DirectoryInventory";
 import type { DownloadManager } from "./download";
@@ -69,8 +68,6 @@ export interface RuntimeScrapeSignalService {
 }
 
 export interface FileScraperDependencies {
-  actorImageService: RuntimeActorImageService;
-  actorSourceProvider?: RuntimeActorSourceProvider;
   aggregationService: Pick<AggregationService, "aggregate">;
   downloadManager: DownloadManager;
   fileOrganizer: FileOrganizer;
@@ -444,13 +441,8 @@ export class FileScraper {
       const metadataOutputDir = plan.metadataDir;
       let crawlerData = prepared.crawlerData;
       const actorOutput = await prepareOutputCrawlerData({
-        actorImageService: this.deps.actorImageService,
-        actorSourceProvider: this.deps.actorSourceProvider,
-        config: configuration,
         crawlerData,
         enabled: true,
-        movieDir: stagingDir,
-        sourceVideoPath: first.fileInfo.filePath,
         signal,
       });
       crawlerData = actorOutput.data ?? crawlerData;
@@ -518,7 +510,6 @@ export class FileScraper {
         retainedMovieAssets: retainedRegisteredFeatures(participants.members, participants.assets),
         stagingDir,
         downloadedAssets: downloaded.assets,
-        actorPhotoPaths: actorOutput.actorPhotoPaths,
         nfoNaming: configuration.download.nfoNaming,
         remoteData: crawlerData,
         writeNfo: async (assets, writeFile) =>

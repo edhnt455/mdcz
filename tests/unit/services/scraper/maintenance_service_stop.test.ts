@@ -9,7 +9,6 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService } from "@mdcz/runtime/scrape";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -106,7 +105,6 @@ const createFixture = async () => {
     networkClient,
     crawlerProvider: new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
     persistenceService,
-    actorImageService: new ActorImageService({ cacheRoot: path.join(directory, "actors"), networkClient }),
     imageHostCooldownStore: new PersistentCooldownStore({
       filePath: path.join(directory, "image-host-cooldowns.json"),
     }),

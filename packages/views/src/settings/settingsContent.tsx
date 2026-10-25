@@ -3,10 +3,9 @@ import {
   NFO_FIELD_OPTIONS,
   NOTIFICATION_CHANNELS,
   notificationsSchema,
-  OFFICIAL_SITE_URLS,
   TRANSLATION_FIELD_OPTIONS,
 } from "@mdcz/shared/config";
-import { TRANSLATION_TARGET_OPTIONS, Website } from "@mdcz/shared/enums";
+import { TRANSLATION_TARGET_OPTIONS } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
 
 import {
@@ -30,7 +29,6 @@ import {
   BaseField,
   BoolField,
   ChipArrayFieldWrapper,
-  CookieFieldWrapper,
   DurationFieldWrapper,
   EnumField,
   NumberField,
@@ -52,7 +50,6 @@ import {
   useSettingsNotifier,
   useSettingsServices,
 } from "./SettingsServices";
-import { SiteConnectivityPill } from "./SiteConnectivityPill";
 import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_KEYS, isRecord } from "./settingsRegistry";
 import { WATERMARK_FIELD_KEYS, WatermarkSettings } from "./WatermarkSettings";
@@ -207,26 +204,6 @@ export function NetworkConnectionSection() {
       <BoolField name="network.useProxy" />
       <NumberField name="network.timeout" min={1} max={300} />
       <NumberField name="network.retryCount" min={0} max={10} />
-    </>
-  );
-}
-
-export function NetworkSiteAccessSection() {
-  return (
-    <>
-      <UrlField
-        name="network.javdbUrl"
-        placeholder={OFFICIAL_SITE_URLS[Website.JAVDB]}
-        labelAddon={<SiteConnectivityPill site={Website.JAVDB} />}
-      />
-      <CookieFieldWrapper name="network.javdbCookie" />
-      <UrlField
-        name="network.javbusUrl"
-        placeholder={OFFICIAL_SITE_URLS[Website.JAVBUS]}
-        labelAddon={<SiteConnectivityPill site={Website.JAVBUS} />}
-      />
-      <CookieFieldWrapper name="network.javbusCookie" />
-      <CookieFieldWrapper name="network.fantiaCookie" />
     </>
   );
 }

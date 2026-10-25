@@ -1,7 +1,9 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { PersonSyncFailure, PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { ActorSourceHint } from "../actorSource/types";
 import type { RuntimeNetworkClient } from "../network";
 import type { MediaServerMode } from ".";
+import { getHttpStatus, MediaServerServiceError } from "./errors";
 import {
   createEmptyPersonSyncResult,
   formatPersonSyncError,
@@ -16,7 +18,7 @@ interface MediaServerPhotoSyncLogger {
 export interface RuntimePhotoActorSourceProvider {
   lookup(
     configuration: Configuration,
-    query: string | { name: string; requiredField?: "photo_url" },
+    query: string | { name: string; requiredField?: "photo_url"; sourceHints?: ActorSourceHint[] },
   ): Promise<{
     profile: { photo_url?: string };
     warnings?: string[];
@@ -39,7 +41,15 @@ interface ProgressSignalService {
   showLogText(message: string, level?: "info" | "warn" | "error"): void;
 }
 
-interface MediaServerPhotoSyncOptions<TPerson> {
+export interface PhotoSyncOptions {
+  canContinue?: () => boolean;
+  shouldProcess?: (personId: string) => boolean;
+  sourceHints?: (name: string) => ActorSourceHint[];
+  onPersons?: (persons: ReadonlyArray<{ Id: string; Name: string }>) => void;
+  onOutcome?: (personId: string, outcome: "processed" | "missing" | "failed" | "existing") => void;
+}
+
+interface MediaServerPhotoSyncOptions<TPerson> extends PhotoSyncOptions {
   configuration: Configuration;
   mode: MediaServerMode;
   serviceName: string;
@@ -51,6 +61,7 @@ interface MediaServerPhotoSyncOptions<TPerson> {
   getPersonName: (person: TPerson) => string;
   getPersonId: (person: TPerson) => string;
   hasPrimaryImage: (person: TPerson) => boolean;
+  hasPrimaryImageNow?: (person: TPerson) => Promise<boolean>;
   uploadPrimaryImage: (personId: string, bytes: Uint8Array, contentType: string) => Promise<void>;
   shouldRefreshPerson: boolean;
   refreshPerson: (personId: string) => Promise<void>;
@@ -61,16 +72,23 @@ export const runMediaServerPhotoSync = async <TPerson>(
   options: MediaServerPhotoSyncOptions<TPerson>,
 ): Promise<PersonSyncResult> => {
   const persons = await options.fetchPersons();
+  options.onPersons?.(
+    persons.map((person) => ({ Id: options.getPersonId(person), Name: options.getPersonName(person) })),
+  );
   if (persons.length === 0) {
     options.signalService.showLogText(`${options.serviceName} returned no actors to sync`, "warn");
     return createEmptyPersonSyncResult();
   }
 
   let stage = "resolve photo source";
+  const failures: PersonSyncFailure[] = [];
   const result = await runPersonSyncBatch({
     items: persons,
     signalService: options.signalService,
     processItem: async (person) => {
+      if (options.canContinue && !options.canContinue()) return "skipped";
+      const personId = options.getPersonId(person);
+      if (options.shouldProcess && !options.shouldProcess(personId)) return "skipped";
       stage = "resolve photo source";
       const actorName = options.getPersonName(person).trim();
       if (!actorName) {
@@ -78,12 +96,14 @@ export const runMediaServerPhotoSync = async <TPerson>(
       }
 
       if (options.mode === "missing" && options.hasPrimaryImage(person)) {
+        options.onOutcome?.(personId, "existing");
         return "skipped";
       }
 
       const actorSource = await options.actorSourceProvider.lookup(options.configuration, {
         name: actorName,
         requiredField: "photo_url",
+        ...(options.sourceHints ? { sourceHints: options.sourceHints(actorName) } : {}),
       });
       logActorSourceWarnings(options.logger, actorName, actorSource.warnings);
       const source = actorSource.profile.photo_url;
@@ -94,6 +114,7 @@ export const runMediaServerPhotoSync = async <TPerson>(
       const image = await loadPrimaryImageFromSource(options.networkClient, actorSource.profile.photo_url);
 
       if (!image) {
+        options.onOutcome?.(personId, "missing");
         options.signalService.showLogText(
           `No ${options.serviceName} actor photo source found for ${actorName}`,
           "warn",
@@ -101,8 +122,18 @@ export const runMediaServerPhotoSync = async <TPerson>(
         return "skipped";
       }
 
+      if (options.canContinue && !options.canContinue()) return "skipped";
+      if (options.mode === "missing" && options.hasPrimaryImageNow) {
+        stage = "check current photo";
+        if (await options.hasPrimaryImageNow(person)) {
+          options.onOutcome?.(personId, "existing");
+          return "skipped";
+        }
+      }
+      if (options.canContinue && !options.canContinue()) return "skipped";
       stage = "upload photo";
       await options.uploadPrimaryImage(options.getPersonId(person), image.content, image.contentType);
+      options.onOutcome?.(personId, "processed");
       if (options.shouldRefreshPerson) {
         try {
           await options.refreshPerson(options.getPersonId(person));
@@ -117,9 +148,15 @@ export const runMediaServerPhotoSync = async <TPerson>(
       return "processed";
     },
     onError: (person, error) => {
+      const personId = options.getPersonId(person);
       const actorName = options.getPersonName(person).trim() || options.getPersonName(person);
+      const status = error instanceof MediaServerServiceError ? error.status : getHttpStatus(error);
+      if ((stage === "upload photo" || stage === "check current photo") && (status === 401 || status === 403))
+        throw error;
+      options.onOutcome?.(personId, "failed");
+      failures.push({ personId, name: actorName, stage, message: formatPersonSyncError(error, options.configuration) });
       options.logger.warn(
-        `Failed to update ${options.serviceName} actor photo for ${actorName} (${stage}): ${formatPersonSyncError(error)}`,
+        `Failed to update ${options.serviceName} actor photo for ${actorName} (${stage}): ${formatPersonSyncError(error, options.configuration)}`,
       );
     },
   });
@@ -129,5 +166,5 @@ export const runMediaServerPhotoSync = async <TPerson>(
       `${options.serviceName} actor photo sync completed. Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
   );
 
-  return result;
+  return failures.length ? { ...result, failures } : result;
 };

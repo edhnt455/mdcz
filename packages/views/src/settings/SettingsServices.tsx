@@ -65,6 +65,7 @@ export interface SettingsIntegrationServices {
 }
 
 export interface SettingsServices {
+  openActorPhotoSync?: () => void;
   browsePath: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<SettingsBrowseResult>;
   getPathSuggestions?: (kind: "file" | "directory") => SettingsPathSuggestion[];
   integrations?: SettingsIntegrationServices;
@@ -81,6 +82,7 @@ export interface SettingsServices {
   incrementInFlightSaves: () => void;
   decrementInFlightSaves: () => void;
   listCrawlerSites: () => Promise<{ sites: SettingsCrawlerSiteInfo[] }>;
+  openExternal?: (url: string) => Promise<unknown> | unknown;
   openWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryOpenResult | undefined>;
   probeSiteConnectivity: (site: Website) => Promise<SiteConnectivityProbeResponse>;
   relaunchApp: () => Promise<void>;

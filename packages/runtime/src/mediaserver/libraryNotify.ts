@@ -16,7 +16,11 @@ export const notifyMediaServersOfPublish = async (
   if (!directories.length) return;
   const servers: MediaServerKey[] = (["emby", "jellyfin"] as const).filter((key) => {
     const server = configuration[key];
-    return server.notifyAfterPublish && server.url.trim() && server.apiKey.trim();
+    return (
+      (server.notifyAfterPublish || (key === "emby" && configuration.emby.autoSyncActorPhotos)) &&
+      server.url.trim() &&
+      server.apiKey.trim()
+    );
   });
   const body = JSON.stringify({ Updates: directories.map((path) => ({ Path: path, UpdateType: "Created" })) });
   await Promise.all(

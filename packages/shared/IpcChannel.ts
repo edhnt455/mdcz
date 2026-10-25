@@ -86,6 +86,7 @@ export enum IpcChannel {
   Tool_JellyfinActorPhotoSync = "tool:jellyfin-actor-photo-sync",
   Tool_JellyfinActorInfoSync = "tool:jellyfin-actor-info-sync",
   Tool_JellyfinServerCheckConnection = "tool:jellyfin-server-check-connection",
+  Tool_PersonSyncStatus = "tool:person-sync-status",
   Tool_EmbyActorPhotoSync = "tool:emby-actor-photo-sync",
   Tool_EmbyActorInfoSync = "tool:emby-actor-info-sync",
   Tool_EmbyServerCheckConnection = "tool:emby-server-check-connection",

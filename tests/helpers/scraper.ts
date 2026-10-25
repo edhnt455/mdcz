@@ -1,7 +1,6 @@
 import { dirname, join } from "node:path";
 import { type Configuration, configManager } from "@main/services/config";
 import {
-  ActorImageService,
   type CreateFileScraperOptions,
   type FileScrapeOptions,
   type FileScrapeProgress,
@@ -13,11 +12,8 @@ import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import { vi } from "vitest";
 import { FileOrganizer, type OrganizePlan } from "../../packages/runtime/src/scrape/FileOrganizer";
 
-type TestFileScraperDependencies = Omit<
-  FileScraperDependencies,
-  "actorImageService" | "getConfiguration" | "logger" | "signalService"
-> &
-  Partial<Pick<FileScraperDependencies, "actorImageService" | "getConfiguration" | "logger" | "signalService">>;
+type TestFileScraperDependencies = Omit<FileScraperDependencies, "getConfiguration" | "logger" | "signalService"> &
+  Partial<Pick<FileScraperDependencies, "getConfiguration" | "logger" | "signalService">>;
 
 export const createFileScraper = (
   deps: TestFileScraperDependencies,
@@ -27,12 +23,6 @@ export const createFileScraper = (
   return new FileScraper(
     {
       ...deps,
-      actorImageService:
-        deps.actorImageService ??
-        new ActorImageService({
-          cacheRoot: "/tmp/actor-image-cache",
-          logger: "debug" in logger ? logger : { ...logger, debug: () => undefined },
-        }),
       getConfiguration: deps.getConfiguration ?? (async () => await configManager.getValidated()),
       logger,
       signalService: deps.signalService ?? {

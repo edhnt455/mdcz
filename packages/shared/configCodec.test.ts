@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { configurationSchema, defaultConfiguration, NFO_FIELD_OPTIONS, type NfoField } from "./config";
+import {
+  configurationSchema,
+  defaultConfiguration,
+  NFO_FIELD_OPTIONS,
+  type NfoField,
+  normalizeScrapeSiteLists,
+  SCRAPE_SITE_CATALOG,
+} from "./config";
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
+import { Website } from "./enums";
 import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 
 describe("configuration codec", () => {
@@ -147,5 +155,26 @@ describe("configuration codec", () => {
         ),
       ).toThrow();
     }
+  });
+
+  it("keeps disabled sites in the saved order and appends sites missing from older configs", () => {
+    expect(new Set(SCRAPE_SITE_CATALOG).size).toBe(Object.values(Website).length);
+
+    const legacy = parseConfigurationContent('[scrape]\nsites = ["javdb", "javbus"]\n', "toml");
+    expect(legacy.scrape.sites).toEqual([Website.JAVDB, Website.JAVBUS]);
+    expect(legacy.scrape.siteOrder[0]).toBe(Website.JAVDB);
+    expect(legacy.scrape.siteOrder[1]).toBe(Website.JAVBUS);
+    expect(legacy.scrape.siteOrder).toEqual(
+      normalizeScrapeSiteLists([Website.JAVDB, Website.JAVBUS], undefined).siteOrder,
+    );
+    expect(legacy.scrape.siteOrder.at(-1)).toBe(Website.FANTIA);
+
+    const parked = parseConfigurationContent(
+      '[scrape]\nsites = ["javbus"]\nsiteOrder = ["javdb", "javbus", "dmm"]\n',
+      "toml",
+    );
+    expect(parked.scrape.sites).toEqual([Website.JAVBUS]);
+    expect(parked.scrape.siteOrder.slice(0, 3)).toEqual([Website.JAVDB, Website.JAVBUS, Website.DMM]);
+    expect(parked.scrape.siteOrder).toHaveLength(SCRAPE_SITE_CATALOG.length);
   });
 });

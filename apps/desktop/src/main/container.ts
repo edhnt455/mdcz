@@ -9,12 +9,7 @@ import type { WindowService } from "@main/services/WindowService";
 import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService, MediaLibraryService, PendingService } from "@mdcz/runtime/library";
-import type {
-  EmbyActorInfoService,
-  EmbyActorPhotoService,
-  JellyfinActorInfoService,
-  JellyfinActorPhotoService,
-} from "@mdcz/runtime/mediaserver";
+import type { PersonSyncManager } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
 
@@ -42,10 +37,7 @@ export interface ServiceContainer {
   crawlerProvider: CrawlerProvider;
   actorSourceProvider: ActorSourceProvider;
   actorImageService: ActorImageService;
-  jellyfinActorPhotoService: JellyfinActorPhotoService;
-  jellyfinActorInfoService: JellyfinActorInfoService;
-  embyActorPhotoService: EmbyActorPhotoService;
-  embyActorInfoService: EmbyActorInfoService;
+  personSync: PersonSyncManager;
   symlinkService: SymlinkService;
   amazonPosterToolService: AmazonPosterToolService;
   batchTranslateToolService: BatchTranslateToolService;

@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, extname, isAbsolute, join, resolve } from "node:path";
-import { resolveActorPhotoFolderPath } from "@mdcz/runtime/scrape/actorImage/actorPhotoPath";
+import { extname, resolve } from "node:path";
 import { listFiles, pathExists } from "@mdcz/runtime/scrape/utils/filesystem";
 import { CachedAsyncResolver, toErrorMessage } from "@mdcz/runtime/shared";
 import { normalizeActorName } from "@mdcz/shared/actorAliases";
@@ -32,43 +31,10 @@ interface IndexedActorRecord {
   sourceHints: ActorSourceHint[];
 }
 
-const isRemoteUrl = (value: string): boolean => /^https?:\/\//iu.test(value);
-
-const mergeProfiles = (
-  existing: IndexedActorProfile | undefined,
-  incoming: IndexedActorProfile,
-): IndexedActorProfile => {
-  const existingPhoto = existing?.photo_url;
-  const incomingPhoto = incoming.photo_url;
-
-  const nextPhoto = (() => {
-    if (!existingPhoto) {
-      return incomingPhoto;
-    }
-    if (!incomingPhoto) {
-      return existingPhoto;
-    }
-    if (isRemoteUrl(existingPhoto) && !isRemoteUrl(incomingPhoto)) {
-      return incomingPhoto;
-    }
-    return existingPhoto;
-  })();
-
-  const merged: IndexedActorProfile = {
-    name: existing?.name ?? incoming.name,
-    aliases: [],
-    photo_url: nextPhoto,
-  };
-
-  return merged;
-};
-
-const mergeRecords = (existing: IndexedActorRecord | undefined, incoming: IndexedActorRecord): IndexedActorRecord => {
-  return {
-    profile: mergeProfiles(existing?.profile, incoming.profile),
-    sourceHints: mergeActorSourceHints(existing?.sourceHints, incoming.sourceHints),
-  };
-};
+const mergeRecords = (existing: IndexedActorRecord | undefined, incoming: IndexedActorRecord): IndexedActorRecord => ({
+  profile: existing?.profile ?? incoming.profile,
+  sourceHints: mergeActorSourceHints(existing?.sourceHints, incoming.sourceHints),
+});
 
 const createSourceHints = (parsed: CrawlerData): ActorSourceHint[] => {
   return mergeActorSourceHints([
@@ -92,33 +58,7 @@ const isPathInside = (rootPath: string, candidatePath: string): boolean => {
   );
 };
 
-const resolveActorPhotoUrl = async (
-  configuration: Configuration,
-  nfoPath: string,
-  profile: ActorProfile,
-): Promise<string | undefined> => {
-  if (!profile.photo_url || isRemoteUrl(profile.photo_url)) {
-    return undefined;
-  }
-
-  const absolutePath = isAbsolute(profile.photo_url) ? profile.photo_url : join(dirname(nfoPath), profile.photo_url);
-  if (!(await pathExists(absolutePath))) {
-    return undefined;
-  }
-
-  const actorPhotoRoot = resolveActorPhotoFolderPath(configuration);
-  const movieActorRoot = join(dirname(nfoPath), ".actors");
-  if (!isPathInside(movieActorRoot, absolutePath) && (!actorPhotoRoot || !isPathInside(actorPhotoRoot, absolutePath))) {
-    return undefined;
-  }
-
-  return absolutePath;
-};
-
-const buildLocalActorRecordIndex = async (
-  configuration: Configuration,
-  directories: readonly string[],
-): Promise<Map<string, IndexedActorRecord>> => {
+const buildLocalActorRecordIndex = async (directories: readonly string[]): Promise<Map<string, IndexedActorRecord>> => {
   const roots: string[] = [];
   for (const directory of directories.map((value) => resolve(value))) {
     if (!roots.some((root) => isPathInside(root, directory))) roots.push(directory);
@@ -152,21 +92,6 @@ const buildLocalActorRecordIndex = async (
         });
       }
 
-      for (const profile of parsed.actor_profiles ?? []) {
-        const name = profile.name.trim();
-        if (!name) {
-          continue;
-        }
-
-        const key = normalizeActorName(name);
-        const nextProfile = mergeProfiles(profilesByName.get(key), {
-          name,
-          aliases: [],
-          photo_url: await resolveActorPhotoUrl(configuration, nfoPath, profile),
-        });
-        profilesByName.set(key, nextProfile);
-      }
-
       for (const nextProfile of profilesByName.values()) {
         const merged = mergeRecords(index.get(normalizeActorName(nextProfile.name)), {
           profile: nextProfile,
@@ -187,10 +112,9 @@ const buildLocalActorRecordIndex = async (
 };
 
 export const buildLocalActorIndex = async (
-  configuration: Configuration,
   directories: readonly string[],
 ): Promise<Map<string, IndexedActorProfile>> => {
-  const recordIndex = await buildLocalActorRecordIndex(configuration, directories);
+  const recordIndex = await buildLocalActorRecordIndex(directories);
   return new Map(Array.from(recordIndex.entries(), ([key, value]) => [key, value.profile]));
 };
 
@@ -213,7 +137,9 @@ export class LocalActorSource implements BaseActorSource {
   async lookup(configuration: Configuration, query: ActorLookupQuery): Promise<ActorSourceResult> {
     try {
       const index = await this.loadIndex(configuration);
-      const indexed = index.get(normalizeActorName(query.name));
+      const indexed = [query.name, ...(query.aliases ?? [])]
+        .map((name) => index.get(normalizeActorName(name)))
+        .find(Boolean);
       const profile = indexed?.profile;
       const aliases = profile?.aliases ?? [];
       const localPhotoPath = await this.actorImageService?.resolveLocalImage(configuration, [
@@ -227,7 +153,7 @@ export class LocalActorSource implements BaseActorSource {
         success: true,
         profile: {
           name: profile?.name ?? query.name.trim(),
-          photo_url: localPhotoPath ?? profile?.photo_url,
+          photo_url: localPhotoPath,
         },
         warnings: [],
         sourceHints: indexed?.sourceHints ?? [],
@@ -255,6 +181,6 @@ export class LocalActorSource implements BaseActorSource {
       actorPhotoFolder: (configuration.paths.actorPhotoFolder ?? "").trim(),
     });
 
-    return this.indexResolver.resolve(cacheKey, async () => buildLocalActorRecordIndex(configuration, directories));
+    return this.indexResolver.resolve(cacheKey, async () => buildLocalActorRecordIndex(directories));
   }
 }

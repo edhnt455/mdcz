@@ -35,6 +35,9 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
       ),
     };
   },
+  openExternal: (url) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  },
   openWatermarkDirectory: async () => {
     const result = await api.app.ensureWatermarkDirectory();
     try {

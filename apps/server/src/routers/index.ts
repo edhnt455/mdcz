@@ -245,7 +245,7 @@ export const appRouter = t.router({
     startPersonSync: protectedProcedure
       .input(personSyncStartInputSchema)
       .mutation(({ ctx, input }) => ctx.services.personSync.start(input)),
-    personSyncStatus: protectedProcedure.query(({ ctx }) => ctx.services.personSync.status()),
+    personSyncStatus: protectedProcedure.query(({ ctx }) => ctx.services.personSync.snapshot()),
   }),
   libraries: t.router({
     list: protectedProcedure.query(async ({ ctx }) => ({

@@ -20,6 +20,7 @@ import {
   SettingsSectionModeProvider,
   type SettingsServices,
   SettingsServicesProvider,
+  SitesTopLevelSection,
   TranslateTopLevelSection,
 } from "@mdcz/views/settings";
 import { WatermarkSettings } from "@mdcz/views/settings/WatermarkSettings";
@@ -153,27 +154,20 @@ test("settings categories preserve fields, search across sections and adapt to t
     ).filter((key): key is string => Boolean(key)),
   );
 
-  await screen
-    .getByRole("navigation", { name: "设置分类" })
-    .getByRole("button", { name: "网络连接", exact: true })
-    .click();
+  await screen.getByRole("navigation", { name: "设置分类" }).getByRole("button", { name: "站点", exact: true }).click();
 
-  for (const [javdbUrl, javbusUrl, javdbHost, javbusHost] of [
-    ["localhost:8080", "ftp://example.com", "javdb.com", "www.javbus.com"],
-    ["http://localhost:8082", "http://localhost:8081", "localhost:8082", "localhost:8081"],
+  for (const [javdbUrl, javbusUrl, javdbLink, javbusLink] of [
+    ["localhost:8080", "ftp://example.com", "https://javdb.com", "https://www.javbus.com"],
+    ["http://localhost:8082", "http://localhost:8081", "http://localhost:8082", "http://localhost:8081"],
   ]) {
     await screen.getByPlaceholder("https://javdb.com", { exact: true }).fill(javdbUrl);
     await screen.getByPlaceholder("https://www.javbus.com", { exact: true }).fill(javbusUrl);
-    const siteField = screen.container.querySelector('[data-field-name="scrape.sites"]');
-    if (!siteField) throw new Error("Site priority field is missing");
-    await navigation.getByRole("button", { name: "刮削设置", exact: true }).click();
-    await page.elementLocator(siteField).getByRole("button", { name: "编辑", exact: true }).click();
-    const dialog = screen.getByRole("dialog");
-    await expect.element(dialog.getByText(`javdb · ${javdbHost}`, { exact: true })).toBeVisible();
-    await expect.element(dialog.getByText(`javbus · ${javbusHost}`, { exact: true })).toBeVisible();
-    await dialog.getByRole("button", { name: "完成", exact: true }).click();
-    await navigation.getByRole("button", { name: "网络连接", exact: true }).click();
+    await expect.element(screen.getByRole("link", { name: javdbLink, exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("link", { name: javbusLink, exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("checkbox", { name: "official", exact: true })).toBeVisible();
+    expect(screen.container.querySelector('a[href="https://s1s1s1.com"]')).toBeNull();
   }
+  await navigation.getByRole("button", { name: "网络连接", exact: true }).click();
   const search = screen.getByPlaceholder("搜索设置");
   await search.fill("代理");
   await expect.element(navigation).not.toBeInTheDocument();
@@ -423,7 +417,17 @@ test("settings sections expose public labels and the library template notice", a
   );
   await expect.element(network.getByText("网络连接")).toBeVisible();
   await expect.element(network.getByText("代理类型")).toBeVisible();
-  await expect.element(network.getByText("JavDB Cookie")).toBeVisible();
+  expect(network.container.textContent).not.toContain("JavDB Cookie");
+
+  const sites = await render(
+    <FormHarness values={defaultConfiguration}>
+      <SitesTopLevelSection />
+    </FormHarness>,
+  );
+  await expect.element(sites.getByRole("heading", { name: "站点", exact: true })).toBeVisible();
+  await expect.element(sites.getByRole("link", { name: "https://javdb.com", exact: true })).toBeVisible();
+  await expect.element(sites.getByText("JavDB Cookie")).toBeVisible();
+  expect(sites.container.querySelector('a[href="https://s1s1s1.com"]')).toBeNull();
 
   const translate = await render(
     <FormHarness

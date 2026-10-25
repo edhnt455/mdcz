@@ -4,7 +4,7 @@ import { SectionAnchor } from "./SectionAnchor";
 import { useSettingsSearch } from "./SettingsSearchContext";
 import { SettingsSectionModeProvider } from "./SettingsSectionModeContext";
 import { useSettingsServices } from "./SettingsServices";
-import { SitePriorityEditorField } from "./SitePriorityEditorField";
+import { SiteListSection } from "./SiteListSection";
 import { Subsection } from "./Subsection";
 import { IntegrationAccessPanel, QbittorrentStatusLine, useIntegrationStatus } from "./sections/IntegrationAccessPanel";
 import { MediaServerSection } from "./sections/MediaServerSections";
@@ -16,7 +16,6 @@ import {
   FilenameFilteringSection,
   NamingSection,
   NetworkConnectionSection,
-  NetworkSiteAccessSection,
   NfoSection,
   NotificationsSection,
   PathMappingsField,
@@ -50,7 +49,7 @@ export function PathsTopLevelSection() {
   );
 }
 
-export function ScrapeTopLevelSection({ siteOptions }: SiteOptionsProps) {
+export function ScrapeTopLevelSection() {
   const t = useT();
   return (
     <SectionAnchor
@@ -58,19 +57,25 @@ export function ScrapeTopLevelSection({ siteOptions }: SiteOptionsProps) {
       label={t.settingsFields.sections.scrape.label}
       title={t.settingsFields.sections.scrape.label}
     >
-      <Subsection
-        title={t.settings.subsections.scrapeSites}
-        description={t.settings.subsections.scrapeSitesDescription}
-        className="mb-6 last:mb-0"
-      >
-        <SitePriorityEditorField options={siteOptions} />
-      </Subsection>
       <Subsection title={t.settings.subsections.scrapePacing} className="mb-6 last:mb-0">
         <ScrapePacingSection />
       </Subsection>
       <Subsection title={t.settings.subsections.filenameFiltering} className="mb-6 last:mb-0">
         <FilenameFilteringSection />
       </Subsection>
+    </SectionAnchor>
+  );
+}
+
+export function SitesTopLevelSection() {
+  const t = useT();
+  return (
+    <SectionAnchor
+      id="sites"
+      label={t.settingsFields.sections.sites.label}
+      title={t.settingsFields.sections.sites.label}
+    >
+      <SiteListSection />
     </SectionAnchor>
   );
 }
@@ -85,9 +90,6 @@ export function NetworkTopLevelSection() {
     >
       <Subsection title={t.settings.subsections.proxyAndRequests} className="mb-6 last:mb-0">
         <NetworkConnectionSection />
-      </Subsection>
-      <Subsection title={t.settings.subsections.siteAccess} className="mb-6 last:mb-0">
-        <NetworkSiteAccessSection />
       </Subsection>
     </SectionAnchor>
   );

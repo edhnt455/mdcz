@@ -38,6 +38,90 @@ const DEFAULT_SITES: Website[] = [
   Website.R18_DEV,
 ];
 
+/** Stable catalog order. Sites missing from a saved list are appended in this order. */
+export const SCRAPE_SITE_CATALOG = [
+  Website.DMM,
+  Website.DMM_TV,
+  Website.OFFICIAL,
+  Website.MGSTAGE,
+  Website.PRESTIGE,
+  Website.FALENO,
+  Website.DAHLIA,
+  Website.KM_PRODUCE,
+  Website.AVBASE,
+  Website.R18_DEV,
+  Website.AVWIKIDB,
+  Website.JAVDB,
+  Website.JAVBUS,
+  Website.JAV321,
+  Website.H0930,
+  Website.H4610,
+  Website.ONEPONDO,
+  Website.TENMUSUME,
+  Website.CARIBBEANCOM,
+  Website.HEYZO,
+  Website.FC2,
+  Website.FC2HUB,
+  Website.PPVDATABANK,
+  Website.SOKMIL,
+  Website.KINGDOM,
+  Website.FANTIA,
+] as const satisfies readonly Website[];
+
+type Assert<_T extends true> = true;
+type _CatalogCoversWebsites = Assert<
+  Exclude<Website, (typeof SCRAPE_SITE_CATALOG)[number]> extends never ? true : false
+>;
+
+const WEBSITE_VALUES = new Set<string>(SCRAPE_SITE_CATALOG);
+
+const isCatalogSite = (site: string): site is Website => WEBSITE_VALUES.has(site);
+
+/**
+ * `sites` is the enabled subsequence. `siteOrder` is every site's position, including disabled ones.
+ * An empty order is a config written before positions were stored: keep the enabled order and append the rest.
+ */
+export const normalizeScrapeSiteLists = (
+  enabled: readonly string[] | undefined,
+  order: readonly string[] | undefined,
+): { sites: Website[]; siteOrder: Website[] } => {
+  const enabledSet = new Set((enabled ?? []).filter(isCatalogSite));
+  const seen = new Set<Website>();
+  const siteOrder: Website[] = [];
+  const push = (site: Website) => {
+    if (seen.has(site)) return;
+    seen.add(site);
+    siteOrder.push(site);
+  };
+
+  for (const site of order && order.length > 0 ? order : (enabled ?? [])) {
+    if (isCatalogSite(site)) push(site);
+  }
+  for (const site of SCRAPE_SITE_CATALOG) push(site);
+
+  return {
+    siteOrder,
+    sites: siteOrder.filter((site) => enabledSet.has(site)),
+  };
+};
+
+export const withNormalizedScrapeSites = <T extends { scrape: { sites: Website[]; siteOrder: Website[] } }>(
+  configuration: T,
+): T => {
+  const normalized = normalizeScrapeSiteLists(
+    configuration.scrape.sites,
+    configuration.scrape.siteOrder.length > 0 ? configuration.scrape.siteOrder : undefined,
+  );
+  const sameSites =
+    normalized.sites.length === configuration.scrape.sites.length &&
+    normalized.sites.every((site, index) => site === configuration.scrape.sites[index]);
+  const sameOrder =
+    normalized.siteOrder.length === configuration.scrape.siteOrder.length &&
+    normalized.siteOrder.every((site, index) => site === configuration.scrape.siteOrder[index]);
+  if (sameSites && sameOrder) return configuration;
+  return { ...configuration, scrape: { ...configuration.scrape, ...normalized } };
+};
+
 const PART_STYLE_OPTIONS = ["RAW", "CD", "PART", "DISC"] as const;
 const NFO_NAMING_OPTIONS = ["both", "movie", "filename"] as const;
 export const NFO_FIELD_OPTIONS = [
@@ -89,6 +173,8 @@ const networkSchema = z.object({
 
 const scrapeSchema = z.object({
   sites: z.array(z.enum(Website)).default(DEFAULT_SITES),
+  /** Full site position list. Empty means the file predates it and is completed from `sites`. */
+  siteOrder: z.array(z.enum(Website)).default([]),
   filenameIgnoreTokens: z.array(z.string()).default([]),
   filenameBlacklistTokens: z.array(z.string()).default([]),
   subtitleKeywords: z.array(z.string().trim().min(1)).default(() => [...DEFAULT_FILENAME_KEYWORDS.subtitleKeywords]),
@@ -257,6 +343,7 @@ const jellyfinSchema = z.object({
 });
 
 const embySchema = z.object({
+  autoSyncActorPhotos: z.boolean().default(true),
   url: z.url().or(z.literal("")).default(""),
   apiKey: z.string().default(""),
   userId: z.string().default(""),
@@ -553,6 +640,34 @@ export const OFFICIAL_SITE_URLS = {
   [Website.JAVBUS]: "https://www.javbus.com",
 } as const;
 
+/** Homepage opened from site settings. Official studio sites have no single homepage. */
+export const SITE_HOMEPAGE_URLS = {
+  [Website.DAHLIA]: "https://dahlia-av.jp",
+  [Website.DMM]: "https://www.dmm.co.jp/",
+  [Website.DMM_TV]: "https://video.dmm.co.jp/",
+  [Website.FALENO]: "https://faleno.jp",
+  [Website.FANTIA]: "https://fantia.jp",
+  [Website.FC2]: "https://adult.contents.fc2.com",
+  [Website.FC2HUB]: "https://javten.com",
+  [Website.H0930]: "https://www.h0930.com",
+  [Website.H4610]: "https://www.h4610.com",
+  [Website.PPVDATABANK]: "https://ppvdatabank.com",
+  [Website.JAV321]: "https://www.jav321.com",
+  [Website.KINGDOM]: "https://kingdom.vc",
+  [Website.KM_PRODUCE]: "https://www.km-produce.com",
+  [Website.MGSTAGE]: "https://www.mgstage.com",
+  [Website.PRESTIGE]: "https://www.prestige-av.com",
+  [Website.R18_DEV]: "https://r18.dev",
+  [Website.SOKMIL]: "https://www.sokmil.com",
+  [Website.AVBASE]: "https://www.avbase.net",
+  [Website.AVWIKIDB]: "https://avwikidb.com",
+  [Website.OFFICIAL]: "https://s1s1s1.com",
+  [Website.ONEPONDO]: "https://www.1pondo.tv",
+  [Website.TENMUSUME]: "https://www.10musume.com",
+  [Website.CARIBBEANCOM]: "https://www.caribbeancom.com",
+  [Website.HEYZO]: "https://www.heyzo.com",
+} as const satisfies Record<Exclude<Website, MirrorableSite>, string>;
+
 export type MirrorableSite = keyof typeof OFFICIAL_SITE_URLS;
 export type SiteUrlConfiguration = Pick<Configuration["network"], "javdbUrl" | "javbusUrl">;
 
@@ -574,10 +689,17 @@ export const resolveSiteUrl = (network: SiteUrlConfiguration, site: MirrorableSi
   return configured ? new URL(configured).origin : OFFICIAL_SITE_URLS[site];
 };
 
+/** Link shown after a site name. `official` covers many maker domains, so it has no single address. */
+export const siteSettingsLink = (site: Website, network: SiteUrlConfiguration): string | null => {
+  if (site === Website.OFFICIAL) return null;
+  if (isMirrorableSite(site)) return resolveSiteUrl(network, site);
+  return SITE_HOMEPAGE_URLS[site];
+};
+
 export type DeepPartial<T> =
   T extends Array<infer U> ? Array<DeepPartial<U>> : T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
 
-export const defaultConfiguration: Configuration = configurationSchema.parse({});
+export const defaultConfiguration: Configuration = withNormalizedScrapeSites(configurationSchema.parse({}));
 
 export type ConfigurationPathDefault = { found: true; value: unknown } | { found: false };
 

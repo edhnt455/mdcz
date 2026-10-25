@@ -1,4 +1,3 @@
-import path from "node:path";
 import {
   ActorSourceProvider,
   ActorSourceRegistry,
@@ -11,10 +10,6 @@ import {
 import type { NetworkClient } from "@mdcz/runtime/network";
 import type { ActorImageService } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
-import type { ServerConfigService } from "./services/configService";
-
-export const serverActorImageCacheRoot = (config: ServerConfigService): string =>
-  path.join(config.runtimePaths.dataDir, "actor-image-cache");
 
 export const createServerActorSourceProvider = (
   networkClient: NetworkClient,

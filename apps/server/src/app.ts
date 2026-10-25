@@ -5,6 +5,7 @@ import { resolveSiteProxyUrl, siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
+import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
@@ -18,7 +19,7 @@ import {
 import { type CreateFastifyContextOptions, fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
 import sharp from "sharp";
-import { createServerActorSourceProvider, serverActorImageCacheRoot } from "./actorSourceFactory";
+import { createServerActorSourceProvider } from "./actorSourceFactory";
 import { getBearerToken } from "./http/auth";
 import { applyCorsHeaders } from "./http/cors";
 import { createHealthPayload } from "./http/health";
@@ -117,27 +118,23 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       filePath: path.join(config.runtimePaths.dataDir, "image-host-cooldowns.json"),
       logger: runtimeLoggerService.getLogger("ImageHostCooldownStore"),
     });
-  const actorImageService =
-    options.resources?.actorImageService ??
-    new ActorImageService({
-      cacheRoot: serverActorImageCacheRoot(config),
-      logger: runtimeLoggerService.getLogger("ActorImageService"),
-      networkClient,
-    });
+  const actorImageService = options.resources?.actorImageService ?? new ActorImageService();
   const actorSourceProvider =
     options.resources?.actorSourceProvider ??
     createServerActorSourceProvider(networkClient, actorImageService, async () =>
       (await libraries.list()).flatMap((library) => [library.sourcePath, library.outputPath].filter(Boolean)),
     );
+  const personSync =
+    options.services?.personSync ?? new PersonSyncService(config, taskEvents, { networkClient, actorSourceProvider });
+  const unsubscribePersonConfig = config.onChange((event) => personSync.configurationChanged(event.configuration));
   const scrape =
     options.services?.scrape ??
     new ScrapeService(persistence, mediaRoots, config, taskEvents, {
       networkClient,
       crawlerProvider,
       imageHostCooldownStore,
-      actorImageService,
-      actorSourceProvider,
       mappingStore,
+      onActorPhotosPublished: (configuration, data) => personSync.published(configuration, data),
       aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
@@ -149,9 +146,16 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     networkClient,
     crawlerProvider,
     imageHostCooldownStore,
-    actorImageService,
-    actorSourceProvider,
     mappingStore,
+    onPublished: (directories, configuration, data) => {
+      personSync.published(configuration, data);
+      void notifyMediaServersOfPublish(
+        networkClient,
+        configuration,
+        directories,
+        runtimeLoggerService.getLogger("MediaServerNotify"),
+      );
+    },
     recordSiteResults: async (number, results) =>
       (await persistence.getState()).repositories.siteResults.record(number, results),
     loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
@@ -225,8 +229,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     maintenance,
     mediaRoots,
     persistence,
-    personSync:
-      options.services?.personSync ?? new PersonSyncService(config, taskEvents, { networkClient, actorSourceProvider }),
+    personSync,
     runtimeLogs,
     runtimeActions:
       options.services?.runtimeActions ?? new RuntimeActionService(config, networkClient, crawlerProvider),
@@ -280,6 +283,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     services.automation.start();
     services.qbittorrent.start();
     services.embyDeletion.start();
+    services.personSync.activate();
   });
 
   fastify.addHook("preClose", async () => {
@@ -291,6 +295,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     if (closed) return;
     closed = true;
     services.automation.close();
+    unsubscribePersonConfig();
+    await services.personSync.close();
     await services.embyDeletion.close();
     // An in-flight poll submits through library watch, so it ends first.
     const results = await Promise.allSettled([services.qbittorrent.close()]);

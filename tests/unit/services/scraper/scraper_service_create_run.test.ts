@@ -11,7 +11,7 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { MediaLibraryService } from "@mdcz/runtime/library";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService, FileScraper } from "@mdcz/runtime/scrape";
+import { FileScraper } from "@mdcz/runtime/scrape";
 import { DirectoryInventory } from "@mdcz/runtime/scrape/DirectoryInventory";
 import { admitScrapeGroups } from "@mdcz/runtime/scrape/movieGroups";
 import { NumberRecognitionService } from "@mdcz/runtime/scrape/NumberRecognitionService";
@@ -42,8 +42,6 @@ const createHarness = async () => {
     new SignalService(null),
     networkClient,
     new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
-    new ActorImageService({ cacheRoot: join(directory, "actors"), networkClient }),
-    undefined,
     new PersistentCooldownStore({ filePath: join(directory, "cooldowns.json") }),
     libraries,
     undefined,

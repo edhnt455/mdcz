@@ -6,9 +6,10 @@ import type {
   BatchTranslateScanItem,
   MediaServerConnectionCheckResult,
 } from "@mdcz/shared/ipcTypes";
-import type { PersonSyncJobDto, PersonSyncStartInput } from "@mdcz/shared/serverDtos";
+import type { PersonSyncJobDto, PersonSyncStartInput, PersonSyncStateDto } from "@mdcz/shared/serverDtos";
 import type { ToolId } from "@mdcz/shared/toolCatalog";
 import { useT } from "@mdcz/views/i18n";
+import { useToolNavigationStore } from "@mdcz/views/state/toolNavigationStore";
 import {
   AmazonPosterWorkspaceDetail,
   BatchNfoTranslatorWorkspaceDetail,
@@ -72,7 +73,8 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const [batchItems, setBatchItems] = useState<BatchTranslateScanItem[]>([]);
   const [amazonDialogOpen, setAmazonDialogOpen] = useState(false);
   const [amazonItems, setAmazonItems] = useState<AmazonPosterScanItem[]>([]);
-  const [personServer, setPersonServer] = useState<PersonServer | null>(null);
+  const personServer = useToolNavigationStore((state) => state.personServer);
+  const setPersonServer = useToolNavigationStore((state) => state.selectPersonServer);
   const [jellyfinInfoMode, setJellyfinInfoMode] = useState<PersonSyncMode>("missing");
   const [jellyfinPhotoMode, setJellyfinPhotoMode] = useState<PersonSyncMode>("missing");
   const [embyInfoMode, setEmbyInfoMode] = useState<PersonSyncMode>("missing");
@@ -98,6 +100,7 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const personSyncQ = useQuery({
     queryKey: queryKeys.personSync,
     queryFn: () => api.tools.personSyncStatus(),
+    refetchInterval: 2000,
     enabled: toolId === "media-library-tools",
     retry: false,
   });
@@ -105,7 +108,10 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
     if (toolId !== "media-library-tools") return;
     return subscribeTaskNotifications({
       onNotification: (event) => {
-        if (event.kind === "person-sync") queryClient.setQueryData(queryKeys.personSync, event.job);
+        if (event.kind === "person-sync")
+          queryClient.setQueryData<PersonSyncStateDto>(queryKeys.personSync, (current) =>
+            current ? { ...current, job: event.job } : current,
+          );
         // Sync events have no replay, so every (re)connect rereads the job.
         else if (event.kind === "invalidate" && event.resources.includes("ready"))
           void queryClient.invalidateQueries({ queryKey: queryKeys.personSync });
@@ -116,15 +122,15 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
     mutationFn: (input: PersonSyncStartInput) => api.tools.startPersonSync(input),
     // The stream may already have delivered a newer state of the same job.
     onSuccess: (job) =>
-      queryClient.setQueryData(queryKeys.personSync, (current: PersonSyncJobDto | null | undefined) =>
-        current?.id === job.id ? current : job,
+      queryClient.setQueryData(queryKeys.personSync, (current: PersonSyncStateDto | undefined) =>
+        current ? { ...current, job: current.job?.id === job.id ? current.job : job } : current,
       ),
   });
-  const personSync = personSyncQ.data ?? null;
+  const personSync = personSyncQ.data?.job ?? null;
   const runningSync = personSync?.status === "running" ? personSync : null;
   // The server picker is locked while a sync runs, so a page reloaded mid-sync opens on that sync's server and,
   // until the user picks one, stays there to show its outcome.
-  const activeServer = runningSync?.server ?? personServer ?? personSync?.server ?? "jellyfin";
+  const activeServer = runningSync?.server ?? personServer ?? personSync?.server ?? "emby";
   const syncRunning = (server: PersonServer, kind: PersonSyncJobDto["kind"]) =>
     runningSync?.server === server && runningSync.kind === kind;
   const syncProgress = (server: PersonServer) =>
@@ -192,6 +198,8 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
         <>
           <PersonMediaLibraryDetail
             activeServer={activeServer}
+            syncState={personSyncQ.data}
+            settingsDisabled={startPersonSyncM.isPending}
             jellyfin={{
               checkPending: executeM.isPending && executeM.variables?.toolId === "media-library-tools",
               checkResult: jellyfinCheckResult,
@@ -247,12 +255,6 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
             }
           />
           {startPersonSyncM.error && <ErrorBanner>{toErrorMessage(startPersonSyncM.error)}</ErrorBanner>}
-          {personSync?.server === activeServer && personSync.status === "failed" && personSync.error && (
-            <ErrorBanner>{personSync.error}</ErrorBanner>
-          )}
-          {personSync?.server === activeServer && personSync.result ? (
-            <p className="text-sm text-muted-foreground">{t.tools.personSyncSummary(personSync.result)}</p>
-          ) : null}
         </>
       )}
       {toolId === "amazon-poster" && (

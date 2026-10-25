@@ -155,6 +155,7 @@ export const ipc = {
       client[IpcChannel.File_PosterCropSave]({ videoPath, crop }),
   },
   tool: {
+    personSyncStatus: () => client[IpcChannel.Tool_PersonSyncStatus](undefined),
     createSymlink: (payload: { sourceDir?: string; destDir?: string; copyFiles?: boolean }) =>
       client[IpcChannel.Tool_CreateSymlink](payload),
     checkJellyfinConnection: () => client[IpcChannel.Tool_JellyfinServerCheckConnection](undefined),

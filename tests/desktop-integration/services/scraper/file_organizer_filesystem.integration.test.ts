@@ -32,7 +32,6 @@ const publishVideo = async (
     roots,
     members: [{ source, fileId: randomUUID(), layout: plan, assetLayout: { staged: new Map(), retained: new Map() } }],
     downloadedAssets: { downloaded: [], sceneImages: [] },
-    actorPhotoPaths: [],
     nfoNaming: config.download.nfoNaming,
     writeNfo: async () => undefined,
   });

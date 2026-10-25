@@ -75,10 +75,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const imageHostCooldownStore = new PersistentCooldownStore({
     filePath: join(paths.dataDir, "image-host-cooldowns.json"),
   });
-  const actorImageService = new ActorImageService({
-    cacheRoot: join(paths.dataDir, "actor-image-cache"),
-    networkClient,
-  });
+  const actorImageService = new ActorImageService();
   if (options.automationWebhook) {
     await config.load();
     await config.update({

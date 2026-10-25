@@ -7,12 +7,12 @@ import type {
   NfoLocalState,
   VideoMeta,
 } from "@mdcz/shared/types";
-import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../actorOutput";
 import type { ImageAlternatives, SourceMap } from "../aggregation";
 import type { DirectoryInventory } from "../DirectoryInventory";
 import type { DownloadCallbacks, DownloadManager } from "../download";
 import { type NfoGenerator, type NfoOptions, nfoIgnoreFieldsToEnabledFields } from "../nfo";
-import { prepareCrawlerDataForMovieOutput } from "./prepareCrawlerDataForMovieOutput";
+import { throwIfAborted } from "../utils/abort";
+import { prepareCrawlerDataForNfo } from "./prepareCrawlerDataForNfo";
 import { prepareImageAlternativesForDownload } from "./prepareImageAlternativesForDownload";
 
 export const reportItemProgress = (
@@ -27,26 +27,12 @@ export const reportItemProgress = (
 };
 
 export const prepareOutputCrawlerData = async (input: {
-  actorImageService: RuntimeActorImageService;
-  actorSourceProvider?: RuntimeActorSourceProvider;
-  config: Configuration;
   crawlerData?: CrawlerData;
   enabled: boolean;
-  movieDir?: string;
-  sourceVideoPath: string;
   signal?: AbortSignal;
-}): Promise<{ data?: CrawlerData; actorPhotoPaths: string[] }> => {
-  if (!input.crawlerData) {
-    return { data: undefined, actorPhotoPaths: [] };
-  }
-
-  return await prepareCrawlerDataForMovieOutput(input.actorImageService, input.config, input.crawlerData, {
-    actorSourceProvider: input.actorSourceProvider,
-    enabled: input.enabled,
-    movieDir: input.movieDir,
-    signal: input.signal,
-    sourceVideoPath: input.sourceVideoPath,
-  });
+}): Promise<{ data?: CrawlerData }> => {
+  throwIfAborted(input.signal);
+  return { data: input.crawlerData && input.enabled ? prepareCrawlerDataForNfo(input.crawlerData) : input.crawlerData };
 };
 
 export const downloadCrawlerAssets = async (input: {

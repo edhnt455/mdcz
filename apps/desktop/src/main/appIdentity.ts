@@ -36,5 +36,3 @@ export const resolveDesktopDataFile = (fileName: string): string => {
     return join(process.cwd(), ".tmp", fileName);
   }
 };
-
-export const getActorImageCacheDirectory = (): string => resolveDesktopDataFile("actor-image-cache");

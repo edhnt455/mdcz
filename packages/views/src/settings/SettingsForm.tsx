@@ -12,6 +12,7 @@ import {
   NetworkTopLevelSection,
   PathsTopLevelSection,
   ScrapeTopLevelSection,
+  SitesTopLevelSection,
   SystemTopLevelSection,
   TranslateTopLevelSection,
 } from "./TopLevelSections";
@@ -33,7 +34,8 @@ export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitle
       ) : (
         <>
           <PathsTopLevelSection />
-          <ScrapeTopLevelSection siteOptions={siteOptions} />
+          <ScrapeTopLevelSection />
+          <SitesTopLevelSection />
           <NetworkTopLevelSection />
           <TranslateTopLevelSection />
           <NamingTopLevelSection />

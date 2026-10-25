@@ -25,20 +25,6 @@ export interface RuntimeActorSourceProvider {
   }>;
 }
 
-export interface RuntimeActorImageService {
-  prepareActorProfilesForMovie(
-    configuration: Configuration,
-    input: {
-      movieDir: string;
-      actors: string[];
-      actorProfiles?: ActorProfile[];
-      actorSourceProvider?: RuntimeActorSourceProvider;
-      sourceHints?: RuntimeActorSourceHint[];
-      signal?: AbortSignal;
-    },
-  ): Promise<ActorProfile[] | undefined>;
-}
-
 const normalizeHintValue = (value: string | undefined): string | undefined => {
   const normalized = value?.normalize("NFC").trim().replace(/\s+/gu, " ");
   return normalized || undefined;

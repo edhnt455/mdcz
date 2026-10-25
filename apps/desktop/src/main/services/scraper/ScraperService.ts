@@ -5,13 +5,12 @@ import { OutputLibraryScanner } from "@main/services/library";
 import { createDesktopMediaRootService } from "@main/services/mediaRoots";
 import { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
-import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { ConfiguredMediaRootService, MediaLibraryService } from "@mdcz/runtime/library";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { type ActorImageService, type PrepareScrapeItem, ScrapeRunner } from "@mdcz/runtime/scrape";
+import { type PrepareScrapeItem, ScrapeRunner } from "@mdcz/runtime/scrape";
 import type { ScraperStartInput } from "@mdcz/shared/ipc-contracts/scraperContract";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { app } from "electron";
@@ -36,14 +35,17 @@ export class ScraperService {
     private readonly signalService: SignalService,
     private readonly sharedNetworkClient: NetworkClient,
     private readonly crawlerProvider: CrawlerProvider,
-    private readonly actorImageService: ActorImageService,
-    private readonly actorSourceProvider: ActorSourceProvider | undefined,
     private readonly imageHostCooldownStore: PersistentCooldownStore,
     private readonly libraries: Pick<MediaLibraryService, "findBySourcePath" | "list">,
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
     mediaRoots?: ConfiguredMediaRootService,
     private readonly prepareScrapeItem?: PrepareScrapeItem,
+    private readonly onPublished?: (
+      directories: readonly string[],
+      configuration: import("@mdcz/shared/config").Configuration,
+      data: import("@mdcz/shared/types").CrawlerData,
+    ) => void,
   ) {
     this.mediaRoots = mediaRoots ?? createDesktopMediaRootService(this.persistenceService);
   }
@@ -60,10 +62,11 @@ export class ScraperService {
           pending: state.repositories.pending,
           mediaRoots: this.mediaRoots,
         },
-        onPublished: (directories, configuration) => {
+        onPublished: (directories, configuration, data) => {
           this.outputLibraryScanner.invalidate();
           this.signalService.invalidate("library", "overview");
-          void notifyMediaServersOfPublish(this.sharedNetworkClient, configuration, directories, this.logger);
+          if (this.onPublished) this.onPublished(directories, configuration, data);
+          else void notifyMediaServersOfPublish(this.sharedNetworkClient, configuration, directories, this.logger);
         },
         onPending: () => this.signalService.invalidate("pending", "overview"),
         recordSiteResults: (number, results) => state.repositories.siteResults.record(number, results),
@@ -71,8 +74,6 @@ export class ScraperService {
         networkClient: this.sharedNetworkClient,
         crawlerProvider: this.crawlerProvider,
         imageHostCooldownStore: this.imageHostCooldownStore,
-        actorImageService: this.actorImageService,
-        actorSourceProvider: this.actorSourceProvider,
         mappingStore: translationMappingStore,
         platform: "desktop",
         logger: this.logger,

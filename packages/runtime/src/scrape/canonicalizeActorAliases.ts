@@ -1,7 +1,7 @@
 import { normalizeActorName, resolveActorAlias, toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
-import { mergeActorProfiles } from "./actorImage/utils";
+import { mergeActorProfiles } from "../shared/actorProfile";
 
 export const canonicalizeCrawlerDataActorAliases = (
   crawlerData: CrawlerData,

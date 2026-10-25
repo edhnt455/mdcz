@@ -1,4 +1,5 @@
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "@mdcz/shared/actorSource";
+import { Button } from "@mdcz/ui";
 import {
   BoolField,
   ChipArrayFieldWrapper,
@@ -32,6 +33,12 @@ export function MediaServerSection() {
         <TextField name="emby.userId" />
         <BoolField name="emby.refreshPersonAfterSync" />
         <BoolField name="emby.notifyAfterPublish" />
+        <BoolField name="emby.autoSyncActorPhotos" />
+        {services.openActorPhotoSync && (
+          <Button type="button" variant="secondary" onClick={services.openActorPhotoSync}>
+            {t.tools.autoPhotoSync.open}
+          </Button>
+        )}
         {services.embyDeletion && !search.hasActiveFilters ? (
           <EmbyDeletionPanel service={services.embyDeletion} />
         ) : null}

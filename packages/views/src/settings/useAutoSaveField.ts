@@ -38,6 +38,8 @@ export type AutoSaveStatus = "idle" | "saving" | "saved" | "error";
 export interface UseAutoSaveFieldOptions {
   mode?: "debounce" | "immediate";
   debounceMs?: number;
+  /** Saved in the same request so coupled fields cannot land out of order. */
+  bundlePaths?: readonly string[];
 }
 
 export interface UseAutoSaveFieldResult {
@@ -48,6 +50,7 @@ export interface UseAutoSaveFieldResult {
 interface RegisteredAutoSaveField {
   mode: "debounce" | "immediate";
   debounceMs: number;
+  bundlePaths: readonly string[];
 }
 
 interface SettingsEditorAutosaveContextValue {
@@ -183,6 +186,11 @@ export function SettingsEditorAutosaveProvider({
               const flatPayload = buildAutoSaveFlatPayload(path, value, formRef.current.formState.errors, (fieldPath) =>
                 formRef.current.getValues(fieldPath),
               );
+              for (const bundlePath of registeredFieldsRef.current[path]?.bundlePaths ?? []) {
+                if (!(bundlePath in flatPayload)) {
+                  flatPayload[bundlePath] = formRef.current.getValues(bundlePath);
+                }
+              }
               const payloadPaths = Object.keys(flatPayload);
 
               try {
@@ -341,10 +349,16 @@ export function SettingsEditorAutosaveProvider({
         const nextField: RegisteredAutoSaveField = {
           mode: options.mode ?? "immediate",
           debounceMs: options.debounceMs ?? DEFAULT_DEBOUNCE_MS,
+          bundlePaths: options.bundlePaths ?? [],
         };
 
         const current = previous[path];
-        if (current?.mode === nextField.mode && current?.debounceMs === nextField.debounceMs) {
+        if (
+          current?.mode === nextField.mode &&
+          current.debounceMs === nextField.debounceMs &&
+          current.bundlePaths.length === nextField.bundlePaths.length &&
+          current.bundlePaths.every((bundlePath, index) => bundlePath === nextField.bundlePaths[index])
+        ) {
           return previous;
         }
 
@@ -494,8 +508,9 @@ export function useAutoSaveField(path: string, options: UseAutoSaveFieldOptions 
     () => ({
       mode: options.mode,
       debounceMs: options.debounceMs,
+      bundlePaths: options.bundlePaths,
     }),
-    [options.debounceMs, options.mode],
+    [options.bundlePaths, options.debounceMs, options.mode],
   );
 
   useEffect(() => registerField(path, registrationOptions), [path, registerField, registrationOptions]);

@@ -63,7 +63,6 @@ const createService = () => {
       networkClient: { setDomainInterval: vi.fn() } as never,
       crawlerProvider: {} as never,
       imageHostCooldownStore: { clear: vi.fn(), flush: vi.fn() } as never,
-      actorImageService: {} as never,
     },
   );
   return { service, scrapeRuns, persistence };

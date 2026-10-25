@@ -1126,7 +1126,6 @@ describe("DownloadManager keep flags", () => {
         ],
         stagingDir,
         downloadedAssets: downloaded.assets,
-        actorPhotoPaths: [],
         assetDecisions,
         nfoNaming: "filename" as const,
         remoteData: downloaded.crawlerData,

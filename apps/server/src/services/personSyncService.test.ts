@@ -1,3 +1,8 @@
+const validPhoto = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6DbkAAAAASUVORK5CYII=",
+  "base64",
+);
+
 import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { defaultConfiguration } from "@mdcz/shared/config";
@@ -34,12 +39,13 @@ class FakeNetworkClient {
     }
     throw new Error(`Unexpected URL ${url}`);
   });
-  readonly getContent = vi.fn(async (_url: string, _init?: unknown) => new Uint8Array([0xff, 0xd8, 0xff]));
+  readonly getContent = vi.fn(async (_url: string, _init?: unknown) => validPhoto);
   readonly postText = vi.fn(async (_url: string, _body: string) => "");
   readonly registerSiteRequestConfigs = vi.fn();
 }
 
 class FakeActorSourceProvider {
+  readonly clearCache = vi.fn();
   readonly lookup = vi.fn(
     async (_configuration: typeof configuration, query: string | { name: string }): Promise<ActorLookupResult> => {
       const name = typeof query === "string" ? query : query.name;

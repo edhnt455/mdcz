@@ -474,7 +474,6 @@ describe("FileScraper movie groups", () => {
         ),
       ),
       downloadedAssets: { downloaded: [], sceneImages: [] },
-      actorPhotoPaths: [],
       nfoNaming: "movie",
       writeNfo: async () => undefined,
     });
@@ -523,7 +522,6 @@ describe("FileScraper movie groups", () => {
       }),
       stagingDir,
       downloadedAssets: { poster: posterSource, downloaded: [posterSource], sceneImages: [] },
-      actorPhotoPaths: [],
       nfoNaming: "movie",
       writeNfo: async () => undefined,
     });

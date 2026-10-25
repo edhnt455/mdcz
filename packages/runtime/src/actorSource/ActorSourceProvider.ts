@@ -112,6 +112,10 @@ export class ActorSourceProvider {
     this.logger = deps.logger ?? noopRuntimeLogger;
   }
 
+  clearCache(): void {
+    this.lookupResolver.clear();
+  }
+
   async lookup(configuration: Configuration, query: string | ActorLookupQuery): Promise<ActorLookupResult> {
     const baseQuery: ActorLookupQuery =
       typeof query === "string"
@@ -142,6 +146,13 @@ export class ActorSourceProvider {
       const executionOrder = buildExecutionOrder(configuration, selected, configuredQuery.requiredField);
       const results: ActorSourceResult[] = [];
       let enrichedQuery = configuredQuery;
+      if (configuredQuery.requiredField === "photo_url" && !selected.includes("local")) {
+        const localContext = await this.lookupSource("local", configuration, configuredQuery);
+        enrichedQuery = {
+          ...configuredQuery,
+          sourceHints: mergeActorSourceHints(configuredQuery.sourceHints, localContext.sourceHints),
+        };
+      }
 
       for (const sourceName of executionOrder) {
         const result = await this.lookupSource(sourceName, configuration, enrichedQuery);

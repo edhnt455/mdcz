@@ -10,7 +10,7 @@ import {
   LocalActorSource,
 } from "@mdcz/runtime/actorSource";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { NfoGenerator } from "@mdcz/runtime/scrape";
+import { ActorImageService, NfoGenerator } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -101,7 +101,7 @@ describe("Actor source local and gfriends", () => {
       const movieDir = join(root, "Actor A", "ABC-123");
       await setup(movieDir);
 
-      const sources = await buildLocalActorIndex(createConfig(), [root]);
+      const sources = await buildLocalActorIndex([root]);
 
       expect(sources.get("actora")).toMatchObject({
         name: "Actor A",
@@ -114,12 +114,11 @@ describe("Actor source local and gfriends", () => {
   it.each([
     "local",
     "gfriends",
-  ] as const)("respects image source order with movie-local photos: %s first", async (first) => {
+  ] as const)("respects image source order with the configured upload folder: %s first", async (first) => {
     const root = await createTempDir();
     const movieDir = join(root, "Actor A", "ABC-123");
     await mkdir(movieDir, { recursive: true });
-    const photoPath = join(movieDir, ".actors", "Actor A.jpg");
-    await mkdir(dirname(photoPath));
+    const photoPath = join(root, "Actor A.jpg");
     await writeFile(photoPath, "photo");
     await writeFile(
       join(movieDir, "ABC-123.nfo"),
@@ -147,7 +146,10 @@ describe("Actor source local and gfriends", () => {
 
     const provider = new ActorSourceProvider({
       registry: new ActorSourceRegistry([
-        new LocalActorSource({ listLibraryDirectories: async () => [root] }),
+        new LocalActorSource({
+          actorImageService: new ActorImageService(),
+          listLibraryDirectories: async () => [root],
+        }),
         new GfriendsActorSource({
           networkClient: networkClient as unknown as NetworkClient,
           actorMapUrl: "https://example.com/Filetree.json",
@@ -157,6 +159,7 @@ describe("Actor source local and gfriends", () => {
 
     const result = await provider.lookup(
       createConfig({
+        paths: { ...defaultConfiguration.paths, actorPhotoFolder: root },
         personSync: {
           ...defaultConfiguration.personSync,
           personImageSources: first === "local" ? ["local", "gfriends"] : ["gfriends", "local"],

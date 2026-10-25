@@ -1,4 +1,5 @@
 import type { MediaServerCheckStep, MediaServerConnectionCheckResult } from "@mdcz/shared/ipcTypes";
+import type { PersonSyncStateDto } from "@mdcz/shared/serverDtos";
 import { Button, cn, Label, Progress, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@mdcz/ui";
 import { getT, type Messages, useT } from "../../i18n";
 
@@ -23,6 +24,7 @@ export interface PersonServerPanelState {
 
 export interface PersonMediaLibraryDetailProps {
   activeServer: PersonServer;
+  syncState?: PersonSyncStateDto;
   emby: PersonServerPanelState;
   jellyfin: PersonServerPanelState;
   settingsDisabled?: boolean;
@@ -108,6 +110,7 @@ function getStepTone(status: PersonConnectionCheckResult["steps"][number]["statu
 
 export function PersonMediaLibraryDetail({
   activeServer,
+  syncState,
   emby,
   jellyfin,
   settingsDisabled = false,
@@ -121,10 +124,16 @@ export function PersonMediaLibraryDetail({
 }: PersonMediaLibraryDetailProps) {
   const activeState = activeServer === "jellyfin" ? jellyfin : emby;
   const anySyncRunning =
-    jellyfin.infoSyncRunning || jellyfin.photoSyncRunning || emby.infoSyncRunning || emby.photoSyncRunning;
+    settingsDisabled ||
+    jellyfin.infoSyncRunning ||
+    jellyfin.photoSyncRunning ||
+    emby.infoSyncRunning ||
+    emby.photoSyncRunning;
   const anyCheckPending = jellyfin.checkPending || emby.checkPending;
   const t = useT();
   const checkResult = activeState.checkResult;
+  const job = syncState?.job?.server === activeServer ? syncState.job : null;
+  const automatic = syncState?.automatic;
   const diagnosticLabel = t.tools.diagnosticResult(activeServer === "jellyfin" ? "Jellyfin" : "Emby");
 
   return (
@@ -162,6 +171,33 @@ export function PersonMediaLibraryDetail({
           {activeState.checkPending ? t.tools.checkingConnection : t.tools.runConnectionCheck}
         </Button>
       </div>
+
+      {activeServer === "emby" && automatic ? (
+        <div className="space-y-2 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5" aria-live="polite">
+          <div className="text-sm font-semibold">
+            {t.tools.autoPhotoSync.title}: {t.tools.autoPhotoSync.status[automatic.status]}
+          </div>
+          <p className="text-xs leading-6 text-muted-foreground">{t.tools.autoPhotoSync.description}</p>
+          {automatic.waitingActors > 0 && (
+            <p className="text-xs">{t.tools.autoPhotoSync.waiting(automatic.waitingActors)}</p>
+          )}
+          {automatic.lastRunAt && (
+            <p className="text-xs text-muted-foreground">
+              {t.tools.autoPhotoSync.lastRun}: {new Date(automatic.lastRunAt).toLocaleString()}
+            </p>
+          )}
+          {automatic.nextRunAt && (
+            <p className="text-xs text-muted-foreground">
+              {t.tools.autoPhotoSync.nextRun}: {new Date(automatic.nextRunAt).toLocaleString()}
+            </p>
+          )}
+          {automatic.error && (
+            <p role="alert" className="text-xs text-destructive">
+              {automatic.error}
+            </p>
+          )}
+        </div>
+      ) : null}
 
       {checkResult ? (
         <div className="space-y-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
@@ -232,6 +268,7 @@ export function PersonMediaLibraryDetail({
           <div className="flex flex-col gap-3 sm:flex-row">
             <Select
               value={activeState.infoMode}
+              disabled={anySyncRunning || anyCheckPending}
               onValueChange={(value) => onInfoModeChange(activeServer, value as PersonSyncMode)}
             >
               <SelectTrigger className="h-11 flex-1 rounded-quiet-sm border-none bg-surface-floating px-4 shadow-none focus-visible:ring-2 focus-visible:ring-ring/30">
@@ -245,7 +282,7 @@ export function PersonMediaLibraryDetail({
             <Button
               variant="secondary"
               onClick={() => onSyncInfo(activeServer)}
-              disabled={anySyncRunning || activeState.checkPending}
+              disabled={anySyncRunning || anyCheckPending}
               className="h-11 flex-1 rounded-quiet-capsule bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
             >
               {activeState.infoSyncRunning ? t.tools.syncing : t.tools.syncInfo}
@@ -261,6 +298,7 @@ export function PersonMediaLibraryDetail({
           <div className="flex flex-col gap-3 sm:flex-row">
             <Select
               value={activeState.photoMode}
+              disabled={anySyncRunning || anyCheckPending}
               onValueChange={(value) => onPhotoModeChange(activeServer, value as PersonSyncMode)}
             >
               <SelectTrigger className="h-11 flex-1 rounded-quiet-sm border-none bg-surface-floating px-4 shadow-none focus-visible:ring-2 focus-visible:ring-ring/30">
@@ -274,10 +312,14 @@ export function PersonMediaLibraryDetail({
             <Button
               variant="secondary"
               onClick={() => onSyncPhoto(activeServer)}
-              disabled={anySyncRunning || activeState.checkPending}
+              disabled={anySyncRunning || anyCheckPending}
               className="h-11 flex-1 rounded-quiet-capsule bg-surface-floating px-5 text-sm font-semibold text-foreground hover:bg-surface-raised/70"
             >
-              {activeState.photoSyncRunning ? t.tools.syncing : t.tools.syncPhoto}
+              {activeState.photoSyncRunning
+                ? t.tools.syncing
+                : activeServer === "emby" && activeState.photoMode === "missing"
+                  ? t.tools.autoPhotoSync.syncNow
+                  : t.tools.syncPhoto}
             </Button>
           </div>
           <div className="text-xs leading-6 text-muted-foreground">{activeState.photoText}</div>
@@ -287,11 +329,41 @@ export function PersonMediaLibraryDetail({
         </div>
       </div>
 
+      {job?.error && (
+        <p role="alert" className="text-sm text-destructive">
+          {job.error}
+        </p>
+      )}
+      {job?.result && (
+        <div className="space-y-2" aria-live="polite">
+          <p className="text-sm">
+            {job.trigger === "automatic" ? t.tools.autoPhotoSync.automatic : t.tools.autoPhotoSync.manual} ·{" "}
+            {t.tools.personSyncSummary(job.result)}
+          </p>
+          {job.result.failures?.length ? (
+            <ul className="space-y-1 text-xs text-destructive">
+              {job.result.failures.map((failure) => (
+                <li key={failure.personId}>
+                  {failure.name}: {failure.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
+      {anySyncRunning && activeState.progress === 0 && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t.tools.syncing}
+        </p>
+      )}
       {activeState.progress > 0 ? (
         <div className="grid gap-3 rounded-quiet-lg bg-surface-low/90 p-4 md:p-5">
           <div className="flex justify-between text-xs font-semibold text-muted-foreground">
             <span>{t.tools.taskProgress}</span>
-            <span>{Math.round(activeState.progress)}%</span>
+            <span>
+              {job?.total ? `${job.current} / ${job.total} · ` : ""}
+              {Math.round(activeState.progress)}%
+            </span>
           </div>
           <Progress value={activeState.progress} className="h-2 bg-surface-floating" />
         </div>

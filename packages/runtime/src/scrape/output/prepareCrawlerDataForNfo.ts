@@ -1,43 +1,11 @@
-import { join } from "node:path";
-import type { Configuration } from "@mdcz/shared/config";
-import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
-import {
-  mergeRuntimeActorSourceHints,
-  type RuntimeActorImageService,
-  type RuntimeActorSourceHint,
-  type RuntimeActorSourceProvider,
-} from "../actorOutput";
-import { throwIfAborted } from "../utils/abort";
+import type { CrawlerData } from "@mdcz/shared/types";
 
-const isRemoteActorPhoto = (value: string): boolean => /^https?:\/\//iu.test(value);
 const toRemoteImageSourceUrl = (value: string | undefined): string | undefined => {
   const normalized = value?.trim();
   return normalized && /^https?:\/\//iu.test(normalized) ? normalized : undefined;
 };
 
-const toLocalActorPhotoPaths = (movieDir: string, actorProfiles: ActorProfile[] | undefined): string[] => {
-  const resolvedPaths: string[] = [];
-  const seen = new Set<string>();
-
-  for (const profile of actorProfiles ?? []) {
-    const photoUrl = profile.photo_url?.trim();
-    if (!photoUrl || isRemoteActorPhoto(photoUrl)) {
-      continue;
-    }
-
-    const resolvedPath = join(movieDir, photoUrl);
-    if (seen.has(resolvedPath)) {
-      continue;
-    }
-
-    seen.add(resolvedPath);
-    resolvedPaths.push(resolvedPath);
-  }
-
-  return resolvedPaths;
-};
-
-const withPersistedAssetSourceUrls = (crawlerData: CrawlerData): CrawlerData => {
+export const prepareCrawlerDataForNfo = (crawlerData: CrawlerData): CrawlerData => {
   const thumbSourceUrl = crawlerData.thumb_source_url ?? toRemoteImageSourceUrl(crawlerData.thumb_url);
   const posterSourceUrl = crawlerData.poster_source_url ?? toRemoteImageSourceUrl(crawlerData.poster_url);
   const fanartSourceUrl =
@@ -49,50 +17,10 @@ const withPersistedAssetSourceUrls = (crawlerData: CrawlerData): CrawlerData => 
 
   return {
     ...crawlerData,
+    actor_profiles: crawlerData.actor_profiles?.map(({ photo_url: _photo, ...profile }) => profile),
     thumb_source_url: thumbSourceUrl,
     poster_source_url: posterSourceUrl,
     fanart_source_url: fanartSourceUrl,
     trailer_source_url: trailerSourceUrl,
-  };
-};
-
-export const prepareCrawlerDataForNfo = async (
-  actorImageService: RuntimeActorImageService,
-  configuration: Configuration,
-  crawlerData: CrawlerData,
-  options: {
-    movieDir: string;
-    sourceVideoPath: string;
-    actorSourceProvider?: RuntimeActorSourceProvider;
-    sourceHints?: RuntimeActorSourceHint[];
-    signal?: AbortSignal;
-  },
-): Promise<{ data: CrawlerData; actorPhotoPaths: string[] }> => {
-  throwIfAborted(options.signal);
-
-  // Actor profiles are derived here from actor names and local/source lookups, not crawler aggregation.
-  const actorProfiles = await actorImageService.prepareActorProfilesForMovie(configuration, {
-    movieDir: options.movieDir,
-    actors: crawlerData.actors,
-    actorProfiles: crawlerData.actor_profiles,
-    actorSourceProvider: options.actorSourceProvider,
-    signal: options.signal,
-    sourceHints: mergeRuntimeActorSourceHints(options.sourceHints, [
-      {
-        website: crawlerData.website,
-        studio: crawlerData.studio,
-        publisher: crawlerData.publisher,
-      },
-    ]),
-  });
-
-  throwIfAborted(options.signal);
-
-  return {
-    data: {
-      ...withPersistedAssetSourceUrls(crawlerData),
-      actor_profiles: actorProfiles,
-    },
-    actorPhotoPaths: toLocalActorPhotoPaths(options.movieDir, actorProfiles),
   };
 };

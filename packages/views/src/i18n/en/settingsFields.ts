@@ -17,8 +17,9 @@ const PRIORITY_ALIASES = ["aggregation", "priority"];
 
 const sections: Record<FieldAnchor, SectionText> = {
   paths: { label: "Paths", aliases: ["path", "paths", "folder", "directory", "directories", "exclude", "actor photo"] },
-  scrape: { label: "Scraping", aliases: ["scrape", "crawler", "site", "sites", "source", "sources", "rate", "limit"] },
-  network: { label: "Network", aliases: ["network", "proxy", "cookie", "retry", "timeout"] },
+  scrape: { label: "Scraping", aliases: ["scrape", "crawler", "rate", "limit"] },
+  sites: { label: "Sites", aliases: ["site", "sites", "source", "sources", "cookie", "mirror"] },
+  network: { label: "Network", aliases: ["network", "proxy", "retry", "timeout"] },
   translate: { label: "Translation", aliases: ["translate", "translation", "translator", "llm", "language"] },
   naming: { label: "Naming", aliases: ["naming", "name", "template", "rule", "rules"] },
   download: { label: "Downloads", aliases: ["download", "asset", "poster", "fanart", "nfo"] },
@@ -83,9 +84,9 @@ const fields: Record<FieldKey, FieldText> = {
   },
   "paths.configDirectory": { label: "Configuration directory", aliases: ["config", "profile"] },
   "scrape.sites": {
-    label: "Enabled sites & priority",
+    label: "Site order",
     description:
-      "Sites are grouped into the DMM/FANZA family, official studio sites and common aggregators; the saved value stays a concrete site order.",
+      "Check a site to scrape it. Move rows to set priority. Unchecked sites keep their position and are skipped.",
     aliases: [
       "site priority",
       "order",
@@ -112,6 +113,7 @@ const fields: Record<FieldKey, FieldText> = {
       "AVWikiDB",
     ],
   },
+  "scrape.siteOrder": { label: "Site position" },
   "scrape.r18MetadataLanguage": { label: "R18.dev metadata language" },
   "scrape.aiNumberFallback": {
     label: "AI movie code fallback",
@@ -509,10 +511,15 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Refresh people after sync",
     description: "After syncing overviews or photos, also ask Emby to refresh person metadata and images.",
   },
+  "emby.autoSyncActorPhotos": {
+    label: "Automatically sync actor photos",
+    description:
+      "After publication, notify Emby to scan and fill missing actor photos. Recheck on startup and every 30 minutes. Existing photos are preserved; no page needs to stay open.",
+  },
   "emby.notifyAfterPublish": {
     label: "Refresh folder after organizing",
     description:
-      "After a movie is organized into the library, ask Emby to scan just that folder so it appears without a full library refresh.",
+      "Ask Emby to scan the published movie folder. Scan notifications are always sent when automatic actor photo sync is enabled.",
   },
   "jellyfin.notifyAfterPublish": {
     label: "Refresh folder after organizing",

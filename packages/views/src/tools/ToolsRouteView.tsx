@@ -1,19 +1,10 @@
 import type { ToolDefinition, ToolId } from "@mdcz/shared/toolCatalog";
 import { Button } from "@mdcz/ui";
 import { ArrowLeft } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useRef } from "react";
+import { useToolNavigationStore } from "../state/toolNavigationStore";
 import { ToolCatalogView } from "./ToolCatalogView";
 import { ToolCardIcon } from "./ToolScaffold";
-
-const SELECTED_TOOL_STORAGE_KEY = "mdcz:selected-tool-id";
-const noopStorage = {
-  getItem: () => null,
-  setItem: () => undefined,
-  removeItem: () => undefined,
-};
-
-const getToolStorage = (): Pick<Storage, "getItem" | "setItem" | "removeItem"> =>
-  typeof sessionStorage !== "undefined" ? sessionStorage : noopStorage;
 
 export interface ToolsRouteViewProps {
   tools: ToolDefinition[];
@@ -22,21 +13,9 @@ export interface ToolsRouteViewProps {
 
 export function ToolsRouteView({ tools, renderDetail }: ToolsRouteViewProps) {
   const pageScrollRef = useRef<HTMLDivElement>(null);
-  const [selectedToolId, setSelectedToolId] = useState<ToolId | null>(() => {
-    const storedToolId = getToolStorage().getItem(SELECTED_TOOL_STORAGE_KEY);
-    return tools.some((tool) => tool.id === storedToolId) ? (storedToolId as ToolId) : null;
-  });
-
-  const setSelectedTool = (toolId: ToolId | null) => {
-    setSelectedToolId(toolId);
-    const storage = getToolStorage();
-
-    if (toolId) {
-      storage.setItem(SELECTED_TOOL_STORAGE_KEY, toolId);
-    } else {
-      storage.removeItem(SELECTED_TOOL_STORAGE_KEY);
-    }
-  };
+  const storedToolId = useToolNavigationStore((state) => state.selectedToolId);
+  const selectedToolId = tools.some((tool) => tool.id === storedToolId) ? storedToolId : null;
+  const setSelectedTool = useToolNavigationStore((state) => state.selectTool);
 
   const scrollToTop = () => {
     window.requestAnimationFrame(() => {

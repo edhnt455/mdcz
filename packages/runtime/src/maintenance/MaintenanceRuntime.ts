@@ -51,7 +51,6 @@ import {
   type TranslateService,
   writePreparedNfo,
 } from "../scrape";
-import type { RuntimeActorImageService, RuntimeActorSourceProvider } from "../scrape/actorOutput";
 import { AggregationService, type CrawlerPort, mergeSiteData, type SiteResultSink } from "../scrape/aggregation";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
@@ -78,8 +77,7 @@ export interface MaintenanceRuntimeConfigProvider {
 }
 
 export interface MaintenanceRuntimeDependencies {
-  actorImageService: RuntimeActorImageService;
-  actorSourceProvider?: RuntimeActorSourceProvider;
+  onPublished?: (directories: readonly string[], configuration: Configuration, data: CrawlerData) => void;
   aggregationService?: Pick<AggregationService, "aggregate">;
   crawlerProvider?: CrawlerPort;
   recordSiteResults?: SiteResultSink;
@@ -506,20 +504,14 @@ export class MaintenanceRuntime {
 
       const preparedOutputData = stagingDir
         ? await prepareOutputCrawlerData({
-            actorImageService: this.deps.actorImageService,
-            actorSourceProvider: this.deps.actorSourceProvider,
-            config,
             crawlerData,
             enabled: Boolean(sharedPlan.plan),
-            movieDir: stagingDir,
-            sourceVideoPath: entry.fileInfo.filePath,
             signal,
           })
-        : { data: crawlerData, actorPhotoPaths: [] };
+        : { data: crawlerData };
       throwIfAborted(signal);
 
       let preparedCrawlerData = preparedOutputData.data ?? crawlerData;
-      const preparedActorPhotoPaths = preparedOutputData.actorPhotoPaths;
 
       let downloadedAssets: DownloadedAssets = {
         poster: undefined,
@@ -580,7 +572,6 @@ export class MaintenanceRuntime {
         retainedMovieAssets: retainedRegisteredFeatures(members, publication.identity.assets),
         stagingDir,
         downloadedAssets,
-        actorPhotoPaths: preparedActorPhotoPaths,
         assetDecisions: committed?.assetDecisions,
         relocateExistingArtifacts: input.presetId === "local_organize",
         ownedAssetPaths: await Promise.all(
@@ -634,7 +625,6 @@ export class MaintenanceRuntime {
             ["fanart", [file.assets.fanart]],
             ["trailer", [file.assets.trailer]],
             ["scene", file.assets.sceneImages],
-            ["actor", file.assets.actorPhotos],
           ] as const) {
             for (const path of paths) {
               if (!path) continue;
@@ -699,6 +689,12 @@ export class MaintenanceRuntime {
         unlock();
       }
 
+      if (preset.output !== "none")
+        this.deps.onPublished?.(
+          [...new Set(members.map((member) => member.layout.metadataDir))],
+          config,
+          preparedCrawlerData,
+        );
       return {
         status: "success",
         crawlerData: preparedCrawlerData,

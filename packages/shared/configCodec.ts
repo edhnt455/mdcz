@@ -1,5 +1,5 @@
 import { parse, stringify } from "smol-toml";
-import { type Configuration, configurationSchema } from "./config";
+import { type Configuration, configurationSchema, withNormalizedScrapeSites } from "./config";
 
 export type ConfigurationFileFormat = "json" | "toml";
 
@@ -42,7 +42,7 @@ export const serializeConfiguration = (
   configuration: Configuration,
   format: ConfigurationFileFormat = DEFAULT_CONFIGURATION_FILE_FORMAT,
 ): string => {
-  const parsed = configurationSchema.parse(configuration);
+  const parsed = withNormalizedScrapeSites(configurationSchema.parse(configuration));
   return format === "json"
     ? `${JSON.stringify(parsed, null, 2)}\n`
     : `${annotateTomlConfiguration(stringify(parsed), parsed)}\n`;
@@ -57,7 +57,7 @@ export const parseConfigurationDocument = (
 export const parseConfigurationContent = (
   content: string,
   format: ConfigurationFileFormat = DEFAULT_CONFIGURATION_FILE_FORMAT,
-): Configuration => configurationSchema.parse(parseConfigurationDocument(content, format));
+): Configuration => withNormalizedScrapeSites(configurationSchema.parse(parseConfigurationDocument(content, format)));
 
 export const readConfigurationText = (content: string, filePath: string): Configuration =>
   parseConfigurationContent(content, inferConfigurationFileFormat(filePath));

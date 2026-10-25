@@ -69,10 +69,13 @@ export type MediaServerConnectionCheckResult = {
   personCount?: number;
 };
 
+export type PersonSyncFailure = { personId: string; name: string; stage: string; message: string };
+
 export type PersonSyncResult = {
   processedCount: number;
   failedCount: number;
   skippedCount: number;
+  failures?: PersonSyncFailure[];
 };
 
 export type AmazonPosterScanItem = {

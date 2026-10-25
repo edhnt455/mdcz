@@ -76,6 +76,7 @@ import type {
   PersistenceStatusDto,
   PersonSyncJobDto,
   PersonSyncStartInput,
+  PersonSyncStateDto,
   PosterCropSaveInput,
   PosterCropSessionResponse,
   RootBrowserInput,
@@ -240,7 +241,7 @@ export interface ServerApiContract {
     catalog(): Promise<ToolCatalogResponse>;
     execute(input: ToolExecuteInput): Promise<ToolExecuteResponse>;
     startPersonSync(input: PersonSyncStartInput): Promise<PersonSyncJobDto>;
-    personSyncStatus(): Promise<PersonSyncJobDto | null>;
+    personSyncStatus(): Promise<PersonSyncStateDto>;
   };
   scans: {
     cancelCandidates(input: { scanId: string }): Promise<{ ok: true }>;

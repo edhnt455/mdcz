@@ -348,6 +348,10 @@ export const DESKTOP_ONLY_CHANNELS = [
     channel: IpcChannel.Tool_JellyfinServerCheckConnection,
     reason: "Tool_* family is N:2 against tools.execute; deferred from 1:1 manifest.",
   },
+  {
+    channel: IpcChannel.Tool_PersonSyncStatus,
+    reason: "Person background synchronization state, including automatic scheduling.",
+  },
   { channel: IpcChannel.Tool_ToggleDevTools, reason: "Electron DevTools toggle; no server procedure." },
 ] as const satisfies readonly ClassifiedChannel[];
 

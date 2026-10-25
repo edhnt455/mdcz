@@ -1,19 +1,17 @@
 import { configManager } from "@main/services/config";
 import { loggerService } from "@main/services/LoggerService";
 import type { SignalService } from "@main/services/SignalService";
-import type { ActorSourceProvider } from "@mdcz/runtime/actorSource";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime, type MaintenanceRuntimeDependencies } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import type { ActorImageService, SiteResultSink } from "@mdcz/runtime/scrape";
+import type { SiteResultSink } from "@mdcz/runtime/scrape";
 import { DownloadManager, FileOrganizer, NfoGenerator, TranslateService } from "@mdcz/runtime/scrape";
 import { applyDesktopImageWatermarks } from "../output";
 import { translationMappingStore } from "../translationMappingStore";
 
 export interface DesktopMaintenanceRuntimeOptions {
-  actorImageService: ActorImageService;
-  actorSourceProvider?: ActorSourceProvider;
+  onPublished?: MaintenanceRuntimeDependencies["onPublished"];
   crawlerProvider: CrawlerProvider;
   imageHostCooldownStore: PersistentCooldownStore;
   networkClient: NetworkClient;
@@ -26,8 +24,7 @@ export interface DesktopMaintenanceRuntimeOptions {
 export const createDesktopMaintenanceRuntime = (options: DesktopMaintenanceRuntimeOptions): MaintenanceRuntime => {
   const logger = loggerService.getLogger("MaintenanceService");
   return new MaintenanceRuntime({
-    actorImageService: options.actorImageService,
-    actorSourceProvider: options.actorSourceProvider,
+    onPublished: options.onPublished,
     crawlerProvider: options.crawlerProvider,
     recordSiteResults: options.recordSiteResults,
     loadSiteResults: options.loadSiteResults,

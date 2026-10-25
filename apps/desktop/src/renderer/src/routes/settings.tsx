@@ -7,8 +7,9 @@ import {
   type SettingsServices,
 } from "@mdcz/views/settings";
 import { useSettingsSavingStore } from "@mdcz/views/state/settingsSavingStore";
+import { openEmbyPhotoSync } from "@mdcz/views/state/toolNavigationStore";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { ipc } from "@/client/ipc";
 import { CURRENT_CONFIG_QUERY_KEY, useConfigProfiles, useCurrentConfig, useDefaultConfig } from "@/hooks/configQueries";
@@ -35,6 +36,7 @@ const createSettingsServices = (queryClient: QueryClient): SettingsServices => (
     const result = await ipc.crawler.listSites();
     return { sites: result.sites };
   },
+  openExternal: (url) => ipc.app.openExternal(url),
   openWatermarkDirectory: async () => {
     await ipc.app.openWatermarkDirectory();
     return undefined;
@@ -78,11 +80,21 @@ const createProfileActions = (queryClient: QueryClient): SettingsProfileActions 
 
 function SettingsComponent() {
   const { section } = Route.useSearch();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const configQ = useCurrentConfig({ refetchOnWindowFocus: false });
   const defaultsQ = useDefaultConfig({ refetchOnWindowFocus: false });
   const profilesQ = useConfigProfiles({ refetchOnWindowFocus: false });
-  const services = useMemo(() => createSettingsServices(queryClient), [queryClient]);
+  const services = useMemo(
+    () => ({
+      ...createSettingsServices(queryClient),
+      openActorPhotoSync: () => {
+        openEmbyPhotoSync();
+        void navigate({ to: "/tools" });
+      },
+    }),
+    [queryClient, navigate],
+  );
   const profileActions = useMemo(() => createProfileActions(queryClient), [queryClient]);
 
   return (

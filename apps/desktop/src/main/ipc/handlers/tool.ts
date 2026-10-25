@@ -63,6 +63,7 @@ export const createToolHandlers = (
   | typeof IpcChannel.Tool_EmbyServerCheckConnection
   | typeof IpcChannel.Tool_EmbyActorPhotoSync
   | typeof IpcChannel.Tool_EmbyActorInfoSync
+  | typeof IpcChannel.Tool_PersonSyncStatus
   | typeof IpcChannel.Tool_CreateSymlink
   | typeof IpcChannel.Tool_AmazonPosterScan
   | typeof IpcChannel.Tool_AmazonPosterLookup
@@ -74,10 +75,7 @@ export const createToolHandlers = (
   const {
     signalService,
     networkClient,
-    jellyfinActorPhotoService,
-    jellyfinActorInfoService,
-    embyActorPhotoService,
-    embyActorInfoService,
+    personSync,
     symlinkService,
     windowService,
     amazonPosterToolService,
@@ -163,8 +161,8 @@ export const createToolHandlers = (
     parseMode: parseJellyfinMode,
     checkConnection: checkJellyfinConnection,
     errorType: JellyfinServiceError,
-    infoService: jellyfinActorInfoService,
-    photoService: jellyfinActorPhotoService,
+    infoService: { run: (_config, mode) => personSync.run({ server: "jellyfin", kind: "info", mode }) },
+    photoService: { run: (_config, mode) => personSync.run({ server: "jellyfin", kind: "photo", mode }) },
   };
 
   const embyHandlers: MediaServerHandlerOptions = {
@@ -175,11 +173,12 @@ export const createToolHandlers = (
     parseMode: parseEmbyMode,
     checkConnection: checkEmbyConnection,
     errorType: EmbyServiceError,
-    infoService: embyActorInfoService,
-    photoService: embyActorPhotoService,
+    infoService: { run: (_config, mode) => personSync.run({ server: "emby", kind: "info", mode }) },
+    photoService: { run: (_config, mode) => personSync.run({ server: "emby", kind: "photo", mode }) },
   };
 
   return {
+    [IpcChannel.Tool_PersonSyncStatus]: t.procedure.action(async () => personSync.snapshot()),
     [IpcChannel.Tool_JellyfinServerCheckConnection]: createMediaServerCheckConnectionHandler(jellyfinHandlers),
     [IpcChannel.Tool_JellyfinActorPhotoSync]: createMediaServerSyncHandler(
       jellyfinHandlers.syncPhotoOperation,
