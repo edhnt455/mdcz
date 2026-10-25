@@ -1,11 +1,15 @@
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
+import { moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
 import type { DirectoryInventory } from "../scrape/DirectoryInventory";
 import type { ResolvedPublicationLayout } from "../scrape/FileOrganizer";
 import { getNfoWritePaths } from "../scrape/nfo";
+import { parseStrmTarget } from "../scrape/utils/strm";
 import type { PublicationAssetLayout } from "./assetLayout";
 import type { SourceMove } from "./MoveOutput";
 import { toRootFileRef } from "./outputRefs";
@@ -16,6 +20,7 @@ export interface PreparedMovieFile {
   sourceEntryIdentity: string;
   /** The source of a hardlink or copy, which stays on disk. */
   retainedSourceIdentity?: string;
+  strmSourceJson?: string;
   fileId: string;
   source: RootFileRef;
   target: RootFileRef;
@@ -231,6 +236,10 @@ export const prepareMovieArtifacts = async (input: {
         }
       }
     }
+    const strmContent =
+      placed && transfer === "copy" && extname(sourcePath).toLowerCase() === ".strm"
+        ? await readFile(sourcePath)
+        : undefined;
     files.push({
       fileId: file.fileId,
       source: file.source,
@@ -239,6 +248,15 @@ export const prepareMovieArtifacts = async (input: {
       sourceEntryIdentity: filesystemPathKey(await input.inventory.entryPath(sourcePath)),
       ...(placed && transfer !== "move"
         ? { retainedSourceIdentity: filesystemPathKey(await input.inventory.entryPath(sourcePath)) }
+        : {}),
+      ...(strmContent
+        ? {
+            strmSourceJson: JSON.stringify({
+              sourcePath: filesystemPathKey(await input.inventory.entryPath(sourcePath)),
+              sha256: createHash("sha256").update(strmContent).digest("hex"),
+              resourceIdentity: moviePilotResourceIdentity(parseStrmTarget(strmContent.toString("utf8")) ?? ""),
+            }),
+          }
         : {}),
       size,
       modifiedAt,

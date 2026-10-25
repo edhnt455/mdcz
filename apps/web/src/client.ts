@@ -255,6 +255,10 @@ export const api: ServerApiContract = {
     configure: (input) => trpcMutation("embyDeletion.configure", input),
     rotateSecret: () => trpcMutation("embyDeletion.rotateSecret"),
     reconcile: () => trpcMutation("embyDeletion.reconcile"),
+    configureMoviePilot: (input) => trpcMutation("embyDeletion.configureMoviePilot", input),
+    testMoviePilot: () => trpcMutation("embyDeletion.testMoviePilot"),
+    bindSources: () => trpcMutation("embyDeletion.bindSources"),
+    retry: (input) => trpcMutation("embyDeletion.retry", input),
   },
   mediaRoots: {
     ensurePath: (input) => trpcMutation("mediaRoots.ensurePath", input),

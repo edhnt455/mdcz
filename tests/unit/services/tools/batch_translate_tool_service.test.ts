@@ -8,12 +8,15 @@ import type { MediaRoot } from "@mdcz/media-store";
 import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import { writePreparedNfo } from "@mdcz/runtime/maintenance";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import type { LlmApiClient } from "@mdcz/runtime/scrape";
+import { LlmApiClient } from "@mdcz/runtime/scrape";
 import type { BatchNfoTranslatorDependencies } from "@mdcz/runtime/tools";
 import { Website } from "@mdcz/shared/enums";
 import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const { sleepMock } = vi.hoisted(() => ({ sleepMock: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("node:timers/promises", () => ({ setTimeout: sleepMock }));
 
 const tempDirs: string[] = [];
 afterEach(async () => {
@@ -247,16 +250,33 @@ describe("BatchTranslateToolService", () => {
     expect(xml).not.toContain("中文");
   });
 
-  it("batches unique texts and writes translated NFOs without a journal", async () => {
+  it("batches unique texts and writes NFOs only after a successful translation within the retry limit", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-translation-"));
     tempDirs.push(root);
     const config = createConfig({
+      translate: { ...defaultConfiguration.translate, llmMaxRequestsPerSecond: 100, llmApiKey: "test-key" },
       download: {
         ...defaultConfiguration.download,
         nfoIgnoreFields: ["director"],
       },
     });
-    const generateText = vi.fn().mockResolvedValue('{"translations":["相同标题","剧情一"]}');
+    const emptyResponse = {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      resolvedUrl: "https://example.test/v1/responses",
+      headers: new Headers(),
+      data: { status: "completed", error: null, usage: { output_tokens: 0 } },
+    };
+    const postJsonDetailed = vi
+      .fn()
+      .mockResolvedValueOnce(emptyResponse)
+      .mockResolvedValue({
+        ...emptyResponse,
+        data: { output_text: '{"translations":["相同标题","剧情一"]}' },
+      });
+    const client = new LlmApiClient({ postJsonDetailed });
+    const generateText = vi.fn(client.generateText.bind(client));
     const writeNfo = vi.fn(writePreparedNfo);
 
     const entriesByPath = new Map<string, LocalScanEntry>([
@@ -320,43 +340,43 @@ describe("BatchTranslateToolService", () => {
       rootPath: root,
     });
 
-    const results = await service.apply(
-      [
-        {
-          filePath: "/library/AAA-001.mp4",
-          nfoPath: "/library/AAA-001.nfo",
-          directory: "/library",
-          number: "AAA-001",
-          title: "Same English Title",
-          pendingFields: ["title", "plot"],
-        },
-        {
-          filePath: "/library/BBB-002.mp4",
-          nfoPath: "/library/BBB-002.nfo",
-          directory: "/library",
-          number: "BBB-002",
-          title: "Same English Title",
-          pendingFields: ["title"],
-        },
-      ].map((item) => ({
-        ...item,
-        filePath: item.filePath.replace("/library", root),
-        nfoPath: item.nfoPath.replace("/library", root),
-        directory: root,
-        pendingFields: item.pendingFields as BatchTranslateScanItem["pendingFields"],
-      })),
-      config,
-      { mode: "untranslated" },
-    );
+    const items: BatchTranslateScanItem[] = [
+      {
+        filePath: "/library/AAA-001.mp4",
+        nfoPath: "/library/AAA-001.nfo",
+        directory: "/library",
+        number: "AAA-001",
+        title: "Same English Title",
+        pendingFields: ["title", "plot"],
+      },
+      {
+        filePath: "/library/BBB-002.mp4",
+        nfoPath: "/library/BBB-002.nfo",
+        directory: "/library",
+        number: "BBB-002",
+        title: "Same English Title",
+        pendingFields: ["title"],
+      },
+    ].map((item) => ({
+      ...item,
+      filePath: item.filePath.replace("/library", root),
+      nfoPath: item.nfoPath.replace("/library", root),
+      directory: root,
+      pendingFields: item.pendingFields as BatchTranslateScanItem["pendingFields"],
+    }));
+    sleepMock.mockClear();
+    const results = await service.apply(items, config, { mode: "untranslated" });
 
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);
     expect(ensurePathRecord).toHaveBeenCalledOnce();
     expect(ensurePathRecord).toHaveBeenCalledWith({ hostPath: root });
-    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual([1000]);
     expect(generateText).toHaveBeenCalledWith(
       expect.objectContaining({
         prompt: expect.stringContaining('"Same English Title"'),
       }),
+      undefined,
     );
     expect(writeNfo).toHaveBeenCalledTimes(2);
 
@@ -373,6 +393,38 @@ describe("BatchTranslateToolService", () => {
     expect(results.every(({ success }) => success)).toBe(true);
     for (const number of ["AAA-001", "BBB-002"]) {
       expect(await readFile(join(root, `${number}.nfo`), "utf8")).toContain("相同标题");
+    }
+
+    const savedNfo = await readFile(items[0].nfoPath, "utf8");
+    for (const failure of ["empty", "invalid", "unauthorized"] as const) {
+      generateText.mockClear();
+      sleepMock.mockClear();
+      postJsonDetailed.mockResolvedValue({
+        ...emptyResponse,
+        ...(failure === "unauthorized" ? { ok: false, status: 401, statusText: "Unauthorized" } : {}),
+        data:
+          failure === "empty"
+            ? emptyResponse.data
+            : failure === "invalid"
+              ? { output_text: '{"translations":["缺少简介"]}' }
+              : { error: { message: "invalid API key" } },
+      });
+      const failures = await service.apply(items, config, { mode: "untranslated" });
+      expect(generateText).toHaveBeenCalledTimes(failure === "empty" ? config.translate.llmMaxRetries + 1 : 1);
+      expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual(failure === "empty" ? [1000, 2000, 4000] : []);
+      expect(failures).toHaveLength(2);
+      for (const result of failures) {
+        expect(result).toMatchObject({ success: false, translatedFields: [] });
+        expect(result.error).toContain(
+          failure === "empty"
+            ? "LLM response did not contain text"
+            : failure === "invalid"
+              ? "batch translation count"
+              : "HTTP 401",
+        );
+      }
+      expect(writeNfo).toHaveBeenCalledTimes(2);
+      expect(await readFile(items[0].nfoPath, "utf8")).toBe(savedNfo);
     }
   });
 });

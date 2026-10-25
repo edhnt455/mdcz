@@ -148,6 +148,7 @@ export interface MaintenanceRuntimeApplyEntryInput {
   };
   publication: {
     commit(movie: CommittedMovie): void;
+    validate?(movie: CommittedMovie): void;
     roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
     identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
   };
@@ -673,6 +674,7 @@ export class MaintenanceRuntime {
         throwIfAborted(signal);
         const validate = async () => {
           throwIfAborted(signal);
+          publication.validate?.(movie);
           await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));
           throwIfAborted(signal);
         };

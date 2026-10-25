@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { configurationSchema } from "@main/services/config";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { type LlmApiClient, LlmTransportError, TranslateService } from "@mdcz/runtime/scrape";
+import { type LlmApiClient, LlmEmptyResponseError, LlmTransportError, TranslateService } from "@mdcz/runtime/scrape";
 import type { RuntimeLogger } from "@mdcz/runtime/shared";
 import { TranslateEngine, UiLanguage, Website } from "@mdcz/shared/enums";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -186,22 +186,36 @@ describe("TranslateService term consistency", () => {
     expect(sleepMock).toHaveBeenCalledExactlyOnceWith(delay, undefined, undefined);
   });
 
-  it("retries typed transport errors until llmMaxRetries is exhausted", async () => {
-    const transportError = new LlmTransportError(
-      "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
-      new Error("body timed out"),
-    );
-    const generateText = vi.fn().mockRejectedValue(transportError);
-    const logger = createLogger();
-    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
-    const config = createBaseConfig();
-    config.translate.llmMaxRetries = 3;
+  it("retries typed transient failures until recovery or llmMaxRetries is exhausted", async () => {
+    for (const [reason, error] of [
+      [
+        "transport error",
+        new LlmTransportError(
+          "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
+          new Error("body timed out"),
+        ),
+      ],
+      ["empty response", new LlmEmptyResponseError("LLM response did not contain text", 200, new Headers(), {})],
+    ] as const) {
+      for (const recover of [true, false]) {
+        sleepMock.mockClear();
+        const generateText = vi.fn().mockRejectedValue(error);
+        if (recover) generateText.mockRejectedValueOnce(error).mockResolvedValue("重试成功");
+        const logger = createLogger();
+        const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
+        const config = createBaseConfig();
+        config.translate.llmMaxRetries = 3;
+        config.translate.llmMaxRequestsPerSecond = 100;
 
-    await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(transportError);
+        const result = service.translateText("hello", "zh_cn", config);
+        if (recover) await expect(result).resolves.toBe("重试成功");
+        else await expect(result).rejects.toBe(error);
 
-    expect(generateText).toHaveBeenCalledTimes(4);
-    expect(sleepMock).toHaveBeenCalledTimes(3);
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("transport error (1/3)"));
+        expect(generateText).toHaveBeenCalledTimes(recover ? 2 : 4);
+        expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual(recover ? [1000] : [1000, 2000, 4000]);
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(`${reason} (1/3)`));
+      }
+    }
   });
 
   it.each([
@@ -251,7 +265,7 @@ describe("TranslateService term consistency", () => {
   });
 
   it.each([
-    ["empty response", new Error('LLM response did not contain text: {"choices":[{"message":{"role":"assistant"}}]}')],
+    ["invalid output", new Error("LLM metadata translation returned invalid structured output")],
     [
       "HTTP 500",
       Object.assign(new Error("server error"), { status: 500, headers: new Headers({ "Retry-After": "120" }) }),

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
-import { and, asc, desc, eq, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { LibraryRepository } from "./libraryRepository";
 import {
@@ -13,6 +13,7 @@ import {
   pendingItems,
   scrapeRuns,
   siteResults,
+  strmCloudBindings,
 } from "./schema";
 
 export type EmbyDeletionEventRow = typeof embyDeletionEvents.$inferSelect;
@@ -21,6 +22,7 @@ export interface EmbyDeletionLibraryBinding {
   outputPath: string;
   realPath: string;
   marker: string;
+  source?: { path: string; realPath: string; marker: string };
 }
 
 export class EmbyDeletionRepository {
@@ -29,7 +31,10 @@ export class EmbyDeletionRepository {
   settings() {
     const row = this.database.db.select().from(embyDeletionSettings).get();
     if (!row) throw new Error("Emby deletion settings are missing");
-    return { ...row, libraries: JSON.parse(row.librariesJson) as EmbyDeletionLibraryBinding[] };
+    return {
+      ...row,
+      libraries: JSON.parse(row.librariesJson) as EmbyDeletionLibraryBinding[],
+    };
   }
 
   configure(input: { mode: "off" | "observe" | "delete"; serverId: string; libraries: EmbyDeletionLibraryBinding[] }) {
@@ -42,13 +47,121 @@ export class EmbyDeletionRepository {
       this.database.db
         .update(embyDeletionEvents)
         .set({ status: "ignored", result: "settings_changed", completedAt: Date.now() })
-        .where(eq(embyDeletionEvents.status, "pending"))
+        .where(and(eq(embyDeletionEvents.status, "pending"), eq(embyDeletionEvents.eventType, "library.deleted")))
         .run();
     })();
   }
 
   setSecretHash(secretHash: string): void {
     this.database.db.update(embyDeletionSettings).set({ secretHash }).where(eq(embyDeletionSettings.id, 1)).run();
+  }
+
+  configureMoviePilot(connectionJson: string): void {
+    this.database.sqlite.transaction(() => {
+      if (this.hasCloudWork()) throw new Error("Resolve unfinished STRM deletions before changing MoviePilot");
+      this.database.db
+        .update(embyDeletionSettings)
+        .set({ moviePilotJson: connectionJson })
+        .where(eq(embyDeletionSettings.id, 1))
+        .run();
+      this.database.db.delete(strmCloudBindings).where(eq(strmCloudBindings.blocked, false)).run();
+    })();
+  }
+
+  hasCloudWork(): boolean {
+    return Boolean(
+      this.database.db
+        .select({ id: embyDeletionEvents.id })
+        .from(embyDeletionEvents)
+        .where(
+          and(
+            eq(embyDeletionEvents.eventType, "deep.delete"),
+            sql`${embyDeletionEvents.status} in ('pending', 'needs_review')`,
+          ),
+        )
+        .limit(1)
+        .get(),
+    );
+  }
+
+  binding(fileId: string) {
+    return this.database.db.select().from(strmCloudBindings).where(eq(strmCloudBindings.fileId, fileId)).get();
+  }
+
+  bind(values: typeof strmCloudBindings.$inferInsert): void {
+    if (this.binding(values.fileId)?.blocked)
+      throw new Error("STRM source is suppressed by a deletion; review it before rebinding");
+    this.database.db
+      .insert(strmCloudBindings)
+      .values(values)
+      .onConflictDoUpdate({ target: strmCloudBindings.fileId, set: values })
+      .run();
+  }
+
+  suppress(fileIds: readonly string[]): void {
+    if (fileIds.length)
+      this.database.db
+        .update(strmCloudBindings)
+        .set({ blocked: true })
+        .where(inArray(strmCloudBindings.fileId, [...fileIds]))
+        .run();
+  }
+
+  relatedBindings(connectionId: string, cloudFileId: string) {
+    return this.database.db
+      .select()
+      .from(strmCloudBindings)
+      .where(
+        sql`json_extract(${strmCloudBindings.snapshotJson}, '$.connectionId') = ${connectionId} and json_extract(${strmCloudBindings.snapshotJson}, '$.target.fileid') = ${cloudFileId}`,
+      )
+      .all();
+  }
+
+  otherReferences(fileId: string, connectionId: string, cloudFileId: string): boolean {
+    return Boolean(
+      this.database.db
+        .select({ id: libraryItemFiles.id })
+        .from(strmCloudBindings)
+        .innerJoin(libraryItemFiles, eq(libraryItemFiles.id, strmCloudBindings.fileId))
+        .where(
+          sql`${strmCloudBindings.fileId} != ${fileId} and json_extract(${strmCloudBindings.snapshotJson}, '$.connectionId') = ${connectionId} and json_extract(${strmCloudBindings.snapshotJson}, '$.target.fileid') = ${cloudFileId}`,
+        )
+        .limit(1)
+        .get(),
+    );
+  }
+
+  associationCounts(connectionId?: string) {
+    const verified =
+      this.database.db
+        .select({ count: sql<number>`count(*)` })
+        .from(strmCloudBindings)
+        .innerJoin(libraryItemFiles, eq(libraryItemFiles.id, strmCloudBindings.fileId))
+        .where(
+          sql`${strmCloudBindings.blocked} = 0 and json_extract(${strmCloudBindings.snapshotJson}, '$.connectionId') = ${connectionId ?? null} and json_extract(${strmCloudBindings.snapshotJson}, '$.fileUpdatedAt') = ${libraryItemFiles.updatedAt}`,
+        )
+        .get()?.count ?? 0;
+    const blocked =
+      this.database.db
+        .select({ count: sql<number>`count(*)` })
+        .from(strmCloudBindings)
+        .where(eq(strmCloudBindings.blocked, true))
+        .get()?.count ?? 0;
+    return { verified, blocked };
+  }
+
+  retry(id: string): void {
+    const row = this.database.db.select().from(embyDeletionEvents).where(eq(embyDeletionEvents.id, id)).get();
+    if (
+      !row ||
+      !(
+        row.status === "needs_review" ||
+        (row.status === "ignored" &&
+          ["would_delete_strm_resource", "would_keep_shared_resource"].includes(row.result ?? ""))
+      )
+    )
+      throw new Error("Only review jobs or observed deep deletions can be retried");
+    this.update(id, { status: "pending", attempts: 0, completedAt: null, nextAttemptAt: Date.now() });
   }
 
   findFile(absolutePath: string) {
@@ -77,11 +190,10 @@ export class EmbyDeletionRepository {
       .all()
       .flatMap(({ file, root }) => {
         const absolutePath = filesystemPathKey(path.resolve(root.hostPath, file.rootRelativePath));
-        return bindings.some(
+        const binding = bindings.find(
           (binding) => absolutePath !== binding.outputPath && isPathInside(binding.outputPath, absolutePath),
-        )
-          ? [{ file, path: absolutePath }]
-          : [];
+        );
+        return binding ? [{ file, path: absolutePath, libraryId: binding.id }] : [];
       });
   }
 
@@ -175,6 +287,7 @@ export class EmbyDeletionRepository {
       ) {
         this.database.db.delete(siteResults).where(eq(siteResults.number, number)).run();
       }
+      this.update(event.id, { step: "completed" });
       this.finish(event.id, "completed", "records_removed", now);
       return true;
     })();
@@ -207,6 +320,8 @@ export class EmbyDeletionRepository {
         receivedAt: embyDeletionEvents.receivedAt,
         completedAt: embyDeletionEvents.completedAt,
         attempts: embyDeletionEvents.attempts,
+        step: embyDeletionEvents.step,
+        snapshotJson: embyDeletionEvents.snapshotJson,
       })
       .from(embyDeletionEvents)
       .orderBy(desc(embyDeletionEvents.receivedAt), desc(embyDeletionEvents.id))

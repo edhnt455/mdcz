@@ -8,6 +8,7 @@ import {
   mediaLibrarySourceInputSchema,
   mediaLibraryUpdateInputSchema,
 } from "@mdcz/shared/mediaLibrary";
+import { deletionRetrySchema, moviePilotSettingsSchema } from "@mdcz/shared/moviePilot";
 import {
   pendingConfirmUncensoredInputSchema,
   pendingIdInputSchema,
@@ -324,6 +325,14 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.embyDeletion.configure(input)),
     rotateSecret: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.rotateSecret()),
     reconcile: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.reconcile()),
+    configureMoviePilot: protectedProcedure
+      .input(moviePilotSettingsSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.embyDeletion.configureMoviePilot(input)),
+    testMoviePilot: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.testMoviePilot()),
+    bindSources: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.bindSources()),
+    retry: protectedProcedure
+      .input(deletionRetrySchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.embyDeletion.retry(input.id)),
   }),
   mediaRoots: t.router({
     ensurePath: protectedProcedure

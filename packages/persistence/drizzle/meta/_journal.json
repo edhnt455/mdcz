@@ -64,6 +64,13 @@
       "when": 1792800000000,
       "tag": "0008_emby_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0009_strm_cloud_deletion",
+      "breakpoints": true
     }
   ]
 }

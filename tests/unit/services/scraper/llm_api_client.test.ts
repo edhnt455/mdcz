@@ -1,4 +1,4 @@
-import { LlmApiClient, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/scrape";
+import { LlmApiClient, LlmEmptyResponseError, type LlmJsonSchema, type LlmTransportError } from "@mdcz/runtime/scrape";
 import {
   DEFAULT_LLM_BASE_URL,
   type LlmApiFormat,
@@ -212,7 +212,7 @@ describe("LlmApiClient", () => {
     expect(postJsonDetailed).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves transport failures with their cause", async () => {
+  it("preserves transport failures and identifies successful responses without text", async () => {
     const cause = new Error("body timed out");
     const client = new LlmApiClient({ postJsonDetailed: vi.fn().mockRejectedValue(cause) });
     await expect(
@@ -227,5 +227,30 @@ describe("LlmApiClient", () => {
         }),
       ),
     ).rejects.toMatchObject({ name: "LlmTransportError", cause } satisfies Partial<LlmTransportError>);
+
+    for (const apiFormat of ["responses", "chat-completions"] as const) {
+      for (const data of [
+        { status: "completed", error: null, usage: { output_tokens: 0 } },
+        null,
+        apiFormat === "responses"
+          ? { output: [{ type: "message", content: [{ type: "output_text", text: "  " }] }] }
+          : { choices: [{ message: { content: "  " } }] },
+      ]) {
+        const headers = new Headers({ "x-request-id": "empty-output" });
+        const postJsonDetailed = vi.fn().mockResolvedValue({ ...response(data), headers });
+        const client = new LlmApiClient({ postJsonDetailed });
+        const result = client.generateText(
+          textRequest({ baseUrl: "https://example.test/v1", apiFormat, reasoning: "default" }),
+        );
+        await expect(result).rejects.toBeInstanceOf(LlmEmptyResponseError);
+        await expect(result).rejects.toMatchObject({
+          status: 200,
+          headers,
+          data,
+          message: expect.stringContaining("LLM response did not contain text"),
+        });
+        expect(postJsonDetailed).toHaveBeenCalledTimes(1);
+      }
+    }
   });
 });

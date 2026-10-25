@@ -4,7 +4,13 @@ import PQueue from "p-queue";
 import { preserveNetworkExecutionContext } from "../../../network";
 import { parseRetryAfterMs, readRetryAfterHeader, toErrorMessage } from "../../../shared";
 import { isAbortError, throwIfAborted } from "../../utils/abort";
-import { type LlmApiClient, type LlmJsonSchema, LlmTransportError, toLlmTextRequest } from "./LlmApiClient";
+import {
+  type LlmApiClient,
+  LlmEmptyResponseError,
+  type LlmJsonSchema,
+  LlmTransportError,
+  toLlmTextRequest,
+} from "./LlmApiClient";
 
 const OPENAI_RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
@@ -20,7 +26,7 @@ export class LlmRequestService {
 
   constructor(
     private readonly logger: { warn(message: string): void },
-    private readonly llmApiClient: LlmApiClient,
+    private readonly llmApiClient: Pick<LlmApiClient, "generateText">,
   ) {}
 
   requestText(config: Configuration["translate"], prompt: string, signal?: AbortSignal, outputSchema?: LlmJsonSchema) {
@@ -88,6 +94,9 @@ export class LlmRequestService {
   }
 
   private getRetryDecision(error: unknown, attempt: number): RetryDecision | null {
+    if (error instanceof LlmEmptyResponseError) {
+      return { delayMs: this.getExponentialDelayMs(attempt), reason: "empty response" };
+    }
     if (error instanceof LlmTransportError) {
       return { delayMs: this.getExponentialDelayMs(attempt), reason: "transport error" };
     }

@@ -115,6 +115,10 @@ export class LlmApiError extends Error {
   }
 }
 
+export class LlmEmptyResponseError extends LlmApiError {
+  override name = "LlmEmptyResponseError";
+}
+
 export class LlmTransportError extends Error {
   constructor(message: string, cause: unknown) {
     super(message, { cause });
@@ -352,7 +356,7 @@ export class LlmApiClient {
       return text;
     }
 
-    throw new LlmApiError(
+    throw new LlmEmptyResponseError(
       `LLM response did not contain text for ${url}: ${this.summarizeResponseData(response.data)}`,
       response.status,
       response.headers,

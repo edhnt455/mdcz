@@ -807,6 +807,15 @@ export class MaintenanceSessionCoordinator {
               publication: {
                 roots: publicationRoots,
                 commit: (movie) => writeCommittedMovie(library, movie),
+                validate: (movie) =>
+                  library.assertNotSuppressed(
+                    movie.files.flatMap((file) => [file.sourceEntryIdentity, file.entryIdentity]),
+                    movie.files.flatMap((file) =>
+                      file.strmSourceJson
+                        ? [(JSON.parse(file.strmSourceJson) as { resourceIdentity?: string }).resourceIdentity ?? ""]
+                        : [],
+                    ),
+                  ),
                 identity: {
                   movieId: previewIdentity.movieId,
                   assets: previewIdentity.assets,

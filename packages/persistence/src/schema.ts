@@ -139,6 +139,7 @@ export const libraryItemFiles = sqliteTable(
     entryIdentity: text("entry_identity"),
     /** Where a hardlink or copy came from; that source stays on disk and must not be scraped again. */
     retainedSourceIdentity: text("retained_source_identity"),
+    strmSourceJson: text("strm_source_json"),
     fileName: text("file_name").notNull(),
     directory: text("directory").notNull(),
     size: integer("size").notNull().default(0),
@@ -296,6 +297,7 @@ export const embyDeletionSettings = sqliteTable("emby_deletion_settings", {
   serverId: text("server_id").notNull().default(""),
   librariesJson: text("libraries_json").notNull().default("[]"),
   secretHash: text("secret_hash"),
+  moviePilotJson: text("movie_pilot_json"),
 });
 
 export const embyDeletionEvents = sqliteTable(
@@ -319,11 +321,34 @@ export const embyDeletionEvents = sqliteTable(
     nextAttemptAt: integer("next_attempt_at").notNull(),
     result: text("result"),
     completedAt: integer("completed_at"),
+    eventType: text("event_type").notNull().default("library.deleted"),
+    step: text("step")
+      .$type<
+        "validating" | "deleting_cloud" | "verifying_cloud" | "cleaning_source" | "cleaning_records" | "completed"
+      >()
+      .notNull()
+      .default("validating"),
+    snapshotJson: text("snapshot_json"),
+    cloudDeletedAt: integer("cloud_deleted_at"),
   },
   (table) => [index("emby_deletion_events_due_idx").on(table.status, table.nextAttemptAt)],
 );
 
+export const strmCloudBindings = sqliteTable(
+  "strm_cloud_bindings",
+  {
+    fileId: text("file_id").primaryKey(),
+    libraryId: text("library_id").notNull(),
+    linkPath: text("link_path").notNull(),
+    sourcePath: text("source_path").notNull(),
+    snapshotJson: text("snapshot_json").notNull(),
+    blocked: integer("blocked", { mode: "boolean" }).notNull().default(false),
+  },
+  (table) => [index("strm_cloud_bindings_source_idx").on(table.sourcePath)],
+);
+
 export const schema = {
+  strmCloudBindings,
   embyDeletionSettings,
   embyDeletionEvents,
   mediaRoots,

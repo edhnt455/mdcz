@@ -10,6 +10,7 @@ import type {
   MediaLibraryStubProbeResponse,
   MediaLibraryUpdateInput,
 } from "./mediaLibrary";
+import type { MoviePilotSettings } from "./moviePilot";
 import type {
   PendingConfirmUncensoredInput,
   PendingDetailResponse,
@@ -220,6 +221,10 @@ export interface ServerApiContract {
     configure(input: EmbyDeletionSettings): Promise<EmbyDeletionStatus>;
     rotateSecret(): Promise<{ token: string }>;
     reconcile(): Promise<{ queued: number }>;
+    configureMoviePilot(input: MoviePilotSettings): Promise<EmbyDeletionStatus>;
+    testMoviePilot(): Promise<{ storage: string }>;
+    bindSources(): Promise<{ verified: number; unverified: number }>;
+    retry(input: { id: string }): Promise<{ success: true }>;
   };
   mediaRoots: {
     ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;

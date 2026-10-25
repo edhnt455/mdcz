@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EmbyDeletionStep, MoviePilotConnection } from "./moviePilot";
 
 export const embyDeletionSettingsSchema = z
   .object({
@@ -14,6 +15,10 @@ export const embyDeletionSettingsSchema = z
 export const embyDeletionNotificationSchema = z.object({
   Event: z.string().max(128),
   Date: z.iso.datetime({ offset: true }).optional(),
+  Description: z
+    .string()
+    .max(128 * 1024)
+    .optional(),
   Server: z.object({ Id: z.string().min(1).max(128) }),
   Item: z
     .object({
@@ -30,6 +35,8 @@ export type EmbyDeletionNotification = z.infer<typeof embyDeletionNotificationSc
 export type EmbyDeletionState = "pending" | "completed" | "ignored" | "needs_review";
 
 export interface EmbyDeletionStatus {
+  moviePilot: MoviePilotConnection | null;
+  associations: { verified: number; blocked: number };
   settings: { mode: EmbyDeletionSettings["mode"]; serverId: string; libraryIds: string[] };
   configured: boolean;
   libraries: { id: string; name: string; outputPath: string }[];
@@ -43,5 +50,7 @@ export interface EmbyDeletionStatus {
     receivedAt: number;
     completedAt: number | null;
     attempts: number;
+    step: EmbyDeletionStep;
+    preview: { sourcePaths: string[]; cloudPath: string; fileId: string } | null;
   }[];
 }

@@ -11,6 +11,7 @@ import type {
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
+import { runWithNetworkChannel } from "../network";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import type { PublicationOutputPort } from "../publication/types";
@@ -23,11 +24,11 @@ import {
   type LlmApiClient,
   normalizeLlmBaseUrl,
   normalizeNewlines,
-  toLlmTextRequest,
   toTarget,
 } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
+import { LlmRequestService } from "../scrape/translate/engines/LlmRequestService";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
 
@@ -244,26 +245,6 @@ const assertLlmConfiguration = (config: Configuration): void => {
   if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("Configure LLM API key first");
 };
 
-const translateChunk = async (
-  llmApiClient: Pick<LlmApiClient, "generateText">,
-  texts: string[],
-  target: LanguageTarget,
-  config: Configuration,
-): Promise<string[]> => {
-  const content = await llmApiClient.generateText(
-    toLlmTextRequest(config.translate, buildBatchPrompt(texts, target), {
-      name: "batch_translation",
-      schema: z.toJSONSchema(batchTranslationSchema),
-    }),
-  );
-
-  if (!content) throw new Error("LLM returned an empty response");
-  const { translations } = batchTranslationSchema.parse(JSON.parse(content));
-  if (translations.length !== texts.length)
-    throw new Error("LLM returned a batch translation count that does not match input");
-  return translations;
-};
-
 const translatePendingTexts = async (
   llmApiClient: Pick<LlmApiClient, "generateText"> | undefined,
   items: PendingTranslation[],
@@ -277,17 +258,30 @@ const translatePendingTexts = async (
   const translatedByKey = new Map<string, string>();
   const failedReasonByKey = new Map<string, string>();
   const maxBatchItems = normalizeMaxBatchItems(options.maxBatchItems);
+  const requests = new LlmRequestService(logger, llmApiClient);
 
   for (const chunk of buildBatchChunks(items, maxBatchItems)) {
     try {
-      const translated = await translateChunk(
-        llmApiClient,
-        chunk.map((item) => item.text),
-        target,
-        config,
+      const content = await runWithNetworkChannel("translation", () =>
+        requests.requestText(
+          config.translate,
+          buildBatchPrompt(
+            chunk.map((item) => item.text),
+            target,
+          ),
+          undefined,
+          {
+            name: "batch_translation",
+            schema: z.toJSONSchema(batchTranslationSchema),
+          },
+        ),
       );
+      if (!content) throw new Error("LLM returned an empty response");
+      const { translations } = batchTranslationSchema.parse(JSON.parse(content));
+      if (translations.length !== chunk.length)
+        throw new Error("LLM returned a batch translation count that does not match input");
       chunk.forEach((item, index) => {
-        const value = translated[index]?.trim();
+        const value = translations[index]?.trim();
         if (value) translatedByKey.set(item.key, ensureTargetChinese(value, target));
         else failedReasonByKey.set(item.key, "LLM returned an empty translation result");
       });

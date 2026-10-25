@@ -216,6 +216,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
         taskEvents,
         invalidateAvailability: () => library.invalidateAvailability(),
         logger: runtimeLogs.getLogger("EmbyDeletion"),
+        credentialsDirectory: path.join(config.runtimePaths.dataDir, "moviepilot-credentials"),
       }),
     config,
     libraries,
@@ -365,7 +366,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     async (request, reply) => {
       await services.embyDeletion.assertToken(request.params.token);
       const input = embyDeletionNotificationSchema.safeParse(request.body);
-      if (!input.success) return reply.code(400).send({ error: "Invalid Emby notification" });
+      if (!input.success) {
+        runtimeLogs
+          .getLogger("EmbyDeletion")
+          .warn(`Invalid notification fields: ${input.error.issues.map((issue) => issue.path.join(".")).join(", ")}`);
+        return reply.code(400).send({ error: "Invalid Emby notification" });
+      }
       const result = await services.embyDeletion.accept(input.data);
       return reply.code(result.duplicate ? 200 : 202).send(result);
     },

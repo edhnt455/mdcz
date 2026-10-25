@@ -1060,6 +1060,7 @@ export class ScrapeRunner {
             entryIdentity: file.entryIdentity,
             sourceEntryIdentity: file.sourceEntryIdentity,
             retainedSourceIdentity: file.retainedSourceIdentity,
+            strmSourceJson: file.strmSourceJson,
             rootId: file.rootId,
             rootRelativePath: file.rootRelativePath,
             size: file.size,
@@ -1109,15 +1110,26 @@ export class ScrapeRunner {
           (directory) => inventory.canonicalDirectory(directory),
         );
         try {
+          const validate = () =>
+            this.deps.persistence.library.assertNotSuppressed(
+              output.files.flatMap((file) => [file.sourceEntryIdentity, file.entryIdentity]),
+              output.files.flatMap((file) =>
+                file.strmSourceJson
+                  ? [(JSON.parse(file.strmSourceJson) as { resourceIdentity?: string }).resourceIdentity ?? ""]
+                  : [],
+              ),
+            );
           if (output.moves.length > 0) {
             await new MoveOutput(undefined, this.logger).install({
               moves: output.moves,
               artifacts: output.artifacts,
               protectedMediaFiles: output.protectedMediaFiles,
+              validate,
               commit,
             });
           } else {
             await new WriteOutput(undefined, this.logger).install(output.artifacts, {
+              validate,
               protectedMediaFiles: output.protectedMediaFiles,
               commit,
             });

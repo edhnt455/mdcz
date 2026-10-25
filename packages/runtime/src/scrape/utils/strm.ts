@@ -71,7 +71,7 @@ const findTargetLineIndex = (lines: string[]): number | undefined => {
   return undefined;
 };
 
-const normalizeStrmContent = (content: string): string | undefined => {
+export const parseStrmTarget = (content: string): string | undefined => {
   const { lines } = parseStrmContent(content);
   const targetLineIndex = findTargetLineIndex(lines);
   if (targetLineIndex === undefined) {
@@ -134,7 +134,7 @@ export const readStrmTarget = async (filePath: string): Promise<string | undefin
   }
 
   const content = await readFile(filePath, "utf8");
-  return normalizeStrmContent(content);
+  return parseStrmTarget(content);
 };
 
 export const inspectStrmTarget = async (filePath: string): Promise<StrmTargetInfo | undefined> => {
@@ -175,7 +175,7 @@ export const replaceStrmTarget = (content: string, nextTarget: string): string =
 export const prepareMovedStrmContent = async (sourcePath: string, targetPath: string): Promise<string | undefined> => {
   if (!isStrmFile(sourcePath) || resolve(dirname(sourcePath)) === resolve(dirname(targetPath))) return undefined;
   const content = await readFile(sourcePath, "utf8");
-  const target = normalizeStrmContent(content);
+  const target = parseStrmTarget(content);
   if (!target) return undefined;
   const info = classifyStrmTarget(sourcePath, target);
   return info.kind === "relative_path" && info.resolvedPath ? replaceStrmTarget(content, info.resolvedPath) : undefined;

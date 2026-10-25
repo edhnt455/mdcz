@@ -58,6 +58,7 @@ export interface LibraryFileInput {
   sourceEntryIdentity?: string;
   /** A hardlinked or copied file's source, which stays on disk. */
   retainedSourceIdentity?: string | null;
+  strmSourceJson?: string | null;
   rootId: string;
   rootRelativePath: string;
   size?: number;
@@ -371,15 +372,30 @@ export class LibraryRepository {
     const values = JSON.stringify(identities);
     return new Set(
       this.database.sqlite
-        .prepare<[string, string], { identity: string }>(`
+        .prepare<[string, string, string, string], { identity: string }>(`
           SELECT entry_identity AS identity FROM library_item_files WHERE entry_identity IN (SELECT value FROM json_each(?))
           UNION
           SELECT retained_source_identity AS identity FROM library_item_files
           WHERE retained_source_identity IN (SELECT value FROM json_each(?))
+          UNION
+          SELECT source_path AS identity FROM strm_cloud_bindings WHERE source_path IN (SELECT value FROM json_each(?))
+          UNION
+          SELECT link_path AS identity FROM strm_cloud_bindings WHERE blocked = 1 AND link_path IN (SELECT value FROM json_each(?))
         `)
-        .all(values, values)
+        .all(values, values, values, values)
         .map((row) => row.identity),
     );
+  }
+
+  assertNotSuppressed(identities: readonly string[], resources: readonly string[] = []): void {
+    if (
+      this.database.sqlite
+        .prepare(
+          `SELECT 1 FROM strm_cloud_bindings WHERE blocked = 1 AND (source_path IN (SELECT value FROM json_each(?)) OR link_path IN (SELECT value FROM json_each(?)) OR json_extract(snapshot_json, '$.source.resourceIdentity') IN (SELECT value FROM json_each(?))) LIMIT 1`,
+        )
+        .get(JSON.stringify(identities), JSON.stringify(identities), JSON.stringify(resources))
+    )
+      throw new Error("Publication is suppressed by an Emby STRM deletion");
   }
 
   inventoryOwnership(refs?: readonly { rootId: string; relativePath: string; entryIdentity?: string }[]) {

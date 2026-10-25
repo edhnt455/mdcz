@@ -38,6 +38,23 @@ export const writeLibraryRows = (
     if (!root) throw new Error(`Media root not found: ${input.rootId}`);
     input.entryIdentity ??= filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, input.rootRelativePath));
     const pathKey = input.entryIdentity;
+    const identities = JSON.stringify(
+      [pathKey, input.sourceEntryIdentity, input.retainedSourceIdentity].filter(Boolean),
+    );
+    if (
+      database.sqlite
+        .prepare(
+          `SELECT 1 FROM strm_cloud_bindings WHERE blocked = 1 AND (source_path IN (SELECT value FROM json_each(?)) OR link_path IN (SELECT value FROM json_each(?)) OR json_extract(snapshot_json, '$.source.resourceIdentity') = ?) LIMIT 1`,
+        )
+        .get(
+          identities,
+          identities,
+          input.strmSourceJson
+            ? ((JSON.parse(input.strmSourceJson) as { resourceIdentity?: string }).resourceIdentity ?? null)
+            : null,
+        )
+    )
+      throw new Error("Publication is suppressed by an Emby STRM deletion");
     if (targetPaths.has(pathKey)) throw new Error(`Duplicate library entry: ${pathKey}`);
     targetPaths.add(pathKey);
   }
@@ -152,6 +169,7 @@ export const writeLibraryRows = (
         rootRelativePath: input.rootRelativePath,
         entryIdentity: input.entryIdentity,
         retainedSourceIdentity: input.retainedSourceIdentity ?? null,
+        strmSourceJson: input.strmSourceJson ?? null,
         fileName: path.posix.basename(input.rootRelativePath),
         directory: directory === "." ? "" : directory,
         size: input.size ?? 0,
@@ -170,6 +188,7 @@ export const writeLibraryRows = (
           rootRelativePath: input.rootRelativePath,
           entryIdentity: input.entryIdentity,
           retainedSourceIdentity: input.retainedSourceIdentity,
+          strmSourceJson: input.strmSourceJson,
           fileName: path.posix.basename(input.rootRelativePath),
           directory: directory === "." ? "" : directory,
           size: input.size,

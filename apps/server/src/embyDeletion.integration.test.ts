@@ -7,6 +7,11 @@ afterEach(closeTestServers);
 it("authenticates webhook and management routes, validates input, persists notifications and revokes rotated secrets", async () => {
   const { fastify, services } = await createTestServer();
   expect((await fastify.inject({ url: "/trpc/embyDeletion.status" })).statusCode).toBe(401);
+  for (const route of ["configureMoviePilot", "testMoviePilot", "bindSources", "retry"]) {
+    expect((await fastify.inject({ method: "POST", url: `/trpc/embyDeletion.${route}`, payload: {} })).statusCode).toBe(
+      401,
+    );
+  }
   const admin = await loginAsAdmin(fastify);
   const headers = { authorization: `Bearer ${admin}` };
   const source = await createTempRoot("emby-normal");
