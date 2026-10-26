@@ -7,6 +7,7 @@ import { DesktopPersistenceService } from "@main/services/persistence";
 import { SignalService } from "@main/services/SignalService";
 import { ScraperService } from "@main/services/scraper/ScraperService";
 import { createMediaRoot } from "@mdcz/media-store";
+import { RuntimeConfigProfileStore, RuntimeConfigService } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { MediaLibraryService } from "@mdcz/runtime/library";
@@ -33,10 +34,14 @@ const createHarness = async () => {
   const directory = await mkdtemp(join(tmpdir(), "mdcz-scrape-admission-"));
   const persistence = new DesktopPersistenceService(join(directory, "mdcz.sqlite"), null);
   const networkClient = new NetworkClient();
+  const config = new RuntimeConfigService({
+    store: new RuntimeConfigProfileStore({ configDir: join(directory, "config") }),
+  });
   const libraries = new MediaLibraryService(
-    async () => (await persistence.getState()).repositories.mediaLibraries,
+    () => config.get(),
+    (patch, expected) => config.update(patch, expected),
     createDesktopMediaRootService(persistence),
-    async () => defaultConfiguration,
+    async () => (await persistence.getState()).repositories.libraryState,
   );
   const service = new ScraperService(
     new SignalService(null),

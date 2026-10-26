@@ -13,6 +13,7 @@ import {
   LLM_SERVICE_TYPE_OPTIONS,
 } from "./llm";
 import { localPathStyle } from "./localPath";
+import { mediaLibrariesConfigSchema } from "./mediaLibrary";
 import { tagBadgeSettingsSchema } from "./posterBadges";
 import { DEFAULT_R18_METADATA_LANGUAGE, R18_METADATA_LANGUAGE_OPTIONS } from "./r18";
 
@@ -597,6 +598,7 @@ const aggregationSchema = z
 
 export const configurationSchema = z
   .object({
+    libraries: mediaLibrariesConfigSchema.default([]),
     network: networkSchema.default(() => networkSchema.parse({})),
     scrape: scrapeSchema.default(() => scrapeSchema.parse({})),
     naming: namingSchema.default(() => namingSchema.parse({})),

@@ -36,7 +36,7 @@ export class ScraperService {
     private readonly sharedNetworkClient: NetworkClient,
     private readonly crawlerProvider: CrawlerProvider,
     private readonly imageHostCooldownStore: PersistentCooldownStore,
-    private readonly libraries: Pick<MediaLibraryService, "findBySourcePath" | "list">,
+    private readonly libraries: Pick<MediaLibraryService, "get" | "findBySourcePath" | "list">,
     private readonly outputLibraryScanner = new OutputLibraryScanner(),
     private readonly persistenceService = new DesktopPersistenceService(),
     mediaRoots?: ConfiguredMediaRootService,
@@ -55,10 +55,10 @@ export class ScraperService {
     this.runnerInitPromise ??= (async () => {
       const state = await this.persistenceService.initialize();
       this.runnerInstance = new ScrapeRunner({
+        libraries: this.libraries,
         persistence: {
           scrapeRuns: state.repositories.scrapeRuns,
           library: state.repositories.library,
-          libraries: state.repositories.mediaLibraries,
           pending: state.repositories.pending,
           mediaRoots: this.mediaRoots,
         },

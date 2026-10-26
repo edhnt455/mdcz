@@ -56,9 +56,10 @@ export const createContainer = ({
   const persistenceService = new DesktopPersistenceService();
   const mediaRoots = createDesktopMediaRootService(persistenceService);
   const libraries = new MediaLibraryService(
-    async () => (await persistenceService.getState()).repositories.mediaLibraries,
-    mediaRoots,
     async () => await configManager.getValidated(),
+    async (patch, expected) => await configManager.save(patch, expected),
+    mediaRoots,
+    async () => (await persistenceService.getState()).repositories.libraryState,
   );
   const outputLibraryScanner = new OutputLibraryScanner({ persistenceService });
   const desktopLibraryService = new DesktopLibraryService(persistenceService, libraries, () =>
@@ -90,9 +91,15 @@ export const createContainer = ({
     actorSourceProvider,
     logger: loggerService.getLogger("PersonSync"),
   });
-  const unsubscribePersonConfig = configManager.onChange((configuration) =>
-    personSync.configurationChanged(configuration),
-  );
+  let librarySettings = JSON.stringify([]);
+  const unsubscribePersonConfig = configManager.onChange((configuration) => {
+    personSync.configurationChanged(configuration);
+    const next = JSON.stringify(configuration.libraries);
+    if (next !== librarySettings) {
+      librarySettings = next;
+      signalService.invalidate("config", "library", "pending", "overview");
+    }
+  });
   personSync.activate();
   const onPublished = (
     directories: readonly string[],
@@ -120,6 +127,7 @@ export const createContainer = ({
     onPublished,
   );
   const maintenanceService = new MaintenanceService({
+    libraries,
     onPublished,
     signalService,
     networkClient,
@@ -130,6 +138,7 @@ export const createContainer = ({
     prepareScrapeItem,
   });
   const pendingService = new PendingService({
+    libraries,
     repositories: async () => (await persistenceService.getState()).repositories,
     mediaRoots,
     startScrape: async (input) => ({ taskId: (await scraperService.start(input)).taskId }),

@@ -70,7 +70,7 @@ const createHarness = (libraries: MediaLibrary[]) => {
       persistence: {
         getState: async () => ({
           repositories: {
-            mediaLibraries: {
+            libraryState: {
               loadWatchSnapshot: (id: string) => (snapshots.has(id) ? new Set(snapshots.get(id)) : undefined),
               saveWatchSnapshot: (id: string, keys: ReadonlySet<string>) => snapshots.set(id, new Set(keys)),
             },

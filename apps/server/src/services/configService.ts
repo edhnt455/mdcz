@@ -136,8 +136,8 @@ export class ServerConfigService {
     return this.config.defaults();
   }
 
-  async update(patch: DeepPartial<Configuration>): Promise<Configuration> {
-    return await this.config.update(patch);
+  async update(patch: DeepPartial<Configuration>, expected?: Configuration): Promise<Configuration> {
+    return await this.config.update(patch, expected);
   }
 
   async reset(propertyPath?: string): Promise<Configuration> {

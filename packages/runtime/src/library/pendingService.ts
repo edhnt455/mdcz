@@ -1,12 +1,6 @@
 import path from "node:path";
 import { resolveRootRelativePath } from "@mdcz/media-store";
-import type {
-  LibraryRepository,
-  MediaLibraryRepository,
-  PendingItemRecord,
-  PendingRepository,
-  SiteResultRepository,
-} from "@mdcz/persistence";
+import type { LibraryRepository, PendingItemRecord, PendingRepository, SiteResultRepository } from "@mdcz/persistence";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import {
@@ -27,17 +21,17 @@ import { z } from "zod";
 import type { MaintenanceRuntime } from "../maintenance/MaintenanceRuntime";
 import { committedMovieRows } from "../publication/committedMovie";
 import { runtimeLoggerService } from "../shared";
-import { toMediaLibrary, toPublicationTarget } from "./mediaLibraryService";
+import { type MediaLibraryService, toPublicationTarget } from "./mediaLibraryService";
 import type { ConfiguredMediaRootService } from "./mediaRootService";
 
 export interface PendingServiceRepositories {
   pending: PendingRepository;
-  mediaLibraries: MediaLibraryRepository;
   siteResults: SiteResultRepository;
   library: LibraryRepository;
 }
 
 export interface PendingServiceDependencies {
+  libraries: Pick<MediaLibraryService, "list" | "get">;
   repositories: () => Promise<PendingServiceRepositories>;
   mediaRoots: ConfiguredMediaRootService;
   startScrape: (input: ScrapeStartInput) => Promise<{ taskId: string }>;
@@ -55,7 +49,7 @@ export class PendingService {
   async list(): Promise<PendingListResponse> {
     const repositories = await this.deps.repositories();
     const roots = new Map((await this.deps.mediaRoots.listRoots()).map((root) => [root.id, root]));
-    const libraries = new Map(repositories.mediaLibraries.list().map((library) => [library.id, library.name]));
+    const libraries = new Map((await this.deps.libraries.list()).map((library) => [library.id, library.name]));
     return {
       items: repositories.pending.list().map((item) => {
         const root = roots.get(item.rootId);
@@ -68,7 +62,7 @@ export class PendingService {
     const repositories = await this.deps.repositories();
     const item = repositories.pending.get(id);
     const root = await this.deps.mediaRoots.get(item.rootId);
-    const libraries = new Map(repositories.mediaLibraries.list().map((library) => [library.id, library.name]));
+    const libraries = new Map((await this.deps.libraries.list()).map((library) => [library.id, library.name]));
     return {
       item: this.toDto(item, resolveRootRelativePath(root, item.relativePath), libraries),
       siteResults: item.number
@@ -110,7 +104,7 @@ export class PendingService {
     if (!configuration.download.generateNfo)
       throw new Error("NFO generation is disabled; cannot confirm uncensored type");
     const entry = await repositories.library.getEntryById(item.movieId);
-    const library = item.libraryId ? toMediaLibrary(repositories.mediaLibraries.get(item.libraryId)) : undefined;
+    const library = item.libraryId ? await this.deps.libraries.get(item.libraryId) : undefined;
     // A library that placed the files reorganizes them under the new name; others only rewrite the NFO in place.
     const reorganize = library && ["move", "hardlink", "copy"].includes(library.placement);
     const roots = await this.deps.mediaRoots.listRoots();
@@ -122,8 +116,7 @@ export class PendingService {
     const result = await this.deps.maintenanceRuntime.applyLibraryEntry({
       root,
       presetId: reorganize ? "local_organize" : "remerge",
-      target:
-        reorganize && item.libraryId ? toPublicationTarget(repositories.mediaLibraries.get(item.libraryId)) : undefined,
+      target: reorganize ? toPublicationTarget(library) : undefined,
       entry,
       localState: { uncensoredChoice: input.choice },
       publication: {

@@ -111,5 +111,15 @@ export const createProfileActions = (queryClient: QueryClient): SettingsProfileA
     clearImportedFile(path);
     return result;
   },
-  invalidate: () => queryClient.invalidateQueries({ queryKey: queryKeys.config.all }),
+  invalidate: async () => {
+    await Promise.all(
+      [
+        queryKeys.config.all,
+        queryKeys.libraries.all,
+        queryKeys.library.all,
+        queryKeys.pending.all,
+        queryKeys.integrations.status,
+      ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+    );
+  },
 });

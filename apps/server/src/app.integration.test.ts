@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { deterministicMediaRootId } from "@mdcz/media-store";
 import { RECENT_ACQUISITION_LIMIT } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
+import { parseConfigurationContent } from "@mdcz/shared/configCodec";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -19,6 +20,7 @@ import {
   waitForScrapeRunStatus,
 } from "./app.testSupport";
 import { AuthService } from "./services/authService";
+import { ServerConfigService } from "./services/configService";
 import type { RuntimeActionService } from "./services/runtimeActionService";
 import { formatSseEvent } from "./taskEvents";
 
@@ -366,14 +368,16 @@ describe("buildServer composition integration", () => {
     });
   });
 
-  it("registers each library's directories as media roots and rejects overlapping sources", async () => {
+  it("persists libraries per configuration profile and registers distinct source directories", async () => {
     const firstRoot = await createTempRoot("library-root-a");
     const secondRoot = await createTempRoot("library-root-b");
-    const { fastify } = await createTestServer();
+    const { fastify, services } = await createTestServer();
     const token = await loginAsAdmin(fastify);
 
-    await createTestLibrary(fastify, token, firstRoot);
-    await createTestLibrary(fastify, token, secondRoot, { placement: "inPlace", outputPath: "" });
+    const [firstLibrary] = await Promise.all([
+      createTestLibrary(fastify, token, firstRoot),
+      createTestLibrary(fastify, token, secondRoot, { placement: "inPlace", outputPath: "" }),
+    ]);
     const overlapping = await fastify.inject({
       method: "POST",
       url: "/trpc/libraries.create",
@@ -393,6 +397,40 @@ describe("buildServer composition integration", () => {
         .result.data.roots.map((root: { hostPath: string }) => root.hostPath)
         .sort(),
     ).toEqual([firstRoot, secondRoot].sort());
+
+    const libraries = await services.libraries.list();
+    const persisted = parseConfigurationContent(await readFile(services.config.runtimePaths.configPath, "utf8"));
+    expect(persisted.libraries.map(({ sourcePath }) => sourcePath)).toEqual([firstRoot, secondRoot]);
+    expect((await new ServerConfigService(services.config.runtimePaths).load()).libraries).toEqual(persisted.libraries);
+    const { repositories } = await services.persistence.getState();
+    repositories.libraryState.saveWatchSnapshot(firstLibrary.libraryId, new Set(["movie.mp4"]));
+    repositories.pending.upsert({
+      kind: "new_file",
+      rootId: firstLibrary.rootId,
+      relativePath: "movie.mp4",
+      libraryId: firstLibrary.libraryId,
+    });
+
+    await services.config.createProfile("empty");
+    await services.config.switchProfile("empty");
+    expect(await services.libraries.list()).toEqual([]);
+    await expect(services.libraries.get(firstLibrary.libraryId)).rejects.toThrow("Library not found");
+    await services.config.switchProfile("default");
+    expect(await services.libraries.list()).toEqual(libraries);
+
+    const first = await services.libraries.get(firstLibrary.libraryId);
+    await services.libraries.update(first.id, { ...first, fileTemplate: "{number}_updated" });
+    expect((await services.config.get()).libraries[0].fileTemplate).toBe("{number}_updated");
+    const exported = await services.config.export();
+    await services.config.importProfile({ name: "copied", content: exported });
+    await services.config.switchProfile("copied");
+    expect((await services.libraries.get(first.id)).fileTemplate).toBe("{number}_updated");
+    await services.libraries.delete(first.id);
+    expect((await services.libraries.list()).map(({ sourcePath }) => sourcePath)).toEqual([secondRoot]);
+    expect(repositories.libraryState.loadWatchSnapshot(first.id)).toBeUndefined();
+    expect(repositories.pending.list()[0].libraryId).toBeNull();
+    await services.config.switchProfile("default");
+    expect((await services.libraries.list()).length).toBe(2);
   });
   it("prepares a missing library output directory before registering its root", async () => {
     const parent = await createTempRoot("library-output-parent");

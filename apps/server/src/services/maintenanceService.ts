@@ -1,3 +1,4 @@
+import type { MediaLibraryService } from "@mdcz/runtime/library";
 import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceRuntime,
@@ -31,6 +32,7 @@ export class MaintenanceService {
     private readonly mediaRoots: MediaRootService,
     private readonly taskEvents: TaskEventBus,
     runtime: MaintenanceRuntime,
+    private readonly libraries: Pick<MediaLibraryService, "get">,
   ) {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
@@ -72,10 +74,9 @@ export class MaintenanceService {
       return { sessionId: handle.session.id };
     }
     const configuration = await this.runtime.getConfiguration();
-    const { repositories } = await this.persistence.getState();
     const output = await resolveMaintenanceTarget(
       input.presetId,
-      input.libraryId ? repositories.mediaLibraries.get(input.libraryId) : undefined,
+      input.libraryId ? await this.libraries.get(input.libraryId) : undefined,
       this.mediaRoots,
     );
     if ("source" in input) {

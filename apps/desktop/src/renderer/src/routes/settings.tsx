@@ -75,7 +75,11 @@ const createProfileActions = (queryClient: QueryClient): SettingsProfileActions 
     return path ? { path, label: path } : null;
   },
   import: ({ path, name, overwrite }) => ipc.config.importProfile(path, name, overwrite),
-  invalidate: () => queryClient.invalidateQueries({ queryKey: ["config"] }),
+  invalidate: async () => {
+    await Promise.all(
+      ["config", "libraries", "library", "pending"].map((key) => queryClient.invalidateQueries({ queryKey: [key] })),
+    );
+  },
 });
 
 function SettingsComponent() {

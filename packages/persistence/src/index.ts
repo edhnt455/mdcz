@@ -4,7 +4,7 @@ export * from "./downloaderRepository";
 export * from "./embyDeletionRepository";
 export * from "./errors";
 export * from "./libraryRepository";
-export * from "./mediaLibraryRepository";
+export * from "./libraryStateRepository";
 export * from "./mediaRootRepository";
 export * from "./migrate";
 export * from "./pendingRepository";

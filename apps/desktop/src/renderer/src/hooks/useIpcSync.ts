@@ -49,6 +49,10 @@ export const useIpcSync = (queryClient: QueryClient) => {
         useLogStore.getState().addLog(createRuntimeLog(payload.level ?? "info", payload.text, payload.timestamp));
       }),
       ipc.on.invalidate((payload) => {
+        if (payload.resources.includes("config")) {
+          void queryClient.invalidateQueries({ queryKey: ["config"] });
+          void queryClient.invalidateQueries({ queryKey: ["libraries"] });
+        }
         if (payload.resources.includes("library")) {
           void queryClient.invalidateQueries({ queryKey: ["library"] });
         }

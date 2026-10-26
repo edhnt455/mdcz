@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createPersistenceDatabase } from "./database";
 import { defaultMigrationsFolder } from "./migrate";
-import { createTestPersistenceDatabase } from "./testDatabase";
 
 const releasedMigrationChecksums = {
   "0000_initial.sql": "5ac9842c4940bfb7571562f68b5ad978000534f89b67bf6525907baf098f40ff",
@@ -42,13 +41,30 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 7, when: 1_792_281_600_000, tag: "0007_publication_temporary_paths" }),
       expect.objectContaining({ idx: 8, when: 1_792_800_000_000, tag: "0008_emby_deletion" }),
       expect.objectContaining({ idx: 9, when: 1_792_886_400_000, tag: "0009_strm_cloud_deletion" }),
+      expect.objectContaining({ idx: 10, when: 1_792_972_800_000, tag: "0010_emby_deletion_settings_to_config" }),
+      expect.objectContaining({ idx: 11, when: 1_793_059_200_000, tag: "0011_libraries_to_config" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
 
-  it("creates the scrape run and authoritative library schema without publication recovery tables", () => {
-    const database = createTestPersistenceDatabase();
+  it("moves library configuration out of the database while preserving runtime facts and constraints", async () => {
+    const database = createPersistenceDatabase({ path: ":memory:" });
     try {
+      const files = (await readdir(defaultMigrationsFolder)).filter((entry) => /^\d{4}_.+\.sql$/u.test(entry)).sort();
+      for (const file of files.filter((file) => file < "0011"))
+        database.sqlite.exec(await readFile(join(defaultMigrationsFolder, file), "utf8"));
+      database.sqlite.exec(`
+        INSERT INTO media_roots (id, display_name, host_path, created_at, updated_at) VALUES ('root', 'Media', '/media', 1, 1);
+        INSERT INTO media_libraries VALUES ('library', 'Media', '/media', '', '{number}', '{number}', 'inPlace', 'off', 'events', '', 15, 1, 1);
+        INSERT INTO library_watch_snapshots VALUES ('library', '["movie.mp4"]');
+        INSERT INTO pending_items VALUES ('pending', 'new_file', 'root', 'movie.mp4', 'library', NULL, 'ABC-123', 'review', NULL, 1, 2);
+      `);
+      const pending = database.sqlite.prepare("SELECT * FROM pending_items").get() as Record<string, unknown>;
+      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0011_libraries_to_config.sql"), "utf8"));
+      expect(database.sqlite.prepare("SELECT * FROM pending_items").get()).toEqual({ ...pending, library_id: null });
+      expect(database.sqlite.prepare("SELECT * FROM library_watch_snapshots").all()).toEqual([
+        { library_id: "library", file_keys_json: '["movie.mp4"]' },
+      ]);
       const tables = database.sqlite
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
@@ -56,7 +72,6 @@ describe("Persistence migration baseline", () => {
       expect(tables).toContain("scrape_runs");
       expect(tables).toEqual(
         expect.arrayContaining([
-          "media_libraries",
           "pending_items",
           "site_results",
           "api_keys",
@@ -66,6 +81,7 @@ describe("Persistence migration baseline", () => {
         ]),
       );
       expect(tables).not.toContain("scrape_run_items");
+      expect(tables).not.toContain("media_libraries");
       expect(tables).not.toContain("publication_journal");
       expect(tables).not.toContain("library_repair_issues");
       expect(tables).not.toContain("scrape_attempts");
@@ -119,6 +135,9 @@ describe("Persistence migration baseline", () => {
       expect(foreignKeys("library_item_assets")).toEqual(
         expect.arrayContaining(["library_items:CASCADE", "media_roots:RESTRICT"]),
       );
+      expect(foreignKeys("library_watch_snapshots")).toEqual([]);
+      expect(foreignKeys("pending_items")).toEqual(["library_items:CASCADE", "media_roots:CASCADE"]);
+      expect(database.sqlite.pragma("foreign_key_check")).toEqual([]);
     } finally {
       database.close();
     }

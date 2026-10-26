@@ -123,7 +123,14 @@ export const useWebTaskSync = (): void => {
           refreshPending();
           void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
           void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.config.all });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.libraries.all });
           return;
+        }
+        if (payload.resources.includes("config")) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.config.all });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.libraries.all });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.integrations.status });
         }
         if (payload.resources.includes("scrape-live")) refreshLiveRuns();
         if (payload.resources.includes("maintenance")) refreshMaintenanceSession();

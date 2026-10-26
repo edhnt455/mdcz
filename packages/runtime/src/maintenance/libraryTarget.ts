@@ -1,7 +1,6 @@
-import type { MediaLibraryRecord } from "@mdcz/persistence";
 import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
-import { toPublicationTarget } from "../library/mediaLibraryService";
+import { type MediaLibrary, toPublicationTarget } from "../library/mediaLibraryService";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
 import { getMaintenancePreset } from "./presets";
 
@@ -11,7 +10,7 @@ import { getMaintenancePreset } from "./presets";
  */
 export const resolveMaintenanceTarget = async (
   presetId: MaintenancePresetId,
-  library: MediaLibraryRecord | undefined,
+  library: MediaLibrary | undefined,
   mediaRoots: Pick<ConfiguredMediaRootService, "prepareOutputDirectory">,
 ): Promise<{ outputRootId: string; outputRelativeDirectory: string; target: PublicationTarget } | undefined> => {
   if (getMaintenancePreset(presetId).output !== "move") return undefined;

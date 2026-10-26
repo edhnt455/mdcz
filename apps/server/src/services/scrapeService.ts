@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
+import type { MediaLibraryService } from "@mdcz/runtime/library";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import {
@@ -45,6 +46,7 @@ import { decorateTaskLog } from "./runtimeLogService";
 import { ServerNfoAdapter, ServerPosterCropAdapter, type ServerScrapeArtifactRecord } from "./scrapeAdapters";
 
 export interface ScrapeServiceResources {
+  libraries: Pick<MediaLibraryService, "get">;
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
   imageHostCooldownStore: ImageHostCooldownStore & { clear?: () => void; flush?: () => Promise<void> };
@@ -66,6 +68,7 @@ export class ScrapeService {
   private readonly mappingStore?: TranslationMappingStore;
   private readonly aggregationService?: ScrapeServiceResources["aggregationService"];
   private readonly prepareScrapeItem?: PrepareScrapeItem;
+  private readonly libraries: Pick<MediaLibraryService, "get">;
   private imageWatermarkService: ImageWatermarkService | null = null;
   private runnerInstance: ScrapeRunner | null = null;
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
@@ -80,6 +83,7 @@ export class ScrapeService {
     private readonly taskEvents: TaskEventBus,
     resources: ScrapeServiceResources,
   ) {
+    this.libraries = resources.libraries;
     this.networkClient = resources.networkClient;
     this.crawlerProvider = resources.crawlerProvider;
     this.imageHostCooldownStore = resources.imageHostCooldownStore;
@@ -108,10 +112,10 @@ export class ScrapeService {
       });
       const imageWatermarkService = this.imageWatermarkService;
       this.runnerInstance = new ScrapeRunner({
+        libraries: this.libraries,
         persistence: {
           scrapeRuns: state.repositories.scrapeRuns,
           library: state.repositories.library,
-          libraries: state.repositories.mediaLibraries,
           pending: state.repositories.pending,
           mediaRoots: this.mediaRoots,
           downloaders: state.repositories.downloaders,

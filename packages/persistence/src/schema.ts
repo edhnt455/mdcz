@@ -58,22 +58,6 @@ export const scanResults = sqliteTable(
   (table) => [uniqueIndex("scan_results_task_root_path_idx").on(table.taskId, table.rootId, table.relativePath)],
 );
 
-export const mediaLibraries = sqliteTable("media_libraries", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  sourcePath: text("source_path").notNull(),
-  outputPath: text("output_path").notNull(),
-  folderTemplate: text("folder_template").notNull(),
-  fileTemplate: text("file_template").notNull(),
-  placement: text("placement").notNull(),
-  automation: text("automation").notNull(),
-  discovery: text("discovery").notNull(),
-  cloudPath: text("cloud_path").notNull(),
-  scanIntervalMinutes: integer("scan_interval_minutes").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
-});
-
 export const scrapeRuns = sqliteTable(
   "scrape_runs",
   {
@@ -211,9 +195,7 @@ export const siteResults = sqliteTable(
 );
 
 export const libraryWatchSnapshots = sqliteTable("library_watch_snapshots", {
-  libraryId: text("library_id")
-    .primaryKey()
-    .references(() => mediaLibraries.id, { onDelete: "cascade" }),
+  libraryId: text("library_id").primaryKey(),
   fileKeysJson: text("file_keys_json").notNull(),
 });
 
@@ -230,7 +212,7 @@ export const pendingItems = sqliteTable(
       .notNull()
       .references(() => mediaRoots.id, { onDelete: "cascade" }),
     relativePath: text("relative_path").notNull(),
-    libraryId: text("library_id").references(() => mediaLibraries.id, { onDelete: "set null" }),
+    libraryId: text("library_id"),
     movieId: text("movie_id").references(() => libraryItems.id, { onDelete: "cascade" }),
     number: text("number"),
     detail: text("detail"),
@@ -342,7 +324,6 @@ export const schema = {
   strmCloudBindings,
   embyDeletionEvents,
   mediaRoots,
-  mediaLibraries,
   scanTasks,
   scanTaskEvents,
   scanResults,
@@ -376,6 +357,5 @@ export type LibraryItemFileRow = typeof libraryItemFiles.$inferSelect;
 export type InsertLibraryItemFileRow = typeof libraryItemFiles.$inferInsert;
 export type LibraryItemAssetRow = typeof libraryItemAssets.$inferSelect;
 export type SiteResultRow = typeof siteResults.$inferSelect;
-export type MediaLibraryRow = typeof mediaLibraries.$inferSelect;
 export type PendingItemRow = typeof pendingItems.$inferSelect;
 export type InsertLibraryItemAssetRow = typeof libraryItemAssets.$inferInsert;

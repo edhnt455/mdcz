@@ -78,6 +78,13 @@
       "when": 1792972800000,
       "tag": "0010_emby_deletion_settings_to_config",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0011_libraries_to_config",
+      "breakpoints": true
     }
   ]
 }

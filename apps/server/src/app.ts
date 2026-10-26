@@ -84,9 +84,10 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const libraries =
     options.services?.libraries ??
     new MediaLibraryService(
-      async () => (await persistence.getState()).repositories.mediaLibraries,
-      mediaRoots,
       async () => await config.get(),
+      async (patch, expected) => await config.update(patch, expected),
+      mediaRoots,
+      async () => (await persistence.getState()).repositories.libraryState,
     );
   config.onDiagnostic((event) => {
     runtimeLogs
@@ -130,6 +131,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const scrape =
     options.services?.scrape ??
     new ScrapeService(persistence, mediaRoots, config, taskEvents, {
+      libraries,
       networkClient,
       crawlerProvider,
       imageHostCooldownStore,
@@ -161,7 +163,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
   });
   const maintenance =
-    options.services?.maintenance ?? new MaintenanceService(persistence, mediaRoots, taskEvents, maintenanceRuntime);
+    options.services?.maintenance ??
+    new MaintenanceService(persistence, mediaRoots, taskEvents, maintenanceRuntime, libraries);
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents, config);
   const system = options.services?.system ?? new SystemService();
   const notePending = (count: number) => {
@@ -180,6 +183,20 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       logger: runtimeLogs.getLogger("LibraryWatch"),
       onPending: notePending,
     });
+  let librarySettings = JSON.stringify([]);
+  const unsubscribeLibraryConfig = config.onChange(({ configuration }) => {
+    const next = JSON.stringify(configuration.libraries);
+    if (next === librarySettings) return;
+    librarySettings = next;
+    taskEvents.invalidate("config", "library", "pending");
+    void libraryWatch
+      .refresh()
+      .catch((error) =>
+        runtimeLogs
+          .getLogger("LibraryWatch")
+          .error(`Failed to refresh libraries: ${error instanceof Error ? error.message : String(error)}`),
+      );
+  });
   const activity = options.services?.activity ?? new ActivityService({ libraries, scans, scrape, maintenance });
   const automation: AutomationService =
     options.services?.automation ??
@@ -198,6 +215,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const pending =
     options.services?.pending ??
     new PendingService({
+      libraries,
       repositories: async () => (await persistence.getState()).repositories,
       mediaRoots,
       startScrape: async (input) => ({ taskId: (await scrape.start(input)).task.id }),
@@ -296,6 +314,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     closed = true;
     services.automation.close();
     unsubscribePersonConfig();
+    unsubscribeLibraryConfig();
     await services.personSync.close();
     await services.embyDeletion.close();
     // An in-flight poll submits through library watch, so it ends first.

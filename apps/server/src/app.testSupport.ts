@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { join } from "node:path";
 import { ActorSourceProvider, ActorSourceRegistry } from "@mdcz/runtime/actorSource";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
+import { MediaLibraryService } from "@mdcz/runtime/library";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type AggregationResult, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
@@ -64,6 +65,12 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const config = new ServerConfigService(paths);
   const persistence = new ServerPersistenceService(paths);
   const mediaRoots = new MediaRootService(persistence);
+  const libraries = new MediaLibraryService(
+    () => config.get(),
+    (patch, expected) => config.update(patch, expected),
+    mediaRoots,
+    async () => (await persistence.getState()).repositories.libraryState,
+  );
   const taskEvents = createTaskEventBus();
   const networkClient =
     options.networkClient ??
@@ -101,12 +108,19 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
           ? undefined
           : new AuthService(config.runtimePaths, persistence, options.environmentPassword),
       config,
+      libraries,
       mediaRoots,
       persistence,
       runtimeActions: options.runtimeActions,
       taskEvents,
       maintenance: options.createMaintenanceRuntime
-        ? new MaintenanceService(persistence, mediaRoots, taskEvents, options.createMaintenanceRuntime(config))
+        ? new MaintenanceService(
+            persistence,
+            mediaRoots,
+            taskEvents,
+            options.createMaintenanceRuntime(config),
+            libraries,
+          )
         : undefined,
     },
   });

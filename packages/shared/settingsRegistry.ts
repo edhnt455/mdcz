@@ -233,6 +233,11 @@ export interface SettingsSchemaExemption {
 
 export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
   {
+    path: "libraries",
+    kind: "internal",
+    reason: "Libraries are edited on the Libraries page and saved in the active configuration profile.",
+  },
+  {
     path: "personSync.actorAliases",
     kind: "dynamic-record",
     reason: "Actor aliases are user-defined keys and cannot be represented as static registry leaves.",

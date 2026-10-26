@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { serializeConfiguration } from "@mdcz/shared/configCodec";
+import { mediaLibraryConfigSchema } from "@mdcz/shared/mediaLibrary";
 import { describe, expect, it } from "vitest";
 import {
   mergeRuntimeConfig,
@@ -34,17 +35,36 @@ describe("RuntimeConfigProfileStore", () => {
     expect(reloaded.download.nfoIgnoreFields).toEqual(["plot", "director"]);
   });
 
-  it("manages profile lifecycle and preserves active profile injection", async () => {
+  it("serializes profile changes and keeps library settings with their profile", async () => {
     const configDir = await createTempDir();
     const store = new RuntimeConfigProfileStore({ configDir });
 
-    await store.load();
+    const service = new RuntimeConfigService({ store });
+    await service.load();
+    const library = mediaLibraryConfigSchema.parse({
+      id: "library",
+      name: "Media",
+      sourcePath: "/media",
+      placement: "inPlace",
+      createdAt: "2026-10-26T00:00:00.000Z",
+      updatedAt: "2026-10-26T00:00:00.000Z",
+    });
+    await Promise.all([service.update({ libraries: [library] }), service.update({ network: { timeout: 23 } })]);
     await store.createProfile("windows-dev");
-    await store.switchProfile("windows-dev");
+    const previous = await service.get();
+    const switching = service.switchProfile("windows-dev");
+    const staleWrite = expect(service.update({ libraries: [library] }, previous)).rejects.toThrow(
+      "Configuration changed",
+    );
+    await switching;
+    await staleWrite;
+    expect((await service.get()).libraries).toEqual([]);
+    await service.switchProfile("default");
+    expect(await service.get()).toMatchObject({ libraries: [library], network: { timeout: 23 } });
 
     expect(await store.listProfiles()).toEqual({
       profiles: ["default", "windows-dev"],
-      active: "windows-dev",
+      active: "default",
     });
 
     const reloaded = new RuntimeConfigProfileStore({ configDir, activeProfileName: "windows-dev" });

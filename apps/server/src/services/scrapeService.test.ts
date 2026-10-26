@@ -60,6 +60,7 @@ const createService = () => {
     config as unknown as ServerConfigService,
     new TaskEventBus(),
     {
+      libraries: { get: vi.fn() },
       networkClient: { setDomainInterval: vi.fn() } as never,
       crawlerProvider: {} as never,
       imageHostCooldownStore: { clear: vi.fn(), flush: vi.fn() } as never,

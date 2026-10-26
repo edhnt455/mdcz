@@ -101,6 +101,7 @@ const createFixture = async () => {
   const root = await (await persistenceService.initialize()).repositories.mediaRoots.ensurePath(directory);
   entry.ref = { rootId: root.id, relativePath: path.basename(filePath) };
   const service = new MaintenanceService({
+    libraries: { get: vi.fn() },
     signalService,
     networkClient,
     crawlerProvider: new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),

@@ -7,7 +7,6 @@ import {
   type EmbyDeletionEventRow,
   EmbyDeletionRepository,
   LibraryRepository,
-  MediaLibraryRepository,
   MediaRootRepository,
   PendingRepository,
   runMigrations,
@@ -42,7 +41,10 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
     await rm(directory, { force: true, recursive: true });
   });
   const root = await new MediaRootRepository(database).ensurePath(output);
-  const mediaLibrary = new MediaLibraryRepository(database).create({
+  const mediaLibrary: MediaLibrary = {
+    id: "library-1",
+    createdAt: new Date(),
+    updatedAt: new Date(),
     name: "AV",
     sourcePath: source,
     outputPath: output,
@@ -53,7 +55,7 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
     discovery: "events",
     cloudPath: "",
     scanIntervalMinutes: 15,
-  });
+  };
   let now = Date.now() + 1_000;
   const maintenance = { isBusy: false };
   const notifications = vi.fn();

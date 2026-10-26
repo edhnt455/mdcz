@@ -3,7 +3,7 @@ import type { DesktopPersistenceService } from "@main/services/persistence";
 import type { SignalService } from "@main/services/SignalService";
 import type { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
+import type { ConfiguredMediaRootService, MediaLibraryService } from "@mdcz/runtime/library";
 import {
   type MaintenanceCoordinatorEvent,
   type MaintenanceRunHandle,
@@ -26,6 +26,7 @@ import type { MaintenancePresetId, MaintenanceStatus } from "@mdcz/shared/types"
 import { createDesktopMaintenanceRuntime } from "./runtimeFactory";
 
 export interface MaintenanceServiceDependencies {
+  libraries: Pick<MediaLibraryService, "get">;
   onPublished?: MaintenanceRuntimeDependencies["onPublished"];
   signalService: SignalService;
   networkClient: NetworkClient;
@@ -53,8 +54,10 @@ export class MaintenanceService {
   private readonly runtime: MaintenanceRuntime;
   private readonly mediaRoots: ConfiguredMediaRootService;
   private readonly coordinator: MaintenanceSessionCoordinator;
+  private readonly libraries: Pick<MediaLibraryService, "get">;
 
   constructor(deps: MaintenanceServiceDependencies) {
+    this.libraries = deps.libraries;
     this.signalService = deps.signalService;
     this.persistenceService = deps.persistenceService;
     this.imageHostCooldownStore = deps.imageHostCooldownStore;
@@ -188,10 +191,9 @@ export class MaintenanceService {
   }
 
   private async libraryTarget(presetId: MaintenancePresetId, libraryId: string | undefined) {
-    const { repositories } = await this.persistenceService.getState();
     return await resolveMaintenanceTarget(
       presetId,
-      libraryId ? repositories.mediaLibraries.get(libraryId) : undefined,
+      libraryId ? await this.libraries.get(libraryId) : undefined,
       this.mediaRoots,
     );
   }

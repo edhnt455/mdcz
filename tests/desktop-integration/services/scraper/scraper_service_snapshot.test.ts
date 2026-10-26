@@ -24,7 +24,13 @@ const createHarness = async () => {
     networkClient,
     new CrawlerProvider({ fetchGateway: new FetchGateway(networkClient) }),
     new PersistentCooldownStore({ filePath: join(directory, "image-host-cooldowns.json") }),
-    { list: async () => [], findBySourcePath: async () => undefined },
+    {
+      get: async () => {
+        throw new Error("Library not configured");
+      },
+      list: async () => [],
+      findBySourcePath: async () => undefined,
+    },
     undefined,
     persistence,
   );

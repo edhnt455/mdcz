@@ -10,6 +10,7 @@ import {
 import { parseConfigurationContent, serializeConfiguration } from "./configCodec";
 import { Website } from "./enums";
 import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
+import { mediaLibraryConfigSchema } from "./mediaLibrary";
 
 describe("configuration codec", () => {
   it("round-trips actor alias maps through TOML and validates alias groups", () => {
@@ -61,6 +62,16 @@ describe("configuration codec", () => {
 
     const configuration = {
       ...defaultConfiguration,
+      libraries: [
+        mediaLibraryConfigSchema.parse({
+          id: "library",
+          name: "Media",
+          sourcePath: "/media",
+          placement: "inPlace",
+          createdAt: "2026-10-26T00:00:00.000Z",
+          updatedAt: "2026-10-26T00:00:00.000Z",
+        }),
+      ],
       scrape: {
         ...defaultConfiguration.scrape,
         filenameIgnoreTokens: ["[7SIS-001]+", "AD"],
@@ -86,6 +97,12 @@ describe("configuration codec", () => {
       };
       expect(parseConfigurationContent(serializeConfiguration(empty, format), format)).toEqual(empty);
     }
+    const library = configuration.libraries[0];
+    for (const other of [
+      { ...library, sourcePath: "/other" },
+      { ...library, id: "other", sourcePath: "/media/nested" },
+    ])
+      expect(configurationSchema.safeParse({ ...configuration, libraries: [library, other] }).success).toBe(false);
     expect(parseConfigurationContent("[scrape]\n", "toml").scrape).toMatchObject({
       filenameIgnoreTokens: [],
       filenameBlacklistTokens: [],

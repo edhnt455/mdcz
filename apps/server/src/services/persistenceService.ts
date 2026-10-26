@@ -4,7 +4,7 @@ import {
   DownloaderRepository,
   isSchemaMigrationFailure,
   LibraryRepository,
-  MediaLibraryRepository,
+  LibraryStateRepository,
   MediaRootRepository,
   PendingRepository,
   type PersistenceDatabase,
@@ -24,7 +24,7 @@ export interface ServerPersistenceRepositories {
   credentials: CredentialRepository;
   downloaders: DownloaderRepository;
   library: LibraryRepository;
-  mediaLibraries: MediaLibraryRepository;
+  libraryState: LibraryStateRepository;
   mediaRoots: MediaRootRepository;
   pending: PendingRepository;
   scrapeRuns: ScrapeRunRepository;
@@ -86,7 +86,7 @@ export class ServerPersistenceService {
           credentials: new CredentialRepository(database),
           downloaders: new DownloaderRepository(database),
           library: new LibraryRepository(database),
-          mediaLibraries: new MediaLibraryRepository(database),
+          libraryState: new LibraryStateRepository(database),
           mediaRoots,
           pending: new PendingRepository(database),
           scrapeRuns,
@@ -101,7 +101,7 @@ export class ServerPersistenceService {
       this.lease = null;
       if (isSchemaMigrationFailure(error)) {
         throw new Error(
-          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration and profiles are kept, libraries and API keys must be created again.`,
+          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration, profiles and library settings are kept; API keys must be created again.`,
           { cause: error },
         );
       }

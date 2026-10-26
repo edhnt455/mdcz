@@ -128,6 +128,23 @@ export type MediaLibrarySettings = z.infer<typeof mediaLibrarySettingsSchema>;
 /** What callers send: fields with defaults may be omitted. */
 export type MediaLibrarySettingsInput = z.input<typeof mediaLibrarySettingsSchema>;
 
+export const mediaLibraryConfigSchema = mediaLibrarySettingsSchema.safeExtend({
+  id: z.string().trim().min(1),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export const mediaLibrariesConfigSchema = z.array(mediaLibraryConfigSchema).superRefine((libraries, ctx) => {
+  for (const [index, library] of libraries.entries()) {
+    for (const other of libraries.slice(0, index)) {
+      if (other.id === library.id)
+        ctx.addIssue({ code: "custom", path: [index, "id"], message: "Library IDs must be unique" });
+      if (pathContains(other.sourcePath, library.sourcePath) || pathContains(library.sourcePath, other.sourcePath))
+        ctx.addIssue({ code: "custom", path: [index, "sourcePath"], message: "Library source directories overlap" });
+    }
+  }
+});
+
 export const mediaLibraryDtoSchema = z.object({
   id: z.string(),
   name: z.string(),

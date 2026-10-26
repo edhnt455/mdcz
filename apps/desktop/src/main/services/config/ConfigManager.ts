@@ -139,10 +139,10 @@ export class ConfigManager extends EventEmitter {
     return this.computedConfig.value;
   }
 
-  async save(partial: DeepPartial<Configuration>): Promise<void> {
+  async save(partial: DeepPartial<Configuration>, expected?: Configuration): Promise<void> {
     await this.ensureLoaded();
 
-    await this.config.update(partial);
+    await this.config.update(partial, expected);
     this.notify();
   }
 

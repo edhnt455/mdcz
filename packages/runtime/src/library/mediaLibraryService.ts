@@ -1,51 +1,33 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
-import type { MediaLibraryRecord, MediaLibraryRepository, MediaLibraryValues } from "@mdcz/persistence";
-import type { Configuration } from "@mdcz/shared/config";
+import { type LibraryStateRepository, PersistenceError, persistenceErrorCodes } from "@mdcz/persistence";
+import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import {
-  AUTOMATION_LEVELS,
-  DISCOVERY_MODES,
   type MediaLibraryDto,
+  type MediaLibrarySettings,
   type MediaLibrarySettingsInput,
   mediaLibrarySettingsSchema,
   normalizeCloudPath,
-  PLACEMENT_MODES,
   type PublicationTarget,
 } from "@mdcz/shared/mediaLibrary";
 import type { NamingPreviewItem } from "@mdcz/shared/types";
-import { z } from "zod";
 import type { LegacyConfigurationConversion } from "../config/legacyLibrary";
 import { assertSymlinkSupport } from "../publication/outputFileSystem";
 import { assertTargetLayout, FileOrganizer } from "../scrape/FileOrganizer";
 import type { ConfiguredMediaRootService } from "./mediaRootService";
 
-const recordSchema = z.object({
-  placement: z.enum(PLACEMENT_MODES),
-  automation: z.enum(AUTOMATION_LEVELS),
-  discovery: z.enum(DISCOVERY_MODES),
+export type MediaLibrary = MediaLibrarySettings & { id: string; createdAt: Date; updatedAt: Date };
+
+export const toPublicationTarget = (record: MediaLibrary): PublicationTarget => ({
+  placement: record.placement,
+  outputPath: record.outputPath,
+  folderTemplate: record.folderTemplate,
+  fileTemplate: record.fileTemplate,
 });
 
-export type MediaLibrary = Omit<MediaLibraryRecord, "placement" | "automation" | "discovery"> &
-  z.infer<typeof recordSchema>;
-
-/** Stored values are text; reading them back checks they are still values this version knows. */
-export const toMediaLibrary = (record: MediaLibraryRecord): MediaLibrary => ({
+export const toMediaLibraryDto = (record: MediaLibrary): MediaLibraryDto => ({
   ...record,
-  ...recordSchema.parse(record),
-});
-
-export const toPublicationTarget = (record: MediaLibraryRecord): PublicationTarget => {
-  const { placement } = toMediaLibrary(record);
-  return {
-    placement,
-    outputPath: record.outputPath,
-    folderTemplate: record.folderTemplate,
-    fileTemplate: record.fileTemplate,
-  };
-};
-
-export const toMediaLibraryDto = (record: MediaLibraryRecord): MediaLibraryDto => ({
-  ...toMediaLibrary(record),
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString(),
 });
@@ -55,32 +37,70 @@ const preview = new FileOrganizer();
 export class MediaLibrarySettingsError extends Error {}
 
 export class MediaLibraryService {
+  private writing: Promise<unknown> = Promise.resolve();
+
   constructor(
-    private readonly repository: () => Promise<MediaLibraryRepository>,
-    private readonly mediaRoots: ConfiguredMediaRootService,
     private readonly getConfiguration: () => Promise<Configuration>,
+    private readonly updateConfiguration: (
+      patch: DeepPartial<Configuration>,
+      expected: Configuration,
+    ) => Promise<unknown>,
+    private readonly mediaRoots: ConfiguredMediaRootService,
+    private readonly state: () => Promise<LibraryStateRepository>,
   ) {}
 
   async list(): Promise<MediaLibrary[]> {
-    return (await this.repository()).list().map(toMediaLibrary);
+    return (await this.getConfiguration()).libraries.map((library) => ({
+      ...library,
+      createdAt: new Date(library.createdAt),
+      updatedAt: new Date(library.updatedAt),
+    }));
   }
 
   async get(id: string): Promise<MediaLibrary> {
-    return toMediaLibrary((await this.repository()).get(id));
+    const library = (await this.list()).find((library) => library.id === id);
+    if (!library) throw new PersistenceError(persistenceErrorCodes.NotFound, `Library not found: ${id}`);
+    return library;
   }
 
   async create(input: MediaLibrarySettingsInput): Promise<MediaLibrary> {
-    const values = await this.validate(input);
-    return toMediaLibrary((await this.repository()).create(values));
+    return this.write(async () => {
+      const configuration = await this.getConfiguration();
+      const values = await this.validate(input);
+      const library = { ...values, id: randomUUID(), createdAt: new Date(), updatedAt: new Date() };
+      await this.updateConfiguration(
+        { libraries: [...configuration.libraries, toMediaLibraryDto(library)] },
+        configuration,
+      );
+      return library;
+    });
   }
 
   async update(id: string, input: MediaLibrarySettingsInput): Promise<MediaLibrary> {
-    const values = await this.validate(input, id);
-    return toMediaLibrary((await this.repository()).update(id, values));
+    return this.write(async () => {
+      const configuration = await this.getConfiguration();
+      const current = await this.get(id);
+      const values = await this.validate(input, id);
+      const library = { ...current, ...values, updatedAt: new Date() };
+      if (current.sourcePath !== library.sourcePath) (await this.state()).deleteWatchSnapshot(id);
+      await this.updateConfiguration(
+        { libraries: configuration.libraries.map((entry) => (entry.id === id ? toMediaLibraryDto(library) : entry)) },
+        configuration,
+      );
+      return library;
+    });
   }
 
   async delete(id: string): Promise<void> {
-    (await this.repository()).delete(id);
+    await this.write(async () => {
+      const configuration = await this.getConfiguration();
+      await this.get(id);
+      await this.updateConfiguration(
+        { libraries: configuration.libraries.filter((library) => library.id !== id) },
+        configuration,
+      );
+      (await this.state()).removeLibrary(id);
+    });
   }
 
   async previewNaming(input: MediaLibrarySettingsInput): Promise<NamingPreviewItem[]> {
@@ -104,10 +124,16 @@ export class MediaLibraryService {
       (candidate) => filesystemPathKey(path.resolve(candidate.sourcePath)) === key,
     );
     if (existing) return existing;
-    return toMediaLibrary((await this.repository()).create(mediaLibrarySettingsSchema.parse(library)));
+    return this.create(library);
   }
 
-  private async validate(input: MediaLibrarySettingsInput, id?: string): Promise<MediaLibraryValues> {
+  private write<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.writing.then(operation);
+    this.writing = result.catch(() => undefined);
+    return result;
+  }
+
+  private async validate(input: MediaLibrarySettingsInput, id?: string): Promise<MediaLibrarySettings> {
     const settings = mediaLibrarySettingsSchema.parse(input);
     assertTargetLayout(await this.getConfiguration(), settings);
     for (const other of await this.list()) {

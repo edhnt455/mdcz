@@ -3,8 +3,6 @@ import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdc
 import type {
   DownloaderRepository,
   LibraryRepository,
-  MediaLibraryRecord,
-  MediaLibraryRepository,
   PendingRepository,
   ScrapeRunManifest,
   ScrapeRunRecord,
@@ -35,7 +33,7 @@ import type {
   ScrapeResult,
   VideoMeta,
 } from "@mdcz/shared/types";
-import { toPublicationTarget } from "../library/mediaLibraryService";
+import { type MediaLibrary, type MediaLibraryService, toPublicationTarget } from "../library/mediaLibraryService";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
 import { buildMovieTags } from "../maintenance/movieTags";
 import type { NetworkClient } from "../network";
@@ -91,7 +89,7 @@ export class ScrapeRunnerError extends Error {
   }
 }
 
-type NormalizedScrapeStart = { library: MediaLibraryRecord } & (
+type NormalizedScrapeStart = { library: MediaLibrary } & (
   | {
       mode: "directory";
       scope: DirectoryTaskScope;
@@ -137,10 +135,10 @@ export interface StartScrapeResult {
 }
 
 export interface ScrapeRunnerDependencies {
+  libraries: Pick<MediaLibraryService, "get">;
   persistence: {
     scrapeRuns: ScrapeRunRepository;
     library: LibraryRepository;
-    libraries: Pick<MediaLibraryRepository, "get">;
     pending: PendingRepository;
     mediaRoots: ConfiguredMediaRootService;
     /** Polled downloaders; only the server has them. */
@@ -236,7 +234,7 @@ export class ScrapeRunner {
       retry: (runId, itemIds) => this.createRetryRun(runId, itemIds),
       rerunDirectory: async (runId) => {
         const configuration = structuredClone(await this.deps.getConfiguration());
-        const target = toPublicationTarget(this.runLibrary(await this.deps.persistence.scrapeRuns.get(runId)));
+        const target = toPublicationTarget(await this.runLibrary(await this.deps.persistence.scrapeRuns.get(runId)));
         assertTargetLayout(configuration, target);
         const run = await this.deps.persistence.scrapeRuns.rerunDirectory(runId);
         this.runContexts.set(run.id, { configuration, target });
@@ -511,7 +509,7 @@ export class ScrapeRunner {
     input: ScrapeStartInput,
     configuration: Configuration,
   ): Promise<NormalizedScrapeStart> {
-    const library = this.deps.persistence.libraries.get(input.libraryId);
+    const library = await this.deps.libraries.get(input.libraryId);
     assertTargetLayout(configuration, toPublicationTarget(library));
     if ("source" in input) {
       const directoryScope = createDirectoryScope(
@@ -539,7 +537,7 @@ export class ScrapeRunner {
 
   /** In place, output stays in each file's own root; otherwise it goes to the library's output directory. */
   private async libraryOutput(
-    library: MediaLibraryRecord,
+    library: MediaLibrary,
     sourceRootId: string,
   ): Promise<{ outputRootId: string; outputRelativeDirectory: string | null }> {
     if (library.placement === "inPlace") return { outputRootId: sourceRootId, outputRelativeDirectory: null };
@@ -602,9 +600,9 @@ export class ScrapeRunner {
   }
 
   /** Retries and reruns publish with the library's current settings, like a new run. */
-  private runLibrary(run: ScrapeRunRecord): MediaLibraryRecord {
+  private async runLibrary(run: ScrapeRunRecord): Promise<MediaLibrary> {
     if (!run.libraryId) throw new Error("This scrape run has no library; start a new scrape instead");
-    return this.deps.persistence.libraries.get(run.libraryId);
+    return this.deps.libraries.get(run.libraryId);
   }
 
   private async createRetryRun(runId: string, itemIds?: readonly string[]): Promise<ScrapeRunManifest> {
@@ -671,7 +669,7 @@ export class ScrapeRunner {
     );
     const itemsToRetry = [...batchItems.values()].filter((item) => retryIds.has(item.id));
     if (itemsToRetry.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
-    const library = this.runLibrary(run);
+    const library = await this.runLibrary(run);
     const target = toPublicationTarget(library);
     assertTargetLayout(configuration, target);
     const groups = await admitScrapeGroups({

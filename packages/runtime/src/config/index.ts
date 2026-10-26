@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   type Configuration,
@@ -218,6 +219,7 @@ export interface RuntimeConfigDiagnosticEvent {
 }
 
 export class RuntimeConfigService {
+  private writing: Promise<unknown> = Promise.resolve();
   private configuration: Configuration | null = null;
   private legacyConversion?: LegacyConfigurationConversion;
   private store: RuntimeConfigProfileStore;
@@ -304,6 +306,10 @@ export class RuntimeConfigService {
   }
 
   async saveFull(configuration: Configuration): Promise<Configuration> {
+    return this.write(() => this.saveConfiguration(configuration));
+  }
+
+  private async saveConfiguration(configuration: Configuration): Promise<Configuration> {
     this.configuration = await this.runWithValidation(async () => {
       const parsed = parseRuntimeConfiguration(configuration);
       let beforeSaveCompleted = false;
@@ -330,11 +336,14 @@ export class RuntimeConfigService {
     return defaultConfiguration;
   }
 
-  async update(patch: DeepPartial<Configuration>): Promise<Configuration> {
-    return await this.runWithValidation(async () => {
-      const current = await this.get();
-      return await this.saveFull(parseRuntimeConfiguration(mergeRuntimeConfig(current, patch)));
-    });
+  async update(patch: DeepPartial<Configuration>, expected?: Configuration): Promise<Configuration> {
+    return this.write(() =>
+      this.runWithValidation(async () => {
+        const current = await this.get();
+        if (expected && current !== expected) throw new Error("Configuration changed while saving; try again");
+        return await this.saveConfiguration(parseRuntimeConfiguration(mergeRuntimeConfig(current, patch)));
+      }),
+    );
   }
 
   async reset(propertyPath?: string): Promise<Configuration> {
@@ -347,11 +356,13 @@ export class RuntimeConfigService {
       throw new Error(`Path not found: ${propertyPath}`);
     }
 
-    return await this.runWithValidation(async () => {
-      const current = JSON.parse(JSON.stringify(await this.get())) as Record<string, unknown>;
-      setRuntimeConfigProperty(current, propertyPath, resetDefault.value);
-      return await this.saveFull(parseRuntimeConfiguration(current));
-    });
+    return this.write(() =>
+      this.runWithValidation(async () => {
+        const current = JSON.parse(JSON.stringify(await this.get())) as Record<string, unknown>;
+        setRuntimeConfigProperty(current, propertyPath, resetDefault.value);
+        return await this.saveConfiguration(parseRuntimeConfiguration(current));
+      }),
+    );
   }
 
   async import(content: string, format: ConfigurationFileFormat = "toml"): Promise<Configuration> {
@@ -373,25 +384,27 @@ export class RuntimeConfigService {
   }
 
   async switchProfile(name: string): Promise<Configuration> {
-    const previousProfile = this.store.activeProfile;
-    const previousConfiguration = this.configuration;
-    this.configuration = await this.runWithValidation(async () => {
-      const switched = await this.store.switchProfile(name);
-      this.legacyConversion = this.store.takeLegacyConversion() ?? this.legacyConversion;
-      try {
-        await this.options.onBeforeCommit?.(switched, { source: "switch", previous: previousConfiguration });
-        const next = await this.applyAfterLoad(switched);
-        await this.options.onAfterCommit?.(next, { source: "switch", previous: previousConfiguration });
-        return next;
-      } catch (error) {
-        if (this.store.activeProfile !== previousProfile) {
-          await this.store.switchProfile(previousProfile).catch(() => undefined);
+    return this.write(async () => {
+      const previousProfile = this.store.activeProfile;
+      const previousConfiguration = this.configuration;
+      this.configuration = await this.runWithValidation(async () => {
+        const switched = await this.store.switchProfile(name);
+        this.legacyConversion = this.store.takeLegacyConversion() ?? this.legacyConversion;
+        try {
+          await this.options.onBeforeCommit?.(switched, { source: "switch", previous: previousConfiguration });
+          const next = await this.applyAfterLoad(switched);
+          await this.options.onAfterCommit?.(next, { source: "switch", previous: previousConfiguration });
+          return next;
+        } catch (error) {
+          if (this.store.activeProfile !== previousProfile) {
+            await this.store.switchProfile(previousProfile).catch(() => undefined);
+          }
+          throw error;
         }
-        throw error;
-      }
+      });
+      this.emitChange("switch");
+      return this.configuration;
     });
-    this.emitChange("switch");
-    return this.configuration;
   }
 
   async deleteProfile(name: string): Promise<{ profileName: string }> {
@@ -413,22 +426,27 @@ export class RuntimeConfigService {
     fileName?: string;
     overwrite?: boolean;
   }): Promise<RuntimeProfileImportOutput> {
-    const previousConfiguration = this.configuration;
-    let importedConfiguration: Configuration | undefined;
-    const result = await this.runWithValidation(async () => {
-      const format = input.fileName ? inferConfigurationFileFormat(input.fileName) : "toml";
-      importedConfiguration = parseRuntimeConfigurationContent(input.content, format);
-      if (input.name === this.store.activeProfile) {
-        await this.options.onBeforeCommit?.(importedConfiguration, { source: "save", previous: previousConfiguration });
+    return this.write(async () => {
+      const previousConfiguration = this.configuration;
+      let importedConfiguration: Configuration | undefined;
+      const result = await this.runWithValidation(async () => {
+        const format = input.fileName ? inferConfigurationFileFormat(input.fileName) : "toml";
+        importedConfiguration = parseRuntimeConfigurationContent(input.content, format);
+        if (input.name === this.store.activeProfile) {
+          await this.options.onBeforeCommit?.(importedConfiguration, {
+            source: "save",
+            previous: previousConfiguration,
+          });
+        }
+        return await this.store.importProfile(input);
+      });
+      if (result.active && importedConfiguration) {
+        this.configuration = await this.applyAfterLoad(importedConfiguration);
+        await this.options.onAfterCommit?.(importedConfiguration, { source: "save", previous: previousConfiguration });
+        this.emitChange("save");
       }
-      return await this.store.importProfile(input);
+      return result;
     });
-    if (result.active && importedConfiguration) {
-      this.configuration = await this.applyAfterLoad(importedConfiguration);
-      await this.options.onAfterCommit?.(importedConfiguration, { source: "save", previous: previousConfiguration });
-      this.emitChange("save");
-    }
-    return result;
   }
 
   async importProfileFromFile(input: {
@@ -452,6 +470,12 @@ export class RuntimeConfigService {
   private async applyAfterLoad(configuration: Configuration): Promise<Configuration> {
     const next = await this.options.onAfterLoad?.(configuration);
     return next ?? configuration;
+  }
+
+  private write<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.writing.then(operation);
+    this.writing = result.catch(() => undefined);
+    return result;
   }
 
   private async applyAfterSave(configuration: Configuration): Promise<Configuration> {
@@ -560,7 +584,7 @@ export class RuntimeConfigProfileStore {
     if (this.options.dataDir) {
       await mkdir(this.options.dataDir, { recursive: true });
     }
-    await writeFile(this.getProfilePath(this.activeProfileName), serializeConfiguration(parsed), "utf8");
+    await this.writeProfile(this.getProfilePath(this.activeProfileName), parsed);
     await this.persistActiveProfileName();
     return parsed;
   }
@@ -588,7 +612,7 @@ export class RuntimeConfigProfileStore {
       throw new Error(`Profile "${profileName}" already exists`);
     }
     await mkdir(this.options.configDir, { recursive: true });
-    await writeFile(filePath, serializeConfiguration(defaultConfiguration), "utf8");
+    await this.writeProfile(filePath, defaultConfiguration);
     return { profileName };
   }
 
@@ -665,7 +689,7 @@ export class RuntimeConfigProfileStore {
       input.fileName ? inferConfigurationFileFormat(input.fileName) : "toml",
     );
     await mkdir(this.options.configDir, { recursive: true });
-    await writeFile(targetPath, serializeConfiguration(configuration), "utf8");
+    await this.writeProfile(targetPath, configuration);
 
     return { profileName, overwritten, active: profileName === this.activeProfileName };
   }
@@ -733,6 +757,20 @@ export class RuntimeConfigProfileStore {
 
   private isProfileConfigFile(entry: string): boolean {
     return entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.toml) || entry.endsWith(CONFIGURATION_FILE_EXTENSIONS.json);
+  }
+
+  private async writeProfile(filePath: string, configuration: Configuration): Promise<void> {
+    const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, serializeConfiguration(configuration), {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      await rename(temporaryPath, filePath);
+    } finally {
+      await rm(temporaryPath, { force: true });
+    }
   }
 
   private getActiveProfileMetaPath(): string {

@@ -140,13 +140,13 @@ class LibraryWatcher {
   /** Records files a downloader callback submitted, so no scan submits them again. */
   async acknowledge(keys: readonly string[]): Promise<void> {
     const { repositories } = await this.deps.persistence.getState();
-    const known = this.known ?? repositories.mediaLibraries.loadWatchSnapshot(this.library.id) ?? new Set<string>();
+    const known = this.known ?? repositories.libraryState.loadWatchSnapshot(this.library.id) ?? new Set<string>();
     for (const key of keys) {
       known.add(key);
       this.unstable.delete(key);
     }
     this.known = known;
-    repositories.mediaLibraries.saveWatchSnapshot(this.library.id, known);
+    repositories.libraryState.saveWatchSnapshot(this.library.id, known);
   }
 
   private run(): void {
@@ -220,10 +220,10 @@ class LibraryWatcher {
     }
     signal.throwIfAborted();
     const { repositories } = await this.deps.persistence.getState();
-    const known = this.known ?? repositories.mediaLibraries.loadWatchSnapshot(library.id);
+    const known = this.known ?? repositories.libraryState.loadWatchSnapshot(library.id);
     if (!known) {
       this.known = new Set(current.keys());
-      repositories.mediaLibraries.saveWatchSnapshot(library.id, this.known);
+      repositories.libraryState.saveWatchSnapshot(library.id, this.known);
       return;
     }
     this.known = known;
@@ -307,7 +307,7 @@ class LibraryWatcher {
         `Submitted ${submitted.length} files from library ${library.name}: taskId=${snapshot.task.id}`,
       );
     } finally {
-      if (changed) repositories.mediaLibraries.saveWatchSnapshot(library.id, known);
+      if (changed) repositories.libraryState.saveWatchSnapshot(library.id, known);
     }
   }
 }
