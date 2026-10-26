@@ -172,6 +172,19 @@ test("settings categories preserve fields, search across sections and adapt to t
   await search.fill("代理");
   await expect.element(navigation).not.toBeInTheDocument();
   await expect.element(screen.getByRole("region", { name: "网络连接", exact: true })).toBeVisible();
+  await search.fill("每日头像补查时间");
+  const dailyTime = screen.getByRole("textbox", { name: "每日头像补查时间", exact: true });
+  await expect.element(dailyTime).toHaveValue("");
+  await dailyTime.fill("03:00");
+  await search.click();
+  await expect
+    .poll(() => baseSettingsServices.saveConfig.mock.calls)
+    .toContainEqual([{ emby: { actorPhotoDailySyncTime: "03:00" } }]);
+  await dailyTime.fill("");
+  await search.click();
+  await expect
+    .poll(() => baseSettingsServices.saveConfig.mock.calls)
+    .toContainEqual([{ emby: { actorPhotoDailySyncTime: "" } }]);
   await search.fill("no-matching-mdcz-option");
   await expect.element(screen.getByText("没有匹配的设置")).toBeVisible();
   await screen.getByRole("button", { name: "清空搜索" }).click();

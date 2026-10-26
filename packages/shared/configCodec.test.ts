@@ -13,6 +13,26 @@ import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 import { mediaLibraryConfigSchema } from "./mediaLibrary";
 
 describe("configuration codec", () => {
+  it("validates and round-trips the optional daily Emby photo check time", () => {
+    expect(defaultConfiguration.emby.actorPhotoDailySyncTime).toBe("");
+    for (const time of ["", "00:00", "03:00", "23:59"]) {
+      const configuration = configurationSchema.parse({ emby: { actorPhotoDailySyncTime: time } });
+      for (const format of ["toml", "json"] as const) {
+        expect(
+          parseConfigurationContent(serializeConfiguration(configuration, format), format).emby.actorPhotoDailySyncTime,
+        ).toBe(time);
+      }
+    }
+    for (const time of ["3:00", "24:00", "12:60", "03:00:00", " 03:00", "invalid"]) {
+      const result = configurationSchema.safeParse({ emby: { actorPhotoDailySyncTime: time } });
+      expect(result.success).toBe(false);
+      if (!result.success)
+        expect(result.error.issues[0]).toMatchObject({
+          path: ["emby", "actorPhotoDailySyncTime"],
+          message: "actorPhotoSyncTimeInvalid",
+        });
+    }
+  });
   it("round-trips actor alias maps through TOML and validates alias groups", () => {
     const parsed = parseConfigurationContent(
       '[personSync.actorAliases]\n"河北彩花" = ["河北彩伽", "河北彩花（河北彩伽）"]\n',

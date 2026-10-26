@@ -20,10 +20,6 @@ import { JellyfinActorInfoService, JellyfinActorPhotoService, type MediaServerSi
 import { formatPersonSyncError } from "./personSync";
 import type { PhotoSyncOptions } from "./photoSync";
 
-const PERIOD_MS = 30 * 60_000;
-const RETRY_MS = [10_000, 30_000, 60_000, 120_000, 300_000];
-const SOURCE_COOLDOWN_MS = 6 * 60 * 60_000;
-
 /** Owns all person writes; background synchronization never depends on a mounted page. */
 export class PersonSyncManager {
   #job: PersonSyncJobDto | null = null;
@@ -40,12 +36,12 @@ export class PersonSyncManager {
   #active = false;
   #closed = false;
   #revision = 0;
-  #attempt = 0;
-  #connection = "";
+  #configuration: Configuration | undefined;
   #configurationKey = "";
   #pending = new Map<string, ActorSourceHint[]>();
-  #cooldown = new Map<string, number>();
-  #rerun = false;
+  #publicationAt: number | null = null;
+  #dailyAt: number | null = null;
+  #fullScanPending = false;
 
   constructor(
     private readonly deps: {
@@ -67,7 +63,7 @@ export class PersonSyncManager {
   activate(): void {
     if (this.#active || this.#closed) return;
     this.#active = true;
-    this.#schedule(5_000);
+    this.configurationChanged();
   }
 
   configurationChanged(configuration?: Configuration): void {
@@ -77,12 +73,26 @@ export class PersonSyncManager {
       if (key === this.#configurationKey) return;
       this.#configurationKey = key;
     }
-    this.#revision++;
-    this.#attempt = 0;
+    const revision = ++this.#revision;
+    clearTimeout(this.#timer);
     this.#pending.clear();
-    this.#cooldown.clear();
-    this.#automatic = { ...this.#automatic, error: null };
-    this.#schedule(0);
+    this.#publicationAt = null;
+    this.#dailyAt = null;
+    this.#fullScanPending = false;
+    this.#automatic = { ...this.#automatic, status: "idle", error: null, nextRunAt: null, waitingActors: 0 };
+    void (async () => {
+      const config = configuration ?? (await this.deps.getConfiguration());
+      if (this.#closed || revision !== this.#revision) return;
+      this.#configuration = config;
+      this.#configurationKey = JSON.stringify([config.emby, config.personSync, config.paths.actorPhotoFolder]);
+      this.#setNextDailyRun();
+      this.#schedule();
+    })().catch((error) => {
+      if (this.#closed || revision !== this.#revision) return;
+      this.deps.logger.error(`Failed to configure actor photo sync: ${toErrorMessage(error)}`);
+      this.#automatic = { ...this.#automatic, status: "blocked", error: toErrorMessage(error) };
+      this.#emit();
+    });
   }
 
   published(configuration: Configuration, data: CrawlerData): void {
@@ -103,21 +113,27 @@ export class PersonSyncManager {
         ]),
       );
     }
-    this.#attempt = 0;
-    if (this.#automatic.status !== "blocked") this.#schedule(5_000);
+    if (!this.#pending.size) return;
+    this.#publicationAt = Date.now() + 5_000;
+    this.#schedule();
   }
 
   start(input: PersonSyncStartInput): PersonSyncJobDto {
     if (this.#closed) throw new Error("Person sync is closing");
     if (this.#job?.status === "running") return this.#job;
-    this.#cooldown.clear();
     this.deps.actorSourceProvider.clearCache();
-    this.#revision++;
+    if (input.server === "emby" && input.kind === "photo") {
+      this.#pending.clear();
+      this.#publicationAt = null;
+      this.#fullScanPending = false;
+    }
+    this.#automatic = { ...this.#automatic, status: "idle", error: null };
     this.#job = this.#createJob(input, "manual");
     this.#running = this.#execute(input).finally(() => {
       this.#running = undefined;
-      if (this.#active && !this.#closed) this.#schedule(5_000);
+      this.#schedule();
     });
+    this.#schedule();
     return this.#job;
   }
 
@@ -166,101 +182,104 @@ export class PersonSyncManager {
     this.deps.onChange?.(this.snapshot());
   }
 
-  #schedule(delay: number): void {
+  #setNextDailyRun(): void {
+    const time = this.#configuration?.emby.actorPhotoDailySyncTime;
+    this.#dailyAt = null;
+    if (!time) return;
+    const [hour, minute] = time.split(":").map(Number);
+    const next = new Date();
+    next.setHours(hour, minute, 0, 0);
+    if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1);
+    this.#dailyAt = next.getTime();
+  }
+
+  #schedule(): void {
     if (this.#closed || !this.#active) return;
     clearTimeout(this.#timer);
+    const emby = this.#configuration?.emby;
+    let status: ActorPhotoAutoSyncStatus["status"] = "idle";
+    let nextRunAt: number | null = null;
+    if (!emby) return;
+    if (!emby.autoSyncActorPhotos) status = "disabled";
+    else if (!emby.url.trim() || !emby.apiKey.trim()) status = "unconfigured";
+    else if (this.#automatic.status === "blocked") status = "blocked";
+    else if (this.#running) status = "running";
+    else {
+      const next = Math.min(
+        this.#fullScanPending ? Date.now() : Number.POSITIVE_INFINITY,
+        this.#pending.size ? (this.#publicationAt ?? Date.now()) : Number.POSITIVE_INFINITY,
+        this.#dailyAt ?? Number.POSITIVE_INFINITY,
+      );
+      if (Number.isFinite(next)) {
+        nextRunAt = next;
+        status = this.#pending.size ? "waiting" : "scheduled";
+      }
+    }
     this.#automatic = {
       ...this.#automatic,
-      status: this.#pending.size ? "waiting" : "scheduled",
+      status,
       waitingActors: this.#pending.size,
-      nextRunAt: new Date(Date.now() + delay).toISOString(),
+      nextRunAt: nextRunAt === null ? null : new Date(nextRunAt).toISOString(),
     };
     this.#emit();
-    this.#timer = setTimeout(() => {
-      void this.#tick();
-    }, delay);
+    if (nextRunAt === null) return;
+    this.#timer = setTimeout(
+      () => {
+        if (this.#dailyAt !== null && this.#dailyAt <= Date.now()) {
+          this.#fullScanPending = true;
+          this.#setNextDailyRun();
+        }
+        void this.#tick();
+      },
+      Math.max(0, nextRunAt - Date.now()),
+    );
     this.#timer.unref?.();
   }
 
   async #tick(): Promise<void> {
     if (this.#closed) return;
-    if (this.#running) {
-      this.#rerun = true;
-      return;
-    }
+    if (this.#running) return;
+    const revision = this.#revision;
     this.#running = this.#automaticRun()
       .catch((error) => {
+        if (this.#closed || revision !== this.#revision) return;
         this.deps.logger.error(`Automatic actor photo sync failed: ${toErrorMessage(error)}`);
         const status = error instanceof MediaServerServiceError ? error.status : getHttpStatus(error);
         const blocked = status === 401 || status === 403;
         this.#automatic = {
           ...this.#automatic,
-          status: blocked ? "blocked" : "waiting",
+          status: blocked ? "blocked" : "idle",
           nextRunAt: null,
           error: toErrorMessage(error),
         };
-        if (!blocked) this.#schedule(RETRY_MS[this.#attempt++] ?? PERIOD_MS);
-        else this.#emit();
       })
       .finally(() => {
         this.#running = undefined;
-        if (this.#rerun && !this.#closed) {
-          this.#rerun = false;
-          this.#schedule(5_000);
-        }
+        this.#schedule();
       });
     await this.#running;
   }
 
   async #automaticRun(): Promise<void> {
-    const configuration = await this.deps.getConfiguration();
-    this.#configurationKey = JSON.stringify([
-      configuration.emby,
-      configuration.personSync,
-      configuration.paths.actorPhotoFolder,
-    ]);
-    const { emby } = configuration;
-    if (!emby.autoSyncActorPhotos || !emby.url.trim() || !emby.apiKey.trim()) {
-      this.#automatic = {
-        ...this.#automatic,
-        status: !emby.autoSyncActorPhotos ? "disabled" : "unconfigured",
-        nextRunAt: null,
-        error: null,
-      };
-      this.#emit();
-      return;
-    }
-    const connection = JSON.stringify([emby.url, emby.apiKey, emby.userId]);
-    if (connection !== this.#connection) {
-      this.#connection = connection;
-      this.#cooldown.clear();
-    }
+    const configuration = this.#configuration;
+    if (!configuration) return;
     const revision = this.#revision;
     const canContinue = () => !this.#closed && revision === this.#revision;
     const hints = new Map(this.#pending);
-    let personCount = 0;
-    this.#automatic = { ...this.#automatic, status: "running", nextRunAt: null, error: null };
+    const fullScan = this.#fullScanPending;
+    this.#pending.clear();
+    this.#publicationAt = null;
+    this.#fullScanPending = false;
+    this.#automatic = { ...this.#automatic, status: "running", nextRunAt: null, waitingActors: 0, error: null };
     const input: PersonSyncStartInput = { server: "emby", kind: "photo", mode: "missing" };
     this.#createJob(input, "automatic");
-    const result = await this.#execute(input, configuration, {
+    await this.#execute(input, configuration, {
       canContinue,
-      shouldProcess: (id) => (this.#cooldown.get(id) ?? 0) <= Date.now(),
+      shouldProcess: (_id, name) => fullScan || hints.has(this.#actorKey(configuration, name)),
       sourceHints: (name) => hints.get(this.#actorKey(configuration, name)) ?? [],
-      onPersons: (persons) => {
-        if (!canContinue()) return;
-        personCount = persons.length;
-        for (const person of persons) this.#pending.delete(this.#actorKey(configuration, person.Name));
-      },
-      onOutcome: (id, outcome) => {
-        if (outcome === "missing") this.#cooldown.set(id, Date.now() + SOURCE_COOLDOWN_MS);
-        else this.#cooldown.delete(id);
-      },
     });
     if (!canContinue()) return;
     this.#automatic = { ...this.#automatic, lastRunAt: new Date().toISOString(), error: null };
-    const needsRetry = this.#pending.size > 0 || personCount === 0 || Boolean(result?.failedCount);
-    if (!needsRetry) this.#attempt = 0;
-    this.#schedule(needsRetry ? (RETRY_MS[this.#attempt++] ?? PERIOD_MS) : PERIOD_MS);
   }
 
   async #execute(

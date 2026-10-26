@@ -80,17 +80,23 @@ describe("automatic Emby actor photos", () => {
     expect(networkClient.postText.mock.calls[0][2]?.headers?.get("content-type")).toBe("image/png");
   });
 
-  it("waits for actors after committed publications, merges duplicates, and leaves existing images alone", async () => {
-    const { manager, configuration, persons, uploaded, lookup } = fixture();
-    persons.push({ Id: "a", Name: "Actor A", ImageTags: { Primary: "manual" } });
+  it("checks only published actors once, merges duplicates, and leaves existing images alone", async () => {
+    const { manager, configuration, persons, uploaded, lookup, networkClient } = fixture();
+    persons.push({ Id: "a", Name: "Actor A", ImageTags: { Primary: "manual" } }, { Id: "c", Name: "Unrelated" });
     manager.activate();
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect(networkClient.getJson).not.toHaveBeenCalled();
     manager.published(configuration, movie(["Actor A", "Actor B"]));
     manager.published(configuration, movie(["Actor B"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual([]);
-    expect(manager.snapshot().automatic).toMatchObject({ status: "waiting", waitingActors: 1 });
+    expect(manager.snapshot().automatic).toMatchObject({ status: "idle", waitingActors: 0, nextRunAt: null });
     persons.push({ Id: "b", Name: "Actor B" });
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    expect(networkClient.getJson).toHaveBeenCalledTimes(1);
+    expect(lookup).not.toHaveBeenCalled();
+    manager.published(configuration, movie(["Actor B"]));
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual(["b"]);
     expect(lookup).toHaveBeenCalledTimes(1);
     expect(manager.status()).toMatchObject({
@@ -98,18 +104,19 @@ describe("automatic Emby actor photos", () => {
       status: "completed",
       result: { processedCount: 1 },
     });
-    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
     expect(uploaded).toEqual(["b"]);
   });
 
-  it("recovers through startup and periodic checks, cools missing sources, and permits manual replacement", async () => {
-    const { manager, persons, uploaded, lookup } = fixture();
+  it("leaves missing sources for manual sync and never follows manual sync with an automatic check", async () => {
+    const { manager, configuration, persons, uploaded, lookup, networkClient } = fixture();
     persons.push({ Id: "a", Name: "Actor A" });
     lookup.mockResolvedValueOnce({ profile: { name: "Actor A", photo_url: "" }, warnings: [] });
     manager.activate();
+    manager.published(configuration, movie(["Actor A"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual([]);
-    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
     expect(lookup).toHaveBeenCalledTimes(1);
     await manager.run({ server: "emby", kind: "photo", mode: "missing" });
     expect(uploaded).toEqual(["a"]);
@@ -117,21 +124,27 @@ describe("automatic Emby actor photos", () => {
     expect(uploaded).toEqual(["a", "a"]);
     expect(manager.status()?.trigger).toBe("manual");
     persons.push({ Id: "b", Name: "Actor B" });
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(uploaded).toEqual(["a", "a", "b"]);
+    const calls = networkClient.getJson.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+    expect(networkClient.getJson).toHaveBeenCalledTimes(calls);
+    expect(uploaded).toEqual(["a", "a"]);
   });
 
-  it("pauses on rejected credentials, resumes on configuration changes, and honors disabling and shutdown", async () => {
+  it("pauses on rejected credentials without retries, applies configuration without scanning, and honors disabling and shutdown", async () => {
     const { manager, configuration, persons, uploaded, networkClient } = fixture();
     persons.push({ Id: "a", Name: "Actor A" });
     networkClient.getJson.mockRejectedValueOnce(new Error("HTTP 401 Unauthorized"));
     manager.activate();
+    manager.published(configuration, movie(["Actor A"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(manager.snapshot().automatic.status).toBe("blocked");
     await vi.advanceTimersByTimeAsync(30 * 60_000);
     expect(networkClient.getJson).toHaveBeenCalledTimes(1);
     manager.configurationChanged();
     await vi.advanceTimersByTimeAsync(0);
+    expect(networkClient.getJson).toHaveBeenCalledTimes(1);
+    manager.published(configuration, movie(["Actor A"]));
+    await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual(["a"]);
     configuration.emby.autoSyncActorPhotos = false;
     manager.configurationChanged();
@@ -158,6 +171,7 @@ describe("automatic Emby actor photos", () => {
         }),
     );
     manager.activate();
+    manager.published(configuration, movie(["Actor A"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(manager.status()?.status).toBe("running");
     const current = manager.start({ server: "emby", kind: "photo", mode: "all" });
@@ -170,8 +184,70 @@ describe("automatic Emby actor photos", () => {
     resolveLookup({ profile: { name: "Actor A", photo_url: "https://photos.test/actor" }, warnings: [] });
     await vi.advanceTimersByTimeAsync(0);
     expect(uploaded).toEqual([]);
+    manager.published(configuration, movie(["Actor A", "Actor B"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual(["a", "b"]);
     expect(manager.snapshot().automatic.waitingActors).toBe(0);
+  });
+
+  it("runs a configured daily check at local wall time, skips startup catch-up, and reschedules after edits", async () => {
+    const { manager, configuration, persons, uploaded, networkClient } = fixture();
+    vi.setSystemTime(new Date(2026, 9, 26, 2, 0));
+    configuration.emby.actorPhotoDailySyncTime = "03:00";
+    persons.push({ Id: "a", Name: "Actor A" });
+    manager.activate();
+    await vi.advanceTimersByTimeAsync(60 * 60_000 - 1);
+    expect(networkClient.getJson).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(uploaded).toEqual(["a"]);
+    expect(manager.snapshot().automatic.nextRunAt).toBe(new Date(2026, 9, 27, 3, 0).toISOString());
+    persons.push({ Id: "b", Name: "Actor B" });
+    await vi.advanceTimersByTimeAsync(23 * 60 * 60_000);
+    expect(uploaded).toEqual(["a"]);
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(uploaded).toEqual(["a", "b"]);
+
+    configuration.emby.actorPhotoDailySyncTime = "02:00";
+    manager.configurationChanged(configuration);
+    expect(manager.snapshot().automatic.nextRunAt).toBe(new Date(2026, 9, 28, 2, 0).toISOString());
+    persons.push({ Id: "c", Name: "Actor C" });
+    configuration.emby.actorPhotoDailySyncTime = "";
+    manager.configurationChanged(configuration);
+    await vi.advanceTimersByTimeAsync(2 * 24 * 60 * 60_000);
+    expect(uploaded).toEqual(["a", "b"]);
+    expect(manager.snapshot().automatic).toMatchObject({ status: "idle", nextRunAt: null });
+  });
+
+  it("serializes daily and publication work with manual uploads and does not retry failed checks", async () => {
+    const { manager, configuration, persons, uploaded, lookup, networkClient } = fixture();
+    vi.setSystemTime(new Date(2026, 9, 26, 2, 59, 55));
+    configuration.emby.actorPhotoDailySyncTime = "03:00";
+    persons.push({ Id: "a", Name: "Actor A" });
+    let resolveLookup!: (value: Awaited<ReturnType<typeof lookup>>) => void;
+    lookup.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    manager.activate();
+    manager.start({ server: "emby", kind: "photo", mode: "missing" });
+    await vi.advanceTimersByTimeAsync(0);
+    persons.push({ Id: "b", Name: "Actor B" });
+    manager.published(configuration, movie(["Actor B"]));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(uploaded).toEqual([]);
+    resolveLookup({ profile: { name: "Actor A", photo_url: "https://photos.test/actor" }, warnings: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(uploaded).toEqual(["a", "b"]);
+    expect(manager.snapshot().automatic.nextRunAt).toBe(new Date(2026, 9, 27, 3, 0).toISOString());
+
+    networkClient.getJson.mockRejectedValueOnce(new Error("Connection reset"));
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000 - 5_000);
+    expect(manager.status()?.status).toBe("failed");
+    const calls = networkClient.getJson.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(networkClient.getJson).toHaveBeenCalledTimes(calls);
+    expect(manager.snapshot().automatic.nextRunAt).toBe(new Date(2026, 9, 28, 3, 0).toISOString());
   });
 });

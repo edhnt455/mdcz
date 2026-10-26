@@ -69,17 +69,18 @@ export const tools: Messages["tools"] = {
   syncInfo: "同步信息",
   autoPhotoSync: {
     title: "Emby 自动头像同步",
-    description: "影片整理后自动等待 Emby 人物入库并补全头像，由 Emby 独立保存。已有头像不会覆盖；有遗漏时可手动补全。",
+    description:
+      "影片整理入库后检查一次演员头像，也可设置每日定时补查或手动补全。Emby 独立保存头像，已有头像不会覆盖。",
     status: {
       disabled: "已关闭",
       unconfigured: "请先配置 Emby",
       idle: "就绪",
       scheduled: "已安排检查",
-      waiting: "等待 Emby 入库或重试",
+      waiting: "等待入库后的头像检查",
       running: "同步中",
       blocked: "请检查连接或权限",
     },
-    waiting: (count: number) => `${count} 位演员等待 Emby 入库`,
+    waiting: (count: number) => `${count} 位演员等待头像检查`,
     lastRun: "最近同步",
     nextRun: "下次检查",
     syncNow: "立即补全头像",

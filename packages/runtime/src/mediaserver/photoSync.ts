@@ -43,10 +43,8 @@ interface ProgressSignalService {
 
 export interface PhotoSyncOptions {
   canContinue?: () => boolean;
-  shouldProcess?: (personId: string) => boolean;
+  shouldProcess?: (personId: string, name: string) => boolean;
   sourceHints?: (name: string) => ActorSourceHint[];
-  onPersons?: (persons: ReadonlyArray<{ Id: string; Name: string }>) => void;
-  onOutcome?: (personId: string, outcome: "processed" | "missing" | "failed" | "existing") => void;
 }
 
 interface MediaServerPhotoSyncOptions<TPerson> extends PhotoSyncOptions {
@@ -71,9 +69,9 @@ interface MediaServerPhotoSyncOptions<TPerson> extends PhotoSyncOptions {
 export const runMediaServerPhotoSync = async <TPerson>(
   options: MediaServerPhotoSyncOptions<TPerson>,
 ): Promise<PersonSyncResult> => {
-  const persons = await options.fetchPersons();
-  options.onPersons?.(
-    persons.map((person) => ({ Id: options.getPersonId(person), Name: options.getPersonName(person) })),
+  const persons = (await options.fetchPersons()).filter(
+    (person) =>
+      !options.shouldProcess || options.shouldProcess(options.getPersonId(person), options.getPersonName(person)),
   );
   if (persons.length === 0) {
     options.signalService.showLogText(`${options.serviceName} returned no actors to sync`, "warn");
@@ -87,8 +85,6 @@ export const runMediaServerPhotoSync = async <TPerson>(
     signalService: options.signalService,
     processItem: async (person) => {
       if (options.canContinue && !options.canContinue()) return "skipped";
-      const personId = options.getPersonId(person);
-      if (options.shouldProcess && !options.shouldProcess(personId)) return "skipped";
       stage = "resolve photo source";
       const actorName = options.getPersonName(person).trim();
       if (!actorName) {
@@ -96,7 +92,6 @@ export const runMediaServerPhotoSync = async <TPerson>(
       }
 
       if (options.mode === "missing" && options.hasPrimaryImage(person)) {
-        options.onOutcome?.(personId, "existing");
         return "skipped";
       }
 
@@ -114,7 +109,6 @@ export const runMediaServerPhotoSync = async <TPerson>(
       const image = await loadPrimaryImageFromSource(options.networkClient, actorSource.profile.photo_url);
 
       if (!image) {
-        options.onOutcome?.(personId, "missing");
         options.signalService.showLogText(
           `No ${options.serviceName} actor photo source found for ${actorName}`,
           "warn",
@@ -126,14 +120,12 @@ export const runMediaServerPhotoSync = async <TPerson>(
       if (options.mode === "missing" && options.hasPrimaryImageNow) {
         stage = "check current photo";
         if (await options.hasPrimaryImageNow(person)) {
-          options.onOutcome?.(personId, "existing");
           return "skipped";
         }
       }
       if (options.canContinue && !options.canContinue()) return "skipped";
       stage = "upload photo";
       await options.uploadPrimaryImage(options.getPersonId(person), image.content, image.contentType);
-      options.onOutcome?.(personId, "processed");
       if (options.shouldRefreshPerson) {
         try {
           await options.refreshPerson(options.getPersonId(person));
@@ -148,13 +140,16 @@ export const runMediaServerPhotoSync = async <TPerson>(
       return "processed";
     },
     onError: (person, error) => {
-      const personId = options.getPersonId(person);
       const actorName = options.getPersonName(person).trim() || options.getPersonName(person);
       const status = error instanceof MediaServerServiceError ? error.status : getHttpStatus(error);
       if ((stage === "upload photo" || stage === "check current photo") && (status === 401 || status === 403))
         throw error;
-      options.onOutcome?.(personId, "failed");
-      failures.push({ personId, name: actorName, stage, message: formatPersonSyncError(error, options.configuration) });
+      failures.push({
+        personId: options.getPersonId(person),
+        name: actorName,
+        stage,
+        message: formatPersonSyncError(error, options.configuration),
+      });
       options.logger.warn(
         `Failed to update ${options.serviceName} actor photo for ${actorName} (${stage}): ${formatPersonSyncError(error, options.configuration)}`,
       );

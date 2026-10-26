@@ -401,6 +401,7 @@ export const settings = {
       actorAliasConflict: "Actor name conflicts with another alias group",
       globalTimeoutNotGreater: "Global timeout must be greater than per-crawler timeout",
       actorPhotoFolderNotAbsolute: "The actor photo directory must be an absolute path",
+      actorPhotoSyncTimeInvalid: "Use 24-hour HH:mm (e.g. 03:00), or leave empty to disable the daily check",
       jellyfinUserIdNotUuid: "Jellyfin user ID must be a UUID, or leave empty for server default",
     } satisfies Record<ConfigIssueCode, string> as Record<string, string | undefined>,
   },

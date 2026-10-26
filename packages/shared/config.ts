@@ -269,6 +269,7 @@ export type ConfigIssueCode =
   | "actorAliasConflict"
   | "globalTimeoutNotGreater"
   | "actorPhotoFolderNotAbsolute"
+  | "actorPhotoSyncTimeInvalid"
   | "jellyfinUserIdNotUuid";
 
 const actorAliasesSchema = z
@@ -346,6 +347,10 @@ const jellyfinSchema = z.object({
 
 const embySchema = z.object({
   autoSyncActorPhotos: z.boolean().default(true),
+  actorPhotoDailySyncTime: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^$/u, "actorPhotoSyncTimeInvalid" satisfies ConfigIssueCode)
+    .default(""),
   url: z.url().or(z.literal("")).default(""),
   apiKey: z.string().default(""),
   userId: z.string().default(""),

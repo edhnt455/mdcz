@@ -514,7 +514,12 @@ const fields: Record<FieldKey, FieldText> = {
   "emby.autoSyncActorPhotos": {
     label: "Automatically sync actor photos",
     description:
-      "After publication, notify Emby to scan and fill missing actor photos. Recheck on startup and every 30 minutes. Existing photos are preserved; no page needs to stay open.",
+      "After publication, notify Emby to scan and check the published movie's actor photos once. Existing photos are preserved; no automatic polling follows.",
+  },
+  "emby.actorPhotoDailySyncTime": {
+    label: "Daily actor photo check time",
+    description:
+      "Optional 24-hour HH:mm (e.g. 03:00) to fill missing Emby actor photos once daily. Leave empty to disable. Uses the MDCz service's time zone and requires automatic sync to be enabled.",
   },
   "emby.notifyAfterPublish": {
     label: "Refresh folder after organizing",

@@ -34,6 +34,7 @@ export function MediaServerSection() {
         <BoolField name="emby.refreshPersonAfterSync" />
         <BoolField name="emby.notifyAfterPublish" />
         <BoolField name="emby.autoSyncActorPhotos" />
+        <TextField name="emby.actorPhotoDailySyncTime" />
         {services.openActorPhotoSync && (
           <Button type="button" variant="secondary" onClick={services.openActorPhotoSync}>
             {t.tools.autoPhotoSync.open}

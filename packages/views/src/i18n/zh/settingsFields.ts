@@ -406,7 +406,12 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "emby.autoSyncActorPhotos": {
       label: "自动同步演员头像",
-      description: "整理成功后自动通知 Emby 扫描并补全缺失头像，启动及每 30 分钟补查。已有头像不覆盖，无需打开工具页。",
+      description: "影片整理入库后自动通知 Emby 扫描，并检查一次本次影片的演员头像。已有头像不覆盖，不自动循环重查。",
+    },
+    "emby.actorPhotoDailySyncTime": {
+      label: "每日头像补查时间",
+      description:
+        "可选，填写 24 小时制 HH:mm（如 03:00），每天补全一次 Emby 中缺失的演员头像。留空关闭；按 MDCz 服务所在时区执行，需开启自动同步。",
     },
     "emby.notifyAfterPublish": {
       label: "入库后增量刷新目录",

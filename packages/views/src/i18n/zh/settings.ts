@@ -363,6 +363,7 @@ export const settings: Messages["settings"] = {
       actorAliasConflict: "演员名称与其他别名组冲突",
       globalTimeoutNotGreater: "全局超时必须大于单爬虫超时",
       actorPhotoFolderNotAbsolute: "本地演员照片目录必须使用绝对路径",
+      actorPhotoSyncTimeInvalid: "请填写 24 小时制 HH:mm（如 03:00），或留空关闭每日补查",
       jellyfinUserIdNotUuid: "Jellyfin 用户 ID 必须为 UUID，留空则按服务端默认处理",
     } satisfies Record<ConfigIssueCode, string>,
   },

@@ -175,6 +175,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "jellyfin.lockOverviewAfterSync", anchor: "mediaServer" },
   { key: "jellyfin.notifyAfterPublish", anchor: "mediaServer" },
   { key: "emby.autoSyncActorPhotos", anchor: "mediaServer" },
+  { key: "emby.actorPhotoDailySyncTime", anchor: "mediaServer" },
   { key: "emby.url", anchor: "mediaServer" },
   { key: "emby.apiKey", anchor: "mediaServer" },
   { key: "emby.userId", anchor: "mediaServer" },

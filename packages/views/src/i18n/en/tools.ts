@@ -76,17 +76,17 @@ export const tools = {
   autoPhotoSync: {
     title: "Automatic Emby photo sync",
     description:
-      "Photos are uploaded automatically after publication when Emby actors are available. Emby stores them independently. Existing photos are preserved; use manual sync if needed.",
+      "Check actor photos once after publication, optionally once daily at a configured time, or manually. Emby stores the photos independently; existing photos are preserved.",
     status: {
       disabled: "Disabled",
       unconfigured: "Configure Emby first",
       idle: "Ready",
       scheduled: "Scheduled",
-      waiting: "Waiting for Emby / retry",
+      waiting: "Waiting for post-publication check",
       running: "Syncing",
       blocked: "Check connection or permissions",
     },
-    waiting: (count: number) => `${count} actors waiting for Emby`,
+    waiting: (count: number) => `${count} actors awaiting a photo check`,
     lastRun: "Last sync",
     nextRun: "Next check",
     syncNow: "Fill missing photos now",
