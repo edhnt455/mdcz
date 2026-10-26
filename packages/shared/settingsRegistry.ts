@@ -242,6 +242,31 @@ export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
     kind: "dynamic-record",
     reason: "Number mappings are user-defined file name keywords, saved from pending-list repairs.",
   },
+  {
+    path: "embyDeletion.mode",
+    kind: "internal",
+    reason: "Emby deletion mode is edited by the deletion panel and saved in the profile file.",
+  },
+  {
+    path: "embyDeletion.serverId",
+    kind: "internal",
+    reason: "Emby server id is edited by the deletion panel and saved in the profile file.",
+  },
+  {
+    path: "embyDeletion.libraries",
+    kind: "internal",
+    reason: "Linked library identities are edited by the deletion panel and saved in the profile file.",
+  },
+  {
+    path: "embyDeletion.secretHash",
+    kind: "internal",
+    reason: "The webhook secret hash is rotated by the deletion panel and saved in the profile file.",
+  },
+  {
+    path: "embyDeletion.moviePilot",
+    kind: "internal",
+    reason: "The MoviePilot connection and token are edited by the deletion panel and saved in the profile file.",
+  },
   { path: "ui.theme", kind: "internal", reason: "Theme is controlled by the application shell." },
   {
     path: "behavior.updateCheck",

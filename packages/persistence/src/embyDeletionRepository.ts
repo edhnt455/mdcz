@@ -6,7 +6,6 @@ import type { PersistenceDatabase } from "./database";
 import { LibraryRepository } from "./libraryRepository";
 import {
   embyDeletionEvents,
-  embyDeletionSettings,
   libraryItemFiles,
   libraryItems,
   mediaRoots,
@@ -28,44 +27,16 @@ export interface EmbyDeletionLibraryBinding {
 export class EmbyDeletionRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
-  settings() {
-    const row = this.database.db.select().from(embyDeletionSettings).get();
-    if (!row) throw new Error("Emby deletion settings are missing");
-    return {
-      ...row,
-      libraries: JSON.parse(row.librariesJson) as EmbyDeletionLibraryBinding[],
-    };
+  ignorePendingLibraryDeletions(completedAt = Date.now()): void {
+    this.database.db
+      .update(embyDeletionEvents)
+      .set({ status: "ignored", result: "settings_changed", completedAt })
+      .where(and(eq(embyDeletionEvents.status, "pending"), eq(embyDeletionEvents.eventType, "library.deleted")))
+      .run();
   }
 
-  configure(input: { mode: "off" | "observe" | "delete"; serverId: string; libraries: EmbyDeletionLibraryBinding[] }) {
-    this.database.sqlite.transaction(() => {
-      this.database.db
-        .update(embyDeletionSettings)
-        .set({ mode: input.mode, serverId: input.serverId, librariesJson: JSON.stringify(input.libraries) })
-        .where(eq(embyDeletionSettings.id, 1))
-        .run();
-      this.database.db
-        .update(embyDeletionEvents)
-        .set({ status: "ignored", result: "settings_changed", completedAt: Date.now() })
-        .where(and(eq(embyDeletionEvents.status, "pending"), eq(embyDeletionEvents.eventType, "library.deleted")))
-        .run();
-    })();
-  }
-
-  setSecretHash(secretHash: string): void {
-    this.database.db.update(embyDeletionSettings).set({ secretHash }).where(eq(embyDeletionSettings.id, 1)).run();
-  }
-
-  configureMoviePilot(connectionJson: string): void {
-    this.database.sqlite.transaction(() => {
-      if (this.hasCloudWork()) throw new Error("Resolve unfinished STRM deletions before changing MoviePilot");
-      this.database.db
-        .update(embyDeletionSettings)
-        .set({ moviePilotJson: connectionJson })
-        .where(eq(embyDeletionSettings.id, 1))
-        .run();
-      this.database.db.delete(strmCloudBindings).where(eq(strmCloudBindings.blocked, false)).run();
-    })();
+  clearUnblockedBindings(): void {
+    this.database.db.delete(strmCloudBindings).where(eq(strmCloudBindings.blocked, false)).run();
   }
 
   hasCloudWork(): boolean {
@@ -227,6 +198,10 @@ export class EmbyDeletionRepository {
     this.database.db.update(embyDeletionEvents).set(patch).where(eq(embyDeletionEvents.id, id)).run();
   }
 
+  event(id: string): EmbyDeletionEventRow | undefined {
+    return this.database.db.select().from(embyDeletionEvents).where(eq(embyDeletionEvents.id, id)).get();
+  }
+
   finish(id: string, status: "completed" | "ignored" | "needs_review", result: string, now: number): void {
     this.update(id, { status, result, completedAt: now });
   }
@@ -303,13 +278,14 @@ export class EmbyDeletionRepository {
         ),
       )
       .run();
-    const counts = { pending: 0, completed: 0, ignored: 0, needs_review: 0 };
+    const counts = { pending: 0, needs_review: 0 };
     for (const row of this.database.db
       .select({ status: embyDeletionEvents.status, count: sql<number>`count(*)` })
       .from(embyDeletionEvents)
+      .where(inArray(embyDeletionEvents.status, ["pending", "needs_review"]))
       .groupBy(embyDeletionEvents.status)
       .all())
-      counts[row.status] = row.count;
+      if (row.status === "pending" || row.status === "needs_review") counts[row.status] = row.count;
     const recent = this.database.db
       .select({
         id: embyDeletionEvents.id,
@@ -324,7 +300,14 @@ export class EmbyDeletionRepository {
         snapshotJson: embyDeletionEvents.snapshotJson,
       })
       .from(embyDeletionEvents)
-      .orderBy(desc(embyDeletionEvents.receivedAt), desc(embyDeletionEvents.id))
+      .where(
+        sql`${embyDeletionEvents.status} in ('pending', 'needs_review') or (${embyDeletionEvents.status} = 'ignored' and ${embyDeletionEvents.result} in ('would_remove_records', 'would_delete_strm_resource', 'would_keep_shared_resource'))`,
+      )
+      .orderBy(
+        sql`case ${embyDeletionEvents.status} when 'needs_review' then 0 when 'pending' then 1 else 2 end`,
+        desc(embyDeletionEvents.receivedAt),
+        desc(embyDeletionEvents.id),
+      )
       .limit(20)
       .all();
     return { counts, recent };

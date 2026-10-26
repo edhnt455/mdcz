@@ -71,6 +71,13 @@
       "when": 1792886400000,
       "tag": "0009_strm_cloud_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792972800000,
+      "tag": "0010_emby_deletion_settings_to_config",
+      "breakpoints": true
     }
   ]
 }

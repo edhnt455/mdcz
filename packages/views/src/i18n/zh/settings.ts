@@ -198,7 +198,8 @@ export const settings: Messages["settings"] = {
       baseUrl: "MP 地址",
       rootPath: "115 允许根目录",
       token: "MP API_TOKEN",
-      tokenHint: "凭据仅保存在服务端，不回显；留空保留已保存凭据。更换连接后必须重新核验来源。",
+      tokenHint:
+        "凭据写入当前配置文件（默认 config/default.toml），不回显；留空保留已保存凭据。更换连接后必须重新核验来源。",
       save: "保存并验证 MP",
       test: "测试已保存连接",
       bind: "核验 STRM 来源关联",
@@ -212,12 +213,12 @@ export const settings: Messages["settings"] = {
     saved: "联动设置已保存",
     reconcile: "核对已登记文件",
     queued: (count: number) => `已提交 ${count} 个文件核对，按当前已保存的模式处理。`,
-    counts: (pending: number, completed: number, ignored: number, review: number) =>
-      `待处理 ${pending} · 已清理 ${completed} · 已忽略 ${ignored} · 待检查 ${review}`,
-    noEvents: "尚未收到事件。Webhook 地址中的主机必须能从 Emby 访问。",
+    counts: (pending: number, review: number) => `待处理 ${pending} · 待检查 ${review}`,
+    noActions: "暂无待处理事项，通知及处理详情可在日志中查看。",
+    observation: "观察预览",
+    pending: "待处理",
+    review: "待检查",
     noPath: "事件未提供文件路径",
-    sender: (serverId: string) => `Emby Server ID：${serverId}`,
-    states: { pending: "待处理", completed: "处理完成", ignored: "已忽略", needs_review: "待检查" },
     results: {
       sync_disabled: "删除联动已关闭",
       server_not_allowed: "Emby Server ID 不匹配",

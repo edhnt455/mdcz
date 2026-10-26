@@ -220,7 +220,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
         taskEvents,
         invalidateAvailability: () => library.invalidateAvailability(),
         logger: runtimeLogs.getLogger("EmbyDeletion"),
-        credentialsDirectory: path.join(config.runtimePaths.dataDir, "moviepilot-credentials"),
+        config,
       }),
     config,
     libraries,

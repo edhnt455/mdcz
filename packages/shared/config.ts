@@ -2,6 +2,7 @@ import { z } from "zod";
 import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES } from "./assetNaming";
+import { embyDeletionConfigSchema } from "./embyDeletion";
 import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 import {
@@ -604,6 +605,7 @@ export const configurationSchema = z
     personSync: personSyncSchema.default(() => personSyncSchema.parse({})),
     jellyfin: jellyfinSchema.default(() => jellyfinSchema.parse({})),
     emby: embySchema.default(() => embySchema.parse({})),
+    embyDeletion: embyDeletionConfigSchema.default(() => embyDeletionConfigSchema.parse({})),
     shortcuts: shortcutsSchema.default(() => shortcutsSchema.parse({})),
     ui: uiSchema.default(() => uiSchema.parse({})),
     paths: pathsSchema.default(() => pathsSchema.parse({})),

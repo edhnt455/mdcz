@@ -215,7 +215,7 @@ export const settings = {
       rootPath: "115 allowed root",
       token: "MP API_TOKEN",
       tokenHint:
-        "Credentials stay on the server and are never returned. Leave blank to keep the saved credential. Reverify sources after changing connections.",
+        "The credential is saved in the active profile (config/default.toml by default) and is not shown again. Leave blank to keep the saved credential. Reverify sources after changing connections.",
       save: "Save and verify MP",
       test: "Test saved connection",
       bind: "Verify STRM sources",
@@ -228,12 +228,12 @@ export const settings = {
     saved: "Deletion sync settings saved",
     reconcile: "Check registered files",
     queued: (count: number) => `Queued ${count} file checks using the saved mode.`,
-    counts: (pending: number, completed: number, ignored: number, review: number) =>
-      `Pending ${pending} · Completed ${completed} · Ignored ${ignored} · Needs review ${review}`,
-    noEvents: "No events received. The webhook host must be reachable from Emby.",
+    counts: (pending: number, review: number) => `Pending ${pending} · Needs review ${review}`,
+    noActions: "No pending actions. Notification and processing details are available in logs.",
+    observation: "Observation preview",
+    pending: "Pending",
+    review: "Needs review",
     noPath: "No file path in event",
-    sender: (serverId: string) => `Emby server ID: ${serverId}`,
-    states: { pending: "Pending", completed: "Completed", ignored: "Ignored", needs_review: "Needs review" },
     results: {
       sync_disabled: "Deletion sync is off",
       server_not_allowed: "Emby server ID does not match",

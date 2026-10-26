@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   createPersistenceDatabase,
+  type EmbyDeletionEventRow,
   EmbyDeletionRepository,
   LibraryRepository,
   MediaLibraryRepository,
@@ -13,7 +14,9 @@ import {
   ScrapeRunRepository,
   SiteResultRepository,
 } from "@mdcz/persistence";
+import { mergeRuntimeConfig } from "@mdcz/runtime/config";
 import type { MediaLibrary } from "@mdcz/runtime/library";
+import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import type { EmbyDeletionNotification } from "@mdcz/shared/embyDeletion";
 import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -125,6 +128,7 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
       },
     );
   });
+  let configuration = defaultConfiguration;
   const dependencies = {
     persistence: { getState: async () => ({ database, repositories: {} as never }) },
     libraries: { list: async () => [{ ...mediaLibrary, placement: cloud ? "copy" : "move" } as MediaLibrary] },
@@ -133,7 +137,13 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
     invalidateAvailability,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => now,
-    credentialsDirectory: path.join(directory, "mp-credentials"),
+    config: {
+      get: async () => configuration,
+      update: async (patch: DeepPartial<Configuration>) => {
+        configuration = configurationSchema.parse(mergeRuntimeConfig(configuration, patch));
+        return configuration;
+      },
+    },
     moviePilotFetch: fetcher,
   };
   const createService = () => new EmbyDeletionService(dependencies);
@@ -211,6 +221,7 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
     remote,
     fetcher,
     notifications,
+    logger: dependencies.logger,
     invalidateAvailability,
     get database() {
       return database;
@@ -219,6 +230,12 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
       return now;
     },
     repository: () => new EmbyDeletionRepository(database),
+    events: () =>
+      (
+        database.sqlite.prepare("SELECT id FROM emby_deletion_events ORDER BY received_at DESC, id DESC").all() as {
+          id: string;
+        }[]
+      ).map(({ id }) => new EmbyDeletionRepository(database).event(id) as EmbyDeletionEventRow),
     reopen: () => {
       database.close();
       database = createPersistenceDatabase({ path: path.join(directory, "test.sqlite") });
@@ -253,6 +270,11 @@ describe("Emby deletion sync", () => {
     await writeFile(path.join(f.source, "unrelated.mp4"), "source");
     const event = await f.service.accept(f.notification());
     expect(await f.service.accept(f.notification())).toMatchObject({ id: event.id, duplicate: true });
+    expect(f.logger.info.mock.calls.filter(([message]) => message.includes(event.id))).toHaveLength(1);
+    for (let i = 0; i < 25; i++)
+      await f.service.accept(f.notification(`noise-${i}.mp4`, { Server: { Id: "other-server" } }));
+    expect((await f.service.status()).recent.map((entry) => entry.id)).toEqual([event.id]);
+    expect((await f.service.status()).counts).toEqual({ pending: 1, needs_review: 0 });
     await f.advance();
     expect(f.count("library_items")).toBe(1);
     await f.advance();
@@ -266,7 +288,10 @@ describe("Emby deletion sync", () => {
       kind: "invalidate",
       resources: ["library", "pending"],
     });
-    expect((await f.service.status()).recent[0]).toMatchObject({ status: "completed", result: "records_removed" });
+    expect(f.repository().event(event.id)).toMatchObject({ status: "completed", result: "records_removed" });
+    expect((await f.service.status()).recent).toEqual([]);
+    expect((await f.service.status()).counts).toEqual({ pending: 0, needs_review: 0 });
+    expect(f.logger.info).toHaveBeenCalledWith(expect.stringContaining('"result":"records_removed"'));
   });
 
   it.each([
@@ -326,7 +351,9 @@ describe("Emby deletion sync", () => {
     await f.advance();
     await f.advance();
     expect(f.count("library_items")).toBe(1);
-    expect((await f.service.status()).recent[0]?.result).toBe(reason);
+    expect(f.events()[0]?.result).toBe(reason);
+    expect((await f.service.status()).recent).toEqual([]);
+    expect(f.logger.info).toHaveBeenCalledWith(expect.stringContaining(`"result":"${reason}"`));
   });
 
   it.each(["observe", "existing", "reappeared", "updated"] as const)("retains records when %s", async (condition) => {
@@ -340,7 +367,7 @@ describe("Emby deletion sync", () => {
       f.database.sqlite.prepare("UPDATE library_item_files SET updated_at = updated_at + 1").run();
     await f.advance();
     expect(f.count("library_items")).toBe(1);
-    expect((await f.service.status()).recent[0]).toMatchObject({
+    expect(f.events()[0]).toMatchObject({
       status: "ignored",
       result:
         condition === "observe"
@@ -379,7 +406,7 @@ describe("Emby deletion sync", () => {
     });
     await f.service.accept(f.notification());
     await f.advance();
-    expect((await f.service.status()).recent[0]?.result).toBe("waiting_for_media_tasks");
+    expect(f.events()[0]?.result).toBe("waiting_for_media_tasks");
     await runs.finalize({ runId: run.id, disposition: "failed" });
     await f.advance();
     f.maintenance.isBusy = true;
@@ -399,7 +426,7 @@ describe("Emby deletion sync", () => {
       f.database.sqlite.prepare("UPDATE emby_deletion_events SET next_attempt_at = 0").run();
       await f.advance();
     }
-    expect((await f.service.status()).recent[0]).toMatchObject({ status: "needs_review", attempts: 8 });
+    expect(f.events()[0]).toMatchObject({ status: "needs_review", attempts: 8 });
     expect(f.count("library_items")).toBe(1);
     await expect(
       f.service.configure({ mode: "delete", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] }),
@@ -445,7 +472,7 @@ describe("Emby deletion sync", () => {
     await f.advance();
     for (const table of ["library_items", "library_item_files", "pending_items", "site_results"])
       expect(f.count(table)).toBe(1);
-    expect((await f.service.status()).recent[0]).toMatchObject({
+    expect(f.events()[0]).toMatchObject({
       status: "pending",
       attempts: 1,
       result: "simulated write failure",
@@ -480,12 +507,10 @@ describe("copy STRM deep deletion", () => {
     });
     await f.advance();
     await f.advance();
-    expect((await f.service.status()).recent.find((event) => event.id === accepted.id)?.result).toBe(
-      "confirming_source_cleanup",
-    );
+    expect(f.events().find((event) => event.id === accepted.id)?.result).toBe("confirming_source_cleanup");
     expect(f.remote.deleteCalls).toBe(1);
     expect(f.count("library_item_files")).toBe(1);
-    expect((await f.service.status()).recent[0]).toMatchObject({ step: "cleaning_records", status: "pending" });
+    expect(f.events()[0]).toMatchObject({ step: "cleaning_records", status: "pending" });
     await expect(readFile(path.join(f.source, "ABC-123.strm"))).rejects.toMatchObject({ code: "ENOENT" });
     f.reopen();
     await f.advance(f.createService());
@@ -512,6 +537,8 @@ describe("copy STRM deep deletion", () => {
     ).toThrow("suppressed");
     expect(f.count("library_item_files")).toBe(0);
     expect(JSON.stringify(await f.createService().status())).not.toContain("test-mp-token");
+    expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain("test-mp-token");
+    expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain("sample-pickcode");
   });
 
   it("keeps shared cloud resources and sources until the final registered reference is deleted", async () => {
@@ -541,15 +568,13 @@ describe("copy STRM deep deletion", () => {
     const f = await strmFixture("observe");
     expect(await f.service.reconcile()).toEqual({ queued: 0 });
     expect(await f.service.accept({ ...f.event, Event: "library.deleted" })).toMatchObject({ status: "ignored" });
-    expect((await f.service.status()).recent[0].result).toBe("deep_delete_required");
+    expect(f.events()[0].result).toBe("deep_delete_required");
     const event = await f.service.accept(f.event);
     await f.advance();
     await f.advance();
     expect(f.remote.deleteCalls).toBe(0);
     expect(f.count("library_item_files")).toBe(1);
-    expect((await f.service.status()).recent.find((candidate) => candidate.id === event.id)?.result).toBe(
-      "would_delete_strm_resource",
-    );
+    expect(f.events().find((candidate) => candidate.id === event.id)?.result).toBe("would_delete_strm_resource");
     await f.service.configure({ mode: "delete", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] });
     await f.service.retry(event.id);
     await f.advance();
@@ -582,7 +607,7 @@ describe("copy STRM deep deletion", () => {
     if (failure === "lost acknowledgement") {
       f.database.sqlite.prepare("UPDATE emby_deletion_events SET next_attempt_at = 0").run();
       await f.advance();
-      expect((await f.service.status()).recent[0].result).toContain("without a persisted deletion acknowledgement");
+      expect(f.events()[0].result).toContain("without a persisted deletion acknowledgement");
       expect(f.remote.deleteCalls).toBe(1);
     }
   });
@@ -595,7 +620,7 @@ describe("copy STRM deep deletion", () => {
     await f.service.configure({ mode: "off", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] });
     await f.advance();
     expect(f.count("library_item_files")).toBe(1);
-    expect((await f.service.status()).recent[0]).toMatchObject({ status: "pending", step: "cleaning_records" });
+    expect(f.events()[0]).toMatchObject({ status: "pending", step: "cleaning_records" });
     await writeFile(path.join(f.source, "ABC-123.strm"), f.content);
     await rename(
       path.join(f.source, "ABC-123.strm"),
@@ -604,7 +629,7 @@ describe("copy STRM deep deletion", () => {
     await f.service.configure({ mode: "delete", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] });
     await f.advance();
     expect(f.count("library_item_files")).toBe(1);
-    expect((await f.service.status()).recent[0].result).toContain("recreated");
+    expect(f.events()[0].result).toContain("recreated");
     f.database.sqlite.prepare("UPDATE emby_deletion_events SET next_attempt_at = 0").run();
     await f.advance();
     expect(f.count("library_item_files")).toBe(0);

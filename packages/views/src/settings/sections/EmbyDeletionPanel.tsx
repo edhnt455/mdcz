@@ -290,24 +290,22 @@ export function EmbyDeletionPanel({ service }: { service: ServerApiContract["emb
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            {text.counts(
-              status.counts.pending,
-              status.counts.completed,
-              status.counts.ignored,
-              status.counts.needs_review,
-            )}
+            {text.counts(status.counts.pending, status.counts.needs_review)}
           </p>
           {!status.recent.length ? (
-            <p className="text-xs text-muted-foreground">{text.noEvents}</p>
+            <p className="text-xs text-muted-foreground">{text.noActions}</p>
           ) : (
             <ul className="max-h-64 space-y-2 overflow-auto text-xs">
               {status.recent.map((event) => (
                 <li key={event.id} className="space-y-1 rounded-lg bg-muted/40 p-2">
                   <div>
-                    {new Date(event.receivedAt).toLocaleString()} · {text.states[event.status]}
+                    {event.status === "ignored"
+                      ? text.observation
+                      : event.status === "needs_review"
+                        ? text.review
+                        : text.pending}
                   </div>
                   <div>{text.steps[event.step]}</div>
-                  <div>{text.sender(event.serverId)}</div>
                   <div className="break-all">{event.path ?? text.noPath}</div>
                   {event.preview ? (
                     <div className="space-y-1 break-all text-muted-foreground">

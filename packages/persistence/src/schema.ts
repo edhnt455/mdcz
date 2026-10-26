@@ -291,15 +291,6 @@ export const publicationTemporaryPaths = sqliteTable("publication_temporary_path
   restoreTo: text("restore_to"),
 });
 
-export const embyDeletionSettings = sqliteTable("emby_deletion_settings", {
-  id: integer("id").primaryKey(),
-  mode: text("mode").$type<"off" | "observe" | "delete">().notNull().default("off"),
-  serverId: text("server_id").notNull().default(""),
-  librariesJson: text("libraries_json").notNull().default("[]"),
-  secretHash: text("secret_hash"),
-  moviePilotJson: text("movie_pilot_json"),
-});
-
 export const embyDeletionEvents = sqliteTable(
   "emby_deletion_events",
   {
@@ -349,7 +340,6 @@ export const strmCloudBindings = sqliteTable(
 
 export const schema = {
   strmCloudBindings,
-  embyDeletionSettings,
   embyDeletionEvents,
   mediaRoots,
   mediaLibraries,

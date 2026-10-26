@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { EmbyDeletionStep, MoviePilotConnection } from "./moviePilot";
+import { type EmbyDeletionStep, type MoviePilotConnection, moviePilotFileSchema } from "./moviePilot";
 
 export const embyDeletionSettingsSchema = z
   .object({
@@ -30,7 +30,39 @@ export const embyDeletionNotificationSchema = z.object({
     .optional(),
 });
 
+export const embyDeletionLibraryBindingSchema = z.object({
+  id: z.string().min(1),
+  outputPath: z.string().min(1),
+  realPath: z.string().min(1),
+  marker: z.string().min(1),
+  source: z
+    .object({
+      path: z.string().min(1),
+      realPath: z.string().min(1),
+      marker: z.string().min(1),
+    })
+    .optional(),
+});
+
+export const storedMoviePilotSchema = z.object({
+  id: z.string().min(1),
+  baseUrl: z.string().min(1),
+  token: z.string().min(1),
+  storage: z.literal("u115"),
+  rootPath: z.string().min(1),
+  root: moviePilotFileSchema,
+});
+
+export const embyDeletionConfigSchema = z.object({
+  mode: z.enum(["off", "observe", "delete"]).default("off"),
+  serverId: z.string().max(128).default(""),
+  libraries: z.array(embyDeletionLibraryBindingSchema).max(100).default([]),
+  secretHash: z.string().default(""),
+  moviePilot: storedMoviePilotSchema.nullable().default(null),
+});
+
 export type EmbyDeletionSettings = z.infer<typeof embyDeletionSettingsSchema>;
+export type EmbyDeletionConfig = z.infer<typeof embyDeletionConfigSchema>;
 export type EmbyDeletionNotification = z.infer<typeof embyDeletionNotificationSchema>;
 export type EmbyDeletionState = "pending" | "completed" | "ignored" | "needs_review";
 
@@ -40,7 +72,7 @@ export interface EmbyDeletionStatus {
   settings: { mode: EmbyDeletionSettings["mode"]; serverId: string; libraryIds: string[] };
   configured: boolean;
   libraries: { id: string; name: string; outputPath: string }[];
-  counts: Record<EmbyDeletionState, number>;
+  counts: Record<"pending" | "needs_review", number>;
   recent: {
     id: string;
     serverId: string;
