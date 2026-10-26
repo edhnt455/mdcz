@@ -1,5 +1,8 @@
+import type { Writable } from "node:stream";
+import { finished } from "node:stream/promises";
 import type { LogEntryDto, LogListInput, LogListResponse } from "@mdcz/shared/serverDtos";
 import type { TaskEventBus } from "../taskEvents";
+import { createRotatingLogStream } from "./rotatingLogStream";
 
 type RuntimeLogLevel = NonNullable<LogEntryDto["level"]>;
 
@@ -26,11 +29,15 @@ export const decorateTaskLog = (event: Omit<LogEntryDto, "source" | "level">): L
 export class RuntimeLogService {
   private readonly entries: LogEntryDto[] = [];
   private taskLogsClearedAt: string | null = null;
+  private readonly fileLog?: Writable;
 
   constructor(
     private readonly maxEntries = 1000,
     private readonly taskEvents?: TaskEventBus,
-  ) {}
+    logDirectory?: string,
+  ) {
+    if (logDirectory) this.fileLog = createRotatingLogStream(logDirectory);
+  }
 
   getLogger(source: string) {
     const write = (level: "debug" | "info" | "warn" | "error", message: string): void => {
@@ -61,6 +68,7 @@ export class RuntimeLogService {
       this.entries.splice(0, this.entries.length - this.maxEntries);
     }
     this.echoToConsole(level, message);
+    this.fileLog?.write(`${createdAt} ${level.toUpperCase()} [${sourceName}]: ${message}\n`);
     this.taskEvents?.log(entry);
     return entry;
   }
@@ -96,5 +104,12 @@ export class RuntimeLogService {
 
   getTaskLogsClearedAt(): string | null {
     return this.taskLogsClearedAt;
+  }
+
+  async close(): Promise<void> {
+    if (!this.fileLog) return;
+    const drained = finished(this.fileLog);
+    this.fileLog.end();
+    await drained;
   }
 }

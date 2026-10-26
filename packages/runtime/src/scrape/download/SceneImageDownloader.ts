@@ -15,6 +15,7 @@ export type SceneImageSet = { urls: string[]; source?: Website };
 export type DownloadedSceneImage = {
   path: string;
   url: string;
+  source?: Website;
 };
 
 type SceneImageCandidate = { index: number; url: string; host: string | null };
@@ -93,6 +94,7 @@ export class SceneImageDownloader {
         signal: input.signal,
         onSceneProgress: input.onSceneProgress,
       });
+      for (const image of downloadedPaths) image.source = sceneImageSet.source;
 
       if (downloadedPaths.length === attemptedUrls.length) {
         await this.cleanupTemporarySceneImages(bestPaths);

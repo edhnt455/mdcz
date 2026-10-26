@@ -44,6 +44,12 @@ export class FanartAssetDownloader implements AssetDownloader {
     if (createdPath) {
       assets.fanart = createdPath;
       assets.downloaded.push(createdPath);
+      const coverSource = coverPath ? context.imageSources.get(coverPath) : undefined;
+      context.imageSources.set(createdPath, {
+        ...coverSource,
+        source: coverSource?.source ?? "local",
+        derivedFrom: assets.thumb === coverPath ? "thumb" : "cover",
+      });
       return;
     }
 

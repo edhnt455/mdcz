@@ -5,7 +5,8 @@ import { parseHost, parsePort } from "./config";
 export const startServer = async (options: BuildServerOptions = {}): Promise<void> => {
   const port = parsePort(process.env.PORT);
   const host = parseHost(process.env.MDCZ_HOST);
-  const { fastify } = buildServer(options);
+  const { fastify, services } = buildServer(options);
+  const logger = services.runtimeLogs.getLogger("server");
   let shutdownPromise: Promise<void> | undefined;
 
   const shutdown = (): Promise<void> => {
@@ -15,7 +16,7 @@ export const startServer = async (options: BuildServerOptions = {}): Promise<voi
 
   const shutdownForSignal = (): void => {
     const deadline = setTimeout(() => {
-      console.error("Server shutdown exceeded 25 seconds; interrupted work will be recovered on restart");
+      logger.error("Server shutdown exceeded 25 seconds; interrupted work will be recovered on restart");
       process.exit(1);
     }, 25_000);
     deadline.unref();
@@ -34,6 +35,7 @@ export const startServer = async (options: BuildServerOptions = {}): Promise<voi
   try {
     await fastify.listen({ host, port });
   } catch (error) {
+    logger.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
     try {
       await shutdown();
     } catch (closeError) {
@@ -41,5 +43,5 @@ export const startServer = async (options: BuildServerOptions = {}): Promise<voi
     }
     throw error;
   }
-  console.log(`MDCz server listening on http://${host}:${port}`);
+  logger.info(`MDCz server listening on http://${host}:${port}`);
 };

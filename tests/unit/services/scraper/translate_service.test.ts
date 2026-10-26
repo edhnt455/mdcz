@@ -459,6 +459,7 @@ describe("TranslateService term consistency", () => {
       await expect(service.translateCrawlerData(data, config)).resolves.toEqual({
         data: {
           ...data,
+          translation_failures: { title: message, plot: message, genres: message },
           actors: ["小花暖"],
           genres: ["剧情", "Drama"],
           actor_profiles: [{ name: "小花暖", aliases: ["小花のん"], photo_url: "https://example.test/actor.jpg" }],

@@ -27,6 +27,7 @@ export type ProbedImageCandidate = RuntimeProbeResult & { index: number; url: st
 type ProbedImageCandidateWithDimensions = ProbedImageCandidate & { width: number; height: number };
 type DownloadedImageCandidate = {
   path: string;
+  url: string;
   width: number;
   height: number;
   format?: ImageFileFormat;
@@ -51,7 +52,11 @@ export class ImageDownloadService {
     private readonly logger: DownloadLogger,
   ) {}
 
-  async downloadBestImage(candidates: string[], outputPath: string, signal?: AbortSignal): Promise<string | undefined> {
+  async downloadBestImage(
+    candidates: string[],
+    outputPath: string,
+    signal?: AbortSignal,
+  ): Promise<{ path: string; url: string } | undefined> {
     if (candidates.length === 0) {
       return undefined;
     }
@@ -69,7 +74,7 @@ export class ImageDownloadService {
         throwIfAborted(signal);
         const downloaded = await this.downloadValidatedImageCandidate(candidate.url, outputPath, { signal });
         if (downloaded.status === "downloaded") {
-          return downloaded.path;
+          return { path: downloaded.path, url: candidate.url };
         }
       }
 
@@ -165,7 +170,7 @@ export class ImageDownloadService {
     candidates: ProbedImageCandidate[],
     outputPath: string,
     signal?: AbortSignal,
-  ): Promise<string | undefined> {
+  ): Promise<{ path: string; url: string } | undefined> {
     let bestCandidate: DownloadedImageCandidate | null = null;
     const tempPaths = new Set<string>();
 
@@ -185,6 +190,7 @@ export class ImageDownloadService {
         tempPaths.add(downloaded.path);
         const downloadedCandidate: DownloadedImageCandidate = {
           path: downloaded.path,
+          url: candidate.url,
           width: downloaded.width,
           height: downloaded.height,
           format: downloaded.format,
@@ -213,7 +219,7 @@ export class ImageDownloadService {
       await atomicCopyFile(bestCandidate.path, finalPath);
       await this.removePublishedSource(bestCandidate.path);
       tempPaths.delete(bestCandidate.path);
-      return finalPath;
+      return { path: finalPath, url: bestCandidate.url };
     } finally {
       for (const tempPath of tempPaths) {
         await unlink(tempPath).catch(() => undefined);

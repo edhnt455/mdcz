@@ -28,7 +28,11 @@ export interface VideoMeta {
   bitrate?: number;
 }
 
+export type TranslationFailures = Partial<Record<import("./config").TranslationField, string>>;
+
 export interface CrawlerData {
+  /** Failed translation fields persist with the published movie until explicitly repaired. */
+  translation_failures?: TranslationFailures;
   title: string;
   /** Original crawler title retained when a configured title repair changes `title`. */
   original_title?: string;

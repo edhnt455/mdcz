@@ -46,8 +46,10 @@ docker compose logs -f mdcz
 | --- | --- |
 | `/data/config` | 配置文件目录：存放 TOML 规则档案及管理员密码哈希（`auth-state.json`） |
 | `/data/data` | 运行数据目录：存放 SQLite 数据库、任务记录与运行缓存 |
+| `/data/logs` | 应用运行日志：每份约 10 MB，最多三份（含当前文件） |
 | `/media` | 媒体挂载目录：挂载宿主机上的影片文件夹 |
 
+- **文件日志**：当前文件为 `/data/logs/mdcz.log`，达到 10 MiB（10,485,760 字节）前按完整日志记录轮转，历史文件为 `mdcz1.log`、`mdcz2.log`，更旧的文件自动删除。单条日志超过阈值时独占一份文件。重启会按已有文件大小继续写入；退出前等待队列写完。宿主机对应 `${MDCZ_STATE_PATH:-./data}/logs`，日志目录需允许配置的 `PUID`/`PGID` 写入。网页“清空日志”只清空显示，不删除这些文件；Docker 自身的控制台日志轮转仍独立生效。
 - **账号凭据安全**：管理员密码以加盐哈希（scrypt）的形式安全保存在 `auth-state.json`（文件权限为 `0600`）。管理员账号一旦设置便长期有效，即使媒体库中没有任何影片或被清空，也不会重新要求注册。
 - **旧版本明文凭据说明**：旧版本明文格式的认证文件不做自动迁移。从旧版升级前，请先停止服务并备份数据，删除旧的 `auth-state.json` 后启动，随后在网页上重新设置管理员密码即可（这不会影响数据库与已有影片）。
 - **用户权限（PUID / PGID）**：容器启动时会自动降权为你指定的 `PUID`/`PGID` 用户（默认 1000:1000）运行，确保 MDCz 生成的刮削海报与 NFO 文件在宿主机上能被正常读写。创建文件的掩码默认为 `UMASK=022`；若共享文件夹组内需要写权限，可设置为 `002`。
@@ -70,6 +72,9 @@ docker compose ps
 
 # 查看实时运行日志
 docker compose logs --tail=200 -f mdcz
+
+# 查看持久化到数据目录的应用日志
+docker compose exec mdcz tail -n 200 -F /data/logs/mdcz.log
 
 # 运行自检工具（检查数据库路径、SQLite 版本、数据完整性及外键约束）
 docker compose exec mdcz docker-entrypoint.sh node server.js doctor

@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type AggregationResult, ImageWatermarkService } from "@mdcz/runtime/scrape";
+import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { type AggregationResult, ImageWatermarkService, TranslateService } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { PendingBatchResponse, PendingKindDto } from "@mdcz/shared/pending";
@@ -128,6 +129,97 @@ beforeEach(() => {
 });
 
 describe("buildServer scrape integration", () => {
+  it("records published movies with translation errors as failed and retries from their published paths", async () => {
+    const root = await createTempRoot("translation-failed-scrape");
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    const translate = vi
+      .spyOn(TranslateService.prototype, "translateMetadata")
+      .mockRejectedValueOnce(new Error("Translation provider unavailable"))
+      .mockImplementationOnce(async (input) => ({
+        title: "补译标题",
+        plot: input.plot,
+        genres: input.genres.map(() => "剧情"),
+      }))
+      .mockImplementation(async (input) => ({
+        title: input.title ? "补译标题" : null,
+        plot: input.plot ? "补译简介" : null,
+        genres: input.genres.map(() => "剧情"),
+      }));
+    try {
+      const { fastify, services } = await createTestServer({
+        scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+      });
+      await services.config.update({
+        translate: { enableTranslation: true },
+        download: {
+          downloadThumb: false,
+          downloadPoster: false,
+          downloadFanart: false,
+          downloadSceneImages: false,
+          downloadTrailer: false,
+        },
+      });
+      const token = await loginAsAdmin(fastify);
+      const { rootId, libraryId } = await createTestLibrary(fastify, token, root, {
+        folderTemplate: "{title}/{number}",
+      });
+      const started = await fastify.inject({
+        method: "POST",
+        url: "/trpc/scrape.start",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { executionMode: "batch", libraryId, refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+      });
+      expect(started.statusCode).toBe(200);
+      const taskId = started.json().result.data.runId;
+      await waitForScrapeRunStatus(fastify, token, taskId, "failed");
+      const snapshot = await services.scrape.snapshot({ taskId });
+      expect(snapshot.task).toMatchObject({ successCount: 0, failedCount: 1 });
+      expect(snapshot.items[0]).toMatchObject({
+        status: "failed",
+        error: expect.stringContaining("Translation failed"),
+      });
+      const state = await services.persistence.getState();
+      const [movie] = await state.repositories.library.listEntries();
+      if (!movie.crawlerDataJson) throw new Error("Missing published metadata");
+      expect(JSON.parse(movie.crawlerDataJson).translation_failures).toMatchObject({
+        title: "Translation provider unavailable",
+      });
+      const { nfoRootId, nfoRelativePath } = snapshot.items[0];
+      if (!nfoRootId || !nfoRelativePath) throw new Error("Missing published NFO");
+      const nfoRoot = await state.repositories.mediaRoots.get(nfoRootId);
+      const nfoPath = join(nfoRoot.hostPath, nfoRelativePath);
+      expect(parseNfoSnapshot(await readFile(nfoPath, "utf8")).crawlerData.translation_failures?.title).toBe(
+        "Translation provider unavailable",
+      );
+      await expect(stat(join(root, "ABC-123.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
+
+      const retried = await services.scrape.retry({ taskId });
+      await waitForScrapeRunStatus(fastify, token, retried.task.id, "failed");
+      const partial = await services.scrape.snapshot({ taskId: retried.task.id });
+      expect(partial.items[0].crawlerData?.translation_failures).toEqual({
+        plot: expect.stringContaining("source echoed"),
+      });
+      expect(partial.items[0].outputRelativePath).not.toBe(snapshot.items[0].outputRelativePath);
+      const repairedRun = await services.scrape.retry({ taskId: retried.task.id });
+      await waitForScrapeRunStatus(fastify, token, repairedRun.task.id, "completed");
+      const repairedSnapshot = await services.scrape.snapshot({ taskId: repairedRun.task.id });
+      expect(repairedSnapshot.task).toMatchObject({
+        successCount: 1,
+        failedCount: 0,
+      });
+      const repairedPath = repairedSnapshot.items[0].nfoRelativePath;
+      if (!repairedPath) throw new Error("Missing repaired NFO path");
+      const repaired = parseNfoSnapshot(await readFile(join(nfoRoot.hostPath, repairedPath), "utf8")).crawlerData;
+      expect(repaired.title_zh).toBe("补译标题");
+      expect(repaired.translation_failures).toBeUndefined();
+      const [updated] = await state.repositories.library.listEntries();
+      if (!updated.crawlerDataJson) throw new Error("Missing repaired metadata");
+      expect(JSON.parse(updated.crawlerDataJson).translation_failures).toBeUndefined();
+    } finally {
+      translate.mockRestore();
+    }
+  });
+
   it.each([
     "files",
     "empty",

@@ -3,6 +3,7 @@ import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse } from "@mdcz/runtime/crawler/base/types";
 import { getCrawlerExecutionSource, NetworkClient, runWithScrapeItem } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
+import { noopRuntimeLogger } from "@mdcz/runtime/shared";
 import { Website } from "@mdcz/shared/enums";
 import type { FailureReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";
@@ -381,6 +382,7 @@ describe("AggregationService", () => {
         Website.DMM,
         {
           title: "DMM Title",
+          plot: "DMM Plot",
           genres: ["DMM Genre"],
           studio: "DMM Studio",
           durationSeconds: 7_200,
@@ -417,9 +419,12 @@ describe("AggregationService", () => {
       },
     });
 
-    const result = await new AggregationService(new MultiResultCrawlerProvider(siteResults), { config }).aggregate(
-      "ABF-075",
-    );
+    const messages: string[] = [];
+    const service = new AggregationService(new MultiResultCrawlerProvider(siteResults), {
+      config,
+      logger: { ...noopRuntimeLogger, info: (message) => messages.push(message) },
+    });
+    const result = await service.aggregate("ABF-075");
 
     expect(result?.data.title).toBe("DMM TV Title");
     expect(result?.data.genres).toEqual(["DMM Genre"]);
@@ -433,6 +438,23 @@ describe("AggregationService", () => {
     expect(result?.sources.durationSeconds).toBe(Website.DMM);
     expect(result?.sources.rating).toBe(Website.DMM);
     expect(result?.sources.trailer_url).toBe(Website.DMM);
+    await service.aggregate("ABF-075");
+    const sourceLogs = messages
+      .filter((message) => message.startsWith("[metadata-sources] "))
+      .map((message) => JSON.parse(message.slice("[metadata-sources] ".length)));
+    expect(sourceLogs).toEqual([
+      {
+        number: "ABF-075",
+        fields: {
+          title: { source: Website.DMM_TV },
+          plot: { source: Website.DMM },
+          thumb_url: { source: Website.DMM },
+          poster_url: { source: "absent" },
+          scene_images: { source: "absent" },
+        },
+      },
+      sourceLogs[0],
+    ]);
   });
 
   it("uses PPVDATABANK as an FC2 fallback when higher-priority sources miss seller and image fields", async () => {

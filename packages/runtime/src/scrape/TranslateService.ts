@@ -1,7 +1,7 @@
 import { toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { TranslateEngine } from "@mdcz/shared/enums";
-import type { CrawlerData } from "@mdcz/shared/types";
+import type { CrawlerData, TranslationFailures } from "@mdcz/shared/types";
 import {
   isUnrecoverableNetworkError,
   type RuntimeNetworkClient,
@@ -79,7 +79,10 @@ export class TranslateService {
     kept: ReadonlySet<keyof CrawlerData> = new Set(),
   ): Promise<{ data: CrawlerData; error: string | null }> {
     if (!config.translate.enableTranslation) {
-      return { data: { ...data, title_zh: settled.title, plot_zh: settled.plot }, error: null };
+      return {
+        data: { ...data, title_zh: settled.title, plot_zh: settled.plot },
+        error: [...new Set(Object.values(data.translation_failures ?? {}))].join("; ") || null,
+      };
     }
 
     throwIfAborted(signal);
@@ -100,6 +103,7 @@ export class TranslateService {
           (data.actor_profiles ?? []).map((profile) => this.actorNameNormalizer.normalizeProfile(profile)),
         );
     const selectedFields = new Set(config.translate.fields);
+    const failures: TranslationFailures = { ...data.translation_failures };
     const prepareField = (
       field: "title" | "plot",
       input: string | undefined,
@@ -107,14 +111,14 @@ export class TranslateService {
       if (field in settled) return { source: null, translated: settled[field] };
       const text = normalizeNewlines(input ?? "").trim();
       if (!text || !selectedFields.has(field)) return { source: null, translated: undefined };
-      if (detectLanguage(text) === "zh") return { source: null, translated: ensureTargetChinese(text, target) };
+      if (!failures[field] && detectLanguage(text) === "zh")
+        return { source: null, translated: ensureTargetChinese(text, target) };
       return { source: text, translated: undefined };
     };
     const fields = { title: prepareField("title", data.title), plot: prepareField("plot", data.plot) };
     const translateGenres = selectedFields.has("genres") && !kept.has("genres");
     const genres = await this.genreTranslator.resolve(translateGenres ? (data.genres ?? []) : [], target, signal);
     let metadataTranslation: Awaited<ReturnType<TranslateService["translateMetadata"]>> | null = null;
-    let translationError: string | null = null;
     if (fields.title.source || fields.plot.source || genres.unresolvedEntries.length > 0) {
       try {
         metadataTranslation = await this.translateMetadata(
@@ -129,7 +133,10 @@ export class TranslateService {
         );
       } catch (error) {
         if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
-        translationError = toErrorMessage(error);
+        const translationError = toErrorMessage(error);
+        if (fields.title.source) failures.title = translationError;
+        if (fields.plot.source) failures.plot = translationError;
+        if (genres.unresolvedEntries.length) failures.genres = translationError;
         this.logger.warn(`Translation failed for ${data.number}: ${translationError}`);
       }
     }
@@ -143,12 +150,25 @@ export class TranslateService {
       const returned = normalizeNewlines(metadataTranslation[field] ?? "").trim();
       if (returned && returned !== prepared.source) {
         prepared.translated = ensureTargetChinese(returned, target);
+        delete failures[field];
         continue;
       }
       const message = `Translation engine failed for ${field} (${data.number}), returning original text: ${returned ? "source echoed" : "engine returned no translation"}`;
       this.logger.warn(message);
-      translationError = translationError ? `${translationError}; ${message}` : message;
+      failures[field] = message;
     }
+
+    if (translateGenres && metadataTranslation) {
+      if (
+        metadataTranslation.genres.length === genres.unresolvedEntries.length &&
+        metadataTranslation.genres.every((genre) => genre?.trim())
+      ) {
+        delete failures.genres;
+      } else if (genres.unresolvedEntries.length) {
+        failures.genres = "Translation engine returned incomplete genres";
+      }
+    }
+    const { translation_failures: _previousFailures, ...sourceData } = data;
 
     throwIfAborted(signal);
     const title_zh = fields.title.translated;
@@ -159,14 +179,15 @@ export class TranslateService {
 
     return {
       data: {
-        ...data,
+        ...sourceData,
+        ...(Object.keys(failures).length ? { translation_failures: failures } : {}),
         title_zh,
         plot_zh,
         actors: keepActors ? mappedActors : toUniqueActorNames(mappedActors),
         actor_profiles: mappedActorProfiles.length > 0 ? mappedActorProfiles : data.actor_profiles,
         genres: mappedGenres,
       },
-      error: translationError,
+      error: [...new Set(Object.values(failures))].join("; ") || null,
     };
   }
 

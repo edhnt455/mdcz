@@ -7,7 +7,13 @@ import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { resolvePublicationAssetLayout } from "@mdcz/runtime/publication/assetLayout";
 import { prepareMovieArtifacts } from "@mdcz/runtime/publication/movieArtifacts";
 import { WriteOutput } from "@mdcz/runtime/publication/WriteOutput";
-import { DirectoryInventory, DownloadManager, downloadCrawlerAssets, NfoGenerator } from "@mdcz/runtime/scrape";
+import {
+  DirectoryInventory,
+  DownloadManager,
+  downloadCrawlerAssets,
+  type ImageAlternatives,
+  NfoGenerator,
+} from "@mdcz/runtime/scrape";
 import { resolveThumbToPosterCropRegion } from "@mdcz/runtime/scrape/download/assets/PosterImageDerivationService";
 import { SceneImageAssetDownloader } from "@mdcz/runtime/scrape/download/assets/SceneImageAssetDownloader";
 import { TrailerAssetDownloader } from "@mdcz/runtime/scrape/download/assets/TrailerAssetDownloader";
@@ -126,10 +132,12 @@ const createSubject = async (
     new PersistentCooldownStore({
       filePath: join(root, "image-host-cooldowns.json"),
     });
+  const logger = { info: vi.fn(), warn: vi.fn() };
   const manager = new DownloadManager(networkClient as unknown as RuntimeDownloadNetworkClient, {
     imageHostCooldownStore,
+    logger,
   });
-  return { root, networkClient, manager };
+  return { root, networkClient, manager, logger };
 };
 
 const mockValid = (valid = true) =>
@@ -208,7 +216,7 @@ const downloadPrimary = (
   manager: DownloadManager,
   root: string,
   data: Partial<CrawlerData>,
-  alternatives: { thumb_url?: string[]; poster_url?: string[] } = {},
+  alternatives: Partial<ImageAlternatives> = {},
 ) => manager.downloadAll(root, createCrawlerData(data), primaryOnly(), alternatives);
 
 const expectPrimary = async (
@@ -577,7 +585,7 @@ describe("DownloadManager keep flags", () => {
 
     for (const testCase of cases) {
       vi.restoreAllMocks();
-      const { root, manager, networkClient } = await createSubject({ "thumb.jpg": "old-thumb" });
+      const { root, manager, networkClient, logger } = await createSubject({ "thumb.jpg": "old-thumb" });
       mockValid(testCase.valid);
       const assets = await manager.downloadAll(
         root,
@@ -600,6 +608,16 @@ describe("DownloadManager keep flags", () => {
       await expect(readFile(join(root, "thumb.jpg"), "utf8")).resolves.toBe(testCase.content);
       expect(networkClient.probe).toHaveBeenCalledTimes(testCase.probes);
       expect(networkClient.download).toHaveBeenCalledTimes(testCase.probes);
+      const sourceLog = logger.info.mock.calls.find(([message]) => message.startsWith("[image-sources] "))?.[0];
+      expect(JSON.parse(sourceLog?.slice("[image-sources] ".length) ?? "null")).toMatchObject({
+        number: "ABC-123",
+        fields: {
+          thumb: [
+            { status: testCase.downloaded ? "downloaded" : "local", source: testCase.downloaded ? "unknown" : "local" },
+          ],
+          poster: { status: "disabled" },
+        },
+      });
     }
 
     vi.restoreAllMocks();
@@ -738,7 +756,7 @@ describe("DownloadManager keep flags", () => {
 
   it("crops tiny posters and copies fanart from one cover download, with or without the thumb", async () => {
     for (const downloadThumb of [true, false]) {
-      const { root, manager, networkClient } = await createSubject();
+      const { root, manager, networkClient, logger } = await createSubject();
       networkClient.download.mockImplementation(async (url, outputPath) => {
         if (url.includes("thumb")) {
           await writeSvgImage(outputPath, { width: 800, height: 500, color: "#4a8bd6" });
@@ -770,7 +788,18 @@ describe("DownloadManager keep flags", () => {
         downloadSceneImages: false,
         downloadTrailer: false,
       });
-      const assets = await manager.downloadAll(root, data, config, {}, { onDerivedPosterSource });
+      const assets = await manager.downloadAll(
+        root,
+        data,
+        config,
+        {
+          image_sources: {
+            thumb_url: { "https://example.com/thumb.jpg": Website.JAVBUS },
+            poster_url: { "https://example.com/poster.jpg": Website.JAVDB },
+          },
+        },
+        { onDerivedPosterSource },
+      );
       validateSpy.mockRestore();
       const cropRegion = resolveThumbToPosterCropRegion(800, 500);
       expect(assets.poster).toBe(join(root, "poster.jpg"));
@@ -785,6 +814,16 @@ describe("DownloadManager keep flags", () => {
       if (!downloadThumb) await expect(access(join(root, "thumb.jpg"))).rejects.toThrow();
       expect(data.poster_source_url).toBeUndefined();
       expect(onDerivedPosterSource).toHaveBeenCalledWith("https://example.com/thumb.jpg");
+      const sourceLog = logger.info.mock.calls.find(([message]) => message.startsWith("[image-sources] "))?.[0];
+      const fields = JSON.parse(sourceLog?.slice("[image-sources] ".length) ?? "null").fields;
+      const derived = {
+        status: "derived",
+        source: Website.JAVBUS,
+        host: "example.com",
+        derivedFrom: downloadThumb ? "thumb" : "cover",
+      };
+      expect(fields.poster).toEqual([derived]);
+      expect(fields.fanart).toEqual([derived]);
       expect(await imageUtils.validateImage(join(root, "poster.jpg"), 1)).toMatchObject({
         valid: true,
         width: cropRegion?.width,
@@ -911,9 +950,21 @@ describe("DownloadManager keep flags", () => {
 
     for (const testCase of cases) {
       vi.restoreAllMocks();
-      const { root, manager, networkClient } = await createSubject();
+      const { root, manager, networkClient, logger } = await createSubject();
       testCase.setup(networkClient);
-      const assets = await downloadPrimary(manager, root, testCase.data, testCase.alternatives);
+      const assets = await downloadPrimary(manager, root, testCase.data, {
+        ...testCase.alternatives,
+        image_sources: {
+          thumb_url: {
+            [testCase.data.thumb_url]: Website.JAVBUS,
+            [testCase.expectedThumb]: Website.JAVDB,
+          },
+          poster_url: {
+            [testCase.data.poster_url]: Website.JAVBUS,
+            [testCase.expectedPoster]: Website.JAVDB,
+          },
+        },
+      });
       await expectPrimary(root, assets, testCase.expectedThumb, testCase.expectedPoster);
       const downloadedUrls = networkClient.download.mock.calls.map(([url]) => url);
       expect(downloadedUrls).toEqual(expect.arrayContaining(testCase.expectedDownloadCalls));
@@ -923,6 +974,15 @@ describe("DownloadManager keep flags", () => {
       if ("expectedProbeCalls" in testCase && testCase.expectedProbeCalls !== undefined) {
         expect(networkClient.probe).toHaveBeenCalledTimes(testCase.expectedProbeCalls);
       }
+      const sourceLog = logger.info.mock.calls.find(([message]) => message.startsWith("[image-sources] "))?.[0];
+      expect(JSON.parse(sourceLog?.slice("[image-sources] ".length) ?? "null")).toMatchObject({
+        number: "ABC-123",
+        fields: {
+          thumb: [{ status: "downloaded", source: Website.JAVDB, host: "cdn.example.com" }],
+          poster: [{ status: "downloaded", source: Website.JAVDB, host: "cdn.example.com" }],
+        },
+      });
+      expect(sourceLog).not.toContain("https://");
     }
   });
 
@@ -1039,7 +1099,7 @@ describe("DownloadManager keep flags", () => {
 
     for (const testCase of cases) {
       vi.restoreAllMocks();
-      const { root, manager, networkClient } = await createSubject(
+      const { root, manager, networkClient, logger } = await createSubject(
         testCase.preserve ? { "extrafanart/fanart1.jpg": "existing-scene" } : {},
       );
       const folder = testCase.folder ?? "extrafanart";
@@ -1105,7 +1165,11 @@ describe("DownloadManager keep flags", () => {
         outputDir: stagingDir,
         existingAssetDir: root,
         inventory,
-        imageAlternatives: { scene_images: [urls("fallback", testCase.fallback)] },
+        sources: { scene_images: Website.JAVBUS },
+        imageAlternatives: {
+          scene_images: [urls("fallback", testCase.fallback)],
+          scene_image_sources: [Website.JAVDB],
+        },
         callbacks: { assetDecisions },
       });
       const expectedUrls =
@@ -1116,6 +1180,21 @@ describe("DownloadManager keep flags", () => {
             : [];
       if (config.download.downloadSceneImages) expect(downloaded.crawlerData.scene_images).toEqual(expectedUrls);
       expect(downloaded.assets.sceneImages).toHaveLength(testCase.count);
+      const sourceLog = logger.info.mock.calls.find(([message]) => message.startsWith("[image-sources] "))?.[0];
+      const sceneSources = JSON.parse(sourceLog?.slice("[image-sources] ".length) ?? "null").fields.scene_images;
+      expect(sceneSources).toEqual(
+        testCase.count === 0
+          ? { status: testCase.enabled === false ? "disabled" : "missing" }
+          : Array.from({ length: testCase.count }, () =>
+              testCase.preserve
+                ? { status: "local", source: "local" }
+                : {
+                    status: "downloaded",
+                    source: testCase.selected === "fallback" ? Website.JAVDB : Website.JAVBUS,
+                    host: `${testCase.selected}.example.com`,
+                  },
+            ),
+      );
       if (testCase.selected === "none" || testCase.preserve) expect(networkClient.download).not.toHaveBeenCalled();
 
       const publicationInput = {

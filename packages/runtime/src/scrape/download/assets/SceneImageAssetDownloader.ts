@@ -99,6 +99,7 @@ export class SceneImageAssetDownloader implements AssetDownloader {
       }
       assets.sceneImages.push(finalPath);
       assets.downloaded.push(finalPath);
+      context.imageSources.set(finalPath, { source: sceneImage.source ?? "unknown", url: sceneImage.url });
     }
 
     for (let index = finalizedSceneCount; index < successfulSceneImages.length; index += 1) {

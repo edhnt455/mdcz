@@ -1,3 +1,4 @@
+import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { ImageAlternatives, SourceMap } from "../aggregation";
 import { buildDmmAwsImageCandidates, isDmmImageUrl } from "../utils/dmmImage";
@@ -19,17 +20,11 @@ const normalizeUrl = (input?: string): string | null => {
   return null;
 };
 
-const cloneSceneImageAlternatives = (sets: ImageAlternatives["scene_images"] | undefined): string[][] =>
-  (sets ?? []).map((urls) => [...urls]);
-
-const cloneSceneImageAlternativeSources = (
-  sources: ImageAlternatives["scene_image_sources"] | undefined,
-): NonNullable<ImageAlternatives["scene_image_sources"]> => [...(sources ?? [])];
-
 const expandDmmPrimaryImageAlternatives = (
   primaryUrl: string | undefined,
   alternatives: string[] | undefined,
   rawNumber: string,
+  imageSources: Record<string, Website>,
 ): string[] => {
   const seen = new Set<string>();
   const expanded: string[] = [];
@@ -49,6 +44,7 @@ const expandDmmPrimaryImageAlternatives = (
     seen.add(normalizedPrimary);
     for (const candidate of buildDmmAwsImageCandidates(normalizedPrimary, rawNumber)) {
       append(candidate);
+      if (imageSources[normalizedPrimary]) imageSources[candidate] ??= imageSources[normalizedPrimary];
     }
   }
 
@@ -62,18 +58,11 @@ const expandDmmPrimaryImageAlternatives = (
     expanded.push(normalized);
     for (const candidate of buildDmmAwsImageCandidates(normalized, rawNumber)) {
       append(candidate);
+      if (imageSources[normalized]) imageSources[candidate] ??= imageSources[normalized];
     }
   }
 
   return expanded;
-};
-
-const hasDmmPrimaryImageUrl = (
-  field: "thumb_url" | "poster_url",
-  data: Pick<CrawlerData, "thumb_url" | "poster_url">,
-  _sources: Pick<SourceMap, "thumb_url" | "poster_url"> | undefined,
-): boolean => {
-  return isDmmImageUrl(data[field]);
 };
 
 export const prepareImageAlternativesForDownload = (
@@ -81,21 +70,29 @@ export const prepareImageAlternativesForDownload = (
   imageAlternatives: Partial<ImageAlternatives> = {},
   sources?: Pick<SourceMap, "thumb_url" | "poster_url" | "scene_images">,
 ): Partial<ImageAlternatives> => {
+  const imageSources: NonNullable<ImageAlternatives["image_sources"]> = {};
   const prepared: Partial<ImageAlternatives> = {
     thumb_url: [...(imageAlternatives.thumb_url ?? [])],
     poster_url: [...(imageAlternatives.poster_url ?? [])],
-    scene_images: cloneSceneImageAlternatives(imageAlternatives.scene_images),
+    scene_images: (imageAlternatives.scene_images ?? []).map((urls) => [...urls]),
     scene_images_source: imageAlternatives.scene_images_source ?? sources?.scene_images,
-    scene_image_sources: cloneSceneImageAlternativeSources(imageAlternatives.scene_image_sources),
+    scene_image_sources: [...(imageAlternatives.scene_image_sources ?? [])],
+    image_sources: imageSources,
   };
 
-  return {
-    ...prepared,
-    thumb_url: hasDmmPrimaryImageUrl("thumb_url", data, sources)
-      ? expandDmmPrimaryImageAlternatives(data.thumb_url, imageAlternatives.thumb_url, data.number)
-      : prepared.thumb_url,
-    poster_url: hasDmmPrimaryImageUrl("poster_url", data, sources)
-      ? expandDmmPrimaryImageAlternatives(data.poster_url, imageAlternatives.poster_url, data.number)
-      : prepared.poster_url,
-  };
+  for (const field of ["thumb_url", "poster_url"] as const) {
+    const fieldSources = { ...imageAlternatives.image_sources?.[field] };
+    const primary = normalizeUrl(data[field]);
+    if (primary && sources?.[field]) fieldSources[primary] = sources[field];
+    if (isDmmImageUrl(data[field])) {
+      prepared[field] = expandDmmPrimaryImageAlternatives(
+        data[field],
+        imageAlternatives[field],
+        data.number,
+        fieldSources,
+      );
+    }
+    imageSources[field] = fieldSources;
+  }
+  return prepared;
 };

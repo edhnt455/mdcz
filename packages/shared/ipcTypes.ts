@@ -118,7 +118,7 @@ export type AmazonPosterApplyResultItem = {
   error?: string;
 };
 
-export type BatchTranslateField = "title" | "plot";
+export type BatchTranslateField = import("./config").TranslationField;
 
 /**
  * `all` translates the source text again even where a translation exists, e.g. after switching models; `restore`
@@ -133,6 +133,7 @@ export type BatchTranslateScanItem = {
   number: string;
   title: string;
   pendingFields: BatchTranslateField[];
+  reason: "task_failed" | "content";
 };
 
 export type BatchTranslateApplyResultItem = {

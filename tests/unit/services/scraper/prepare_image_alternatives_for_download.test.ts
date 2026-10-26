@@ -24,6 +24,10 @@ describe("prepareImageAlternativesForDownload", () => {
       {
         thumb_url: ["https://cdn.example.com/thumb-backup.jpg"],
         poster_url: ["https://cdn.example.com/poster-backup.jpg"],
+        image_sources: {
+          thumb_url: { "https://cdn.example.com/thumb-backup.jpg": Website.JAVBUS },
+          poster_url: { "https://cdn.example.com/poster-backup.jpg": Website.JAV321 },
+        },
       },
       {
         thumb_url: Website.AVBASE,
@@ -40,6 +44,18 @@ describe("prepareImageAlternativesForDownload", () => {
       "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf125/abf125ps.jpg",
       "https://cdn.example.com/poster-backup.jpg",
     ]);
+    expect(result.image_sources).toEqual({
+      thumb_url: {
+        "https://pics.dmm.co.jp/digital/video/abf00125/abf00125pl.jpg": Website.AVBASE,
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf00125/abf00125pl.jpg": Website.AVBASE,
+        "https://cdn.example.com/thumb-backup.jpg": Website.JAVBUS,
+      },
+      poster_url: {
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf00125/abf00125ps.jpg": Website.JAVDB,
+        "https://awsimgsrc.dmm.co.jp/pics_dig/digital/video/abf125/abf125ps.jpg": Website.JAVDB,
+        "https://cdn.example.com/poster-backup.jpg": Website.JAV321,
+      },
+    });
   });
 
   it("leaves non-DMM image URLs untouched", () => {

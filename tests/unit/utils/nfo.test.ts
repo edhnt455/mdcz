@@ -108,6 +108,7 @@ describe("parseNfo", () => {
         publisher: "PRESTIGE",
         plot: "Original plot & details",
         plot_zh: "中文简介",
+        translation_failures: { title: "content_filter & no output", genres: "Request timeout" },
         genres: [],
         scene_images: [],
         website: Website.DMM,
@@ -134,6 +135,9 @@ describe("parseNfo", () => {
     expect(parsed.durationSeconds).toBe(5400);
     expect(parsed.plot).toBe("Original plot & details");
     expect(parsed.plot_zh).toBe("中文简介");
+    expect(parsed.translation_failures).toEqual({ title: "content_filter & no output", genres: "Request timeout" });
+    const repaired = new NfoGenerator().mergeEditableXml(xml, { ...parsed, translation_failures: undefined });
+    expect(parseNfoSnapshot(repaired).crawlerData.translation_failures).toBeUndefined();
   });
 
   it("uses outline as the plot fallback", () => {

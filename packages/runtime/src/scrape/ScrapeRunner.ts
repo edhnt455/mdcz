@@ -456,6 +456,7 @@ export class ScrapeRunner {
       const file = entry.files.find((f) => f.id === id) ?? entry.files[0];
       const nfoAsset = entry.assets.find((a) => a.kind === "nfo");
       const crawlerData = entry.crawlerDataJson ? (JSON.parse(entry.crawlerDataJson) as CrawlerData) : null;
+      const translationError = Object.values(crawlerData?.translation_failures ?? {}).join("; ");
       const root = await this.deps.persistence.mediaRoots.get(file.rootId).catch(() => null);
       return {
         result: {
@@ -466,8 +467,8 @@ export class ScrapeRunner {
           outputRootId: file.rootId,
           relativePath: file.rootRelativePath,
           fileName: file.fileName,
-          status: "success",
-          error: null,
+          status: translationError ? "failed" : "success",
+          error: translationError ? `Translation failed: ${translationError}` : null,
           crawlerData,
           nfoRootId: nfoAsset?.rootId ?? null,
           nfoRelativePath: nfoAsset?.relativePath ?? null,
@@ -619,12 +620,27 @@ export class ScrapeRunner {
     for (let previousId = run.previousRunId; previousId; previousId = lineage[0].previousRunId) {
       lineage.unshift(await this.deps.persistence.scrapeRuns.get(previousId));
     }
-    const itemKey = (item: { rootId: string; relativePath: string }) => `${item.rootId}\0${item.relativePath}`;
+    const publishedLocations = new Map<string, RootFileRef>();
+    for (const ancestor of lineage) {
+      for (const item of this.terminalSnapshots.get(ancestor.id)?.items ?? []) {
+        if (!item.outputRootId || !item.outputRelativePath) continue;
+        const target = { rootId: item.outputRootId, relativePath: item.outputRelativePath };
+        for (const [key, location] of publishedLocations) {
+          if (location.rootId === item.rootId && location.relativePath === item.relativePath)
+            publishedLocations.set(key, target);
+        }
+        publishedLocations.set(`${item.rootId}\0${item.relativePath}`, target);
+      }
+    }
+    const itemKey = (item: { rootId: string; relativePath: string }) => {
+      const location = publishedLocations.get(`${item.rootId}\0${item.relativePath}`) ?? item;
+      return `${location.rootId}\0${location.relativePath}`;
+    };
     const batchItems = new Map<string, (typeof run.items)[number]>();
     const itemsById = new Map<string, (typeof run.items)[number]>();
     for (const ancestor of lineage) {
       for (const item of ancestor.items) {
-        batchItems.set(itemKey(item), item);
+        batchItems.set(itemKey(item), { ...item, ...publishedLocations.get(`${item.rootId}\0${item.relativePath}`) });
         itemsById.set(item.id, item);
       }
     }
@@ -1153,7 +1169,8 @@ export class ScrapeRunner {
             fileId: libraryEntries[output.files.indexOf(video)].fileId,
             resultId: libraryEntries[output.files.indexOf(video)].fileId,
             size: video.size,
-            status: "success",
+            status: facts.error ? "failed" : "success",
+            error: facts.error,
             crawlerData: output.scrape?.crawlerData,
             sources: output.scrape?.sources,
             videoMeta: facts.videoMeta,

@@ -165,8 +165,10 @@ export const tools: Messages["tools"] = {
   batchTranslateDirPlaceholder: "输入已刮削完成的媒体目录",
   browseDirectory: "浏览目录",
   batchTranslateMode: "处理方式",
+  translationTaskFailed: "任务执行时翻译失败",
+  translationContentDetected: "根据内容判断可能需要翻译",
   batchTranslateModeHelp: {
-    untranslated: "只翻译还没有译文的标题和简介。",
+    untranslated: "优先补译任务中失败的字段；其余标题和简介根据内容判断是否需要翻译。",
     all: "更换翻译服务或模型后使用，会覆盖已有译文。",
     restore: "清除译文，将标题和简介还原为日文原文。若后续开启翻译，刷新时将重新翻译。",
   },

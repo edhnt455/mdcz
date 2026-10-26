@@ -25,9 +25,19 @@ export const publishMetadata = async (input: {
   const edited = editedKeys(input.published?.localState);
   const kept = lockedKeys(input.published?.localState);
   if (input.keepEdits) for (const key of edited) kept.add(key);
-  if (input.keepPublishedGenres && published?.genres?.length && !edited.has("genres")) kept.add("genres");
+  if (
+    input.keepPublishedGenres &&
+    published?.genres?.length &&
+    !published.translation_failures?.genres &&
+    !edited.has("genres")
+  )
+    kept.add("genres");
   // The NFO's runtime was measured from the video; sites list rounded catalog runtimes that would never match it.
-  const data = { ...input.data, durationSeconds: published?.durationSeconds ?? input.data.durationSeconds };
+  const data = {
+    ...input.data,
+    ...(published?.translation_failures ? { translation_failures: published.translation_failures } : {}),
+    durationSeconds: published?.durationSeconds ?? input.data.durationSeconds,
+  };
   for (const key of kept) Object.assign(data, { [key]: published?.[key] });
 
   const settled: SettledTranslations = {};
@@ -39,7 +49,10 @@ export const publishMetadata = async (input: {
     const publishedSource = sourceText(published?.[field]);
     const translation = published?.[translated]?.trim();
     // An edited title or plot is the user's text, not a cached translation of the source.
-    if (kept.has(field) || (!edited.has(translated) && translation && source === publishedSource)) {
+    if (
+      kept.has(field) ||
+      (!data.translation_failures?.[field] && !edited.has(translated) && translation && source === publishedSource)
+    ) {
       settled[field] = translation && translation !== publishedSource ? translation : undefined;
     }
   }

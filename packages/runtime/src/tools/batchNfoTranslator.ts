@@ -11,6 +11,7 @@ import type {
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
 import { z } from "zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
+import { buildMovieTags } from "../maintenance/movieTags";
 import { runWithNetworkChannel } from "../network";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
@@ -27,7 +28,7 @@ import {
   toTarget,
 } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
-import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
+import { NfoGenerator, type NfoOptions, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import { LlmRequestService } from "../scrape/translate/engines/LlmRequestService";
 import type { RuntimeLogger } from "../shared";
 import { detectLanguage, toErrorMessage } from "../shared";
@@ -50,6 +51,7 @@ type BatchTranslateWriteNfoInput = {
   enabled: boolean;
   fileInfo: FileInfo;
   localState?: NfoLocalState;
+  buildTags?: NfoOptions["buildTags"];
   logger: RuntimeLogger;
   nfoGenerator: NfoGenerator;
   nfoPath: string;
@@ -60,14 +62,13 @@ type BatchTranslateWriteNfoInput = {
 export type BatchTranslateWriteNfo = (input: BatchTranslateWriteNfoInput) => Promise<string | undefined>;
 
 type BatchTranslationAction =
-  | { field: BatchTranslateField; kind: "translate"; text: string; key: string }
+  | { field: BatchTranslateField; kind: "translate"; text: string; key: string; genreIndex?: number }
   | { field: BatchTranslateField; kind: "convert"; value: string }
   | { field: BatchTranslateField; kind: "restore" };
 
 type BatchTranslationPlanItem = {
   entry: LocalScanEntry;
-  titleAction?: BatchTranslationAction;
-  plotAction?: BatchTranslationAction;
+  actions: BatchTranslationAction[];
 };
 
 type PendingTranslation = {
@@ -161,11 +162,23 @@ const resolveExistingNfoNaming = async (nfoPath: string): Promise<Configuration[
   return (await pathExists(moviePath)) ? "both" : "filename";
 };
 
-const defaultWriteNfo: BatchTranslateWriteNfo = async ({ config, crawlerData, nfoGenerator, nfoPath, writeFile }) => {
+const defaultWriteNfo: BatchTranslateWriteNfo = async ({
+  config,
+  crawlerData,
+  nfoGenerator,
+  nfoPath,
+  localState,
+  fileInfo,
+  buildTags,
+  writeFile,
+}) => {
   return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
     nfoNaming: config.download.nfoNaming,
     enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
     nfoTitleTemplate: config.naming.nfoTitleTemplate,
+    localState,
+    fileInfo,
+    buildTags,
     writeFile,
   });
 };
@@ -176,6 +189,7 @@ const buildFieldAction = (
   currentValue: string | undefined,
   target: LanguageTarget,
   mode: BatchTranslateMode,
+  failed = false,
 ): BatchTranslationAction | undefined => {
   const source = normalizeText(sourceValue);
   const translated = normalizeText(currentValue);
@@ -184,7 +198,7 @@ const buildFieldAction = (
   if (!current) return undefined;
 
   const text = mode === "all" ? source || current : current;
-  if (detectLanguage(text) === "zh") {
+  if (!failed && detectLanguage(text) === "zh") {
     const value = ensureTargetChinese(text, target);
     return value === current ? undefined : { field, kind: "convert", value };
   }
@@ -205,10 +219,18 @@ const toScanItem = (
   if (!entry.nfoPath || !entry.crawlerData) return null;
 
   const pendingFields: BatchTranslateField[] = [];
-  if (buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target, mode))
+  const failures = entry.crawlerData.translation_failures;
+  if (
+    (mode !== "restore" && failures?.title) ||
+    buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target, mode)
+  )
     pendingFields.push("title");
-  if (buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target, mode))
+  if (
+    (mode !== "restore" && failures?.plot) ||
+    buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target, mode)
+  )
     pendingFields.push("plot");
+  if (failures?.genres && mode !== "restore") pendingFields.push("genres");
   if (pendingFields.length === 0) return null;
 
   return {
@@ -218,6 +240,7 @@ const toScanItem = (
     number: entry.crawlerData.number || entry.fileInfo.number,
     title: entry.crawlerData.title_zh?.trim() || entry.crawlerData.title,
     pendingFields,
+    reason: pendingFields.some((field) => failures?.[field]) ? "task_failed" : "content",
   };
 };
 
@@ -344,27 +367,44 @@ export const applyBatchNfoTranslations = async (
     });
     const entry = await dependencies.localScanService.scanVideo(root, item.filePath, config.paths.sceneImagesFolder);
     if (!entry.nfoPath || !entry.crawlerData) {
-      plans.push({ entry });
+      plans.push({ entry, actions: [] });
       continue;
     }
     const nfoKey = resolve(entry.nfoPath);
     if (nfoPaths.has(nfoKey)) continue;
     nfoPaths.add(nfoKey);
 
-    const titleAction = item.pendingFields.includes("title")
-      ? buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target, options.mode)
-      : undefined;
-    const plotAction = item.pendingFields.includes("plot")
-      ? buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target, options.mode)
-      : undefined;
+    const actions: BatchTranslationAction[] = [];
+    for (const field of ["title", "plot"] as const) {
+      if (!item.pendingFields.includes(field)) continue;
+      const action = buildFieldAction(
+        field,
+        entry.crawlerData[field],
+        entry.crawlerData[field === "title" ? "title_zh" : "plot_zh"],
+        target,
+        options.mode,
+        Boolean(entry.crawlerData.translation_failures?.[field]),
+      );
+      if (action) actions.push(action);
+    }
+    if (
+      item.pendingFields.includes("genres") &&
+      entry.crawlerData.translation_failures?.genres &&
+      options.mode !== "restore"
+    ) {
+      entry.crawlerData.genres.forEach((genre, genreIndex) => {
+        const action = buildFieldAction("genres", genre, undefined, target, options.mode, true);
+        if (action?.kind === "translate") actions.push({ ...action, genreIndex });
+      });
+    }
 
-    for (const action of [titleAction, plotAction]) {
-      if (action?.kind === "translate" && !pendingByKey.has(action.key)) {
+    for (const action of actions) {
+      if (action.kind === "translate" && !pendingByKey.has(action.key)) {
         pendingByKey.set(action.key, { key: action.key, text: action.text });
       }
     }
 
-    plans.push({ entry, titleAction, plotAction });
+    plans.push({ entry, actions });
   }
 
   const { failedReasonByKey, translatedByKey } =
@@ -399,31 +439,43 @@ export const applyBatchNfoTranslations = async (
       continue;
     }
 
-    const nextCrawlerData = { ...entry.crawlerData };
+    const nextCrawlerData = { ...entry.crawlerData, genres: [...entry.crawlerData.genres] };
+    const failures = { ...entry.crawlerData.translation_failures };
     const translatedFields: BatchTranslateField[] = [];
     const errors: string[] = [];
 
-    for (const action of [plan.titleAction, plan.plotAction]) {
-      if (!action) continue;
+    const failedFields = new Set<BatchTranslateField>();
+    for (const action of plan.actions) {
       const translatedKey = action.field === "title" ? "title_zh" : "plot_zh";
 
       if (action.kind !== "translate") {
         nextCrawlerData[translatedKey] = action.kind === "convert" ? action.value : undefined;
-        translatedFields.push(action.field);
+        if (!translatedFields.includes(action.field)) translatedFields.push(action.field);
         continue;
       }
 
       const translated = translatedByKey.get(action.key);
-      if (translated) {
-        nextCrawlerData[translatedKey] = translated;
-        translatedFields.push(action.field);
+      if (translated && (action.field === "genres" || translated !== action.text)) {
+        if (action.field === "genres" && action.genreIndex !== undefined)
+          nextCrawlerData.genres[action.genreIndex] = translated;
+        else nextCrawlerData[translatedKey] = translated;
+        if (!translatedFields.includes(action.field)) translatedFields.push(action.field);
       } else {
-        const reason = failedReasonByKey.get(action.key);
-        errors.push(`${action.field === "title" ? "Title" : "Plot"} translation failed${reason ? `: ${reason}` : ""}`);
+        const reason = translated ? "provider returned source text" : failedReasonByKey.get(action.key);
+        const message = `${action.field} translation failed${reason ? `: ${reason}` : ""}`;
+        failures[action.field] = message;
+        failedFields.add(action.field);
+        errors.push(message);
       }
     }
 
-    if (translatedFields.length === 0) {
+    for (const field of translatedFields) {
+      if (!failedFields.has(field) && options.mode !== "restore") delete failures[field];
+    }
+    if (Object.keys(failures).length) nextCrawlerData.translation_failures = failures;
+    else delete nextCrawlerData.translation_failures;
+
+    if (plan.actions.length === 0) {
       results.push({
         ...baseResult,
         success: false,
@@ -452,6 +504,7 @@ export const applyBatchNfoTranslations = async (
         enabled: true,
         fileInfo: entry.fileInfo,
         localState: entry.nfoLocalState,
+        buildTags: buildMovieTags,
         logger,
         nfoGenerator,
         nfoPath: entry.nfoPath,
@@ -494,6 +547,7 @@ export const applyBatchNfoTranslations = async (
                   published: true,
                 };
               }),
+              nextCrawlerData,
             );
           },
         });

@@ -23,6 +23,7 @@ export type SourceMap = Partial<Record<keyof CrawlerData, Website>>;
 export interface ImageAlternatives {
   thumb_url: string[];
   poster_url: string[];
+  image_sources?: Partial<Record<"thumb_url" | "poster_url", Record<string, Website>>>;
   scene_images: string[][];
   scene_images_source?: Website;
   scene_image_sources?: Website[];
@@ -171,10 +172,9 @@ export class AggregationService {
     const cached = this.cache.get(key);
     if (cached) {
       this.logger.info(`Cache hit for ${number}`);
-      return structuredClone(cached);
     }
 
-    let pending = this.inFlight.get(key);
+    let pending = cached ? Promise.resolve(cached) : this.inFlight.get(key);
     if (!pending) {
       const execution = this.executeAggregation(number, options?.manualScrape)
         .then((result) => {
@@ -194,7 +194,21 @@ export class AggregationService {
       this.inFlight.set(key, execution);
     }
 
-    return structuredClone(await this.awaitShared(pending, options?.signal));
+    const result = structuredClone(await this.awaitShared(pending, options?.signal));
+    const fields = ["title", "plot", "thumb_url", "poster_url", "scene_images"] as const;
+    this.logger.info(
+      `[metadata-sources] ${JSON.stringify({
+        number,
+        fields: Object.fromEntries(
+          fields.map((field) => {
+            const value = result.data[field];
+            const present = Array.isArray(value) ? value.length > 0 : Boolean(value);
+            return [field, { source: present ? (result.sources[field] ?? "unknown") : "absent" }];
+          }),
+        ),
+      })}`,
+    );
+    return result;
   }
 
   private async awaitShared<T>(shared: Promise<T>, waiter?: AbortSignal): Promise<T> {

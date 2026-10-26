@@ -172,8 +172,11 @@ export const tools = {
   batchTranslateDirPlaceholder: "Enter scraped media directory",
   browseDirectory: "Browse",
   batchTranslateMode: "Action",
+  translationTaskFailed: "Translation failed during task execution",
+  translationContentDetected: "Content suggests translation may be needed",
   batchTranslateModeHelp: {
-    untranslated: "Translate only titles and plots that have no translation yet.",
+    untranslated:
+      "Retry fields with recorded translation failures; otherwise detect titles and plots that may need translation.",
     all: "Use after switching translation models; existing translations are replaced.",
     restore:
       "Remove translations so titles and plots show the source text. With translation on, the next refresh translates again.",

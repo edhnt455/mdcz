@@ -7,6 +7,7 @@ describe("resolveServerRuntimePaths", () => {
 
     expect(paths.configDir).toBe("/home/tester/.local/state/mdcz/config");
     expect(paths.dataDir).toBe("/home/tester/.local/state/mdcz/data");
+    expect(paths.logDir).toBe("/home/tester/.local/state/mdcz/logs");
     expect(paths.configPath).toBe("/home/tester/.local/state/mdcz/config/default.toml");
     expect(paths.databasePath).toBe("/home/tester/.local/state/mdcz/data/mdcz.sqlite");
   });
@@ -14,6 +15,7 @@ describe("resolveServerRuntimePaths", () => {
   it("supports explicit env overrides", () => {
     const paths = resolveServerRuntimePaths({
       env: {
+        MDCZ_HOME: "/data",
         MDCZ_CONFIG_DIR: "/srv/mdcz/config",
         MDCZ_DATA_DIR: "/srv/mdcz/data",
         MDCZ_DATABASE_PATH: "/srv/mdcz/database.sqlite",
@@ -25,5 +27,6 @@ describe("resolveServerRuntimePaths", () => {
     expect(paths.configDir).toBe("/srv/mdcz/config");
     expect(paths.dataDir).toBe("/srv/mdcz/data");
     expect(paths.databasePath).toBe("/srv/mdcz/database.sqlite");
+    expect(paths.logDir).toBe("/data/logs");
   });
 });

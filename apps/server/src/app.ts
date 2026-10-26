@@ -80,7 +80,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const persistence = options.services?.persistence ?? new ServerPersistenceService(config.runtimePaths);
   const taskEvents = options.services?.taskEvents ?? createTaskEventBus();
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
-  const runtimeLogs = options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents);
+  const runtimeLogs =
+    options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents, config.runtimePaths.logDir);
   const libraries =
     options.services?.libraries ??
     new MediaLibraryService(
@@ -325,6 +326,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     );
     results.push(...(await Promise.allSettled([imageHostCooldownStore.flush()])));
     results.push(...(await Promise.allSettled([services.persistence.close()])));
+    results.push(...(await Promise.allSettled([runtimeLogs.close()])));
     const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
     if (errors.length) throw new AggregateError(errors, "Server shutdown failed");
   });

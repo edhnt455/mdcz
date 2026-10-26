@@ -143,6 +143,7 @@ const buildMdczNode = (
   return {
     raw_title: rawTitle,
     original_plot: originalPlot,
+    translation_failures: data.translation_failures,
     source_url: sourcePin ? { "@_site": sourcePin.site, "#text": sourcePin.url } : undefined,
     thumb_source_url: thumbSourceUrl,
     poster_source_url: posterSourceUrl,
@@ -323,6 +324,7 @@ const EDITABLE_MOVIE_FIELDS = [
 const EDITABLE_MDCZ_FIELDS = [
   "raw_title",
   "original_plot",
+  "translation_failures",
   "source_url",
   "thumb_source_url",
   "poster_source_url",

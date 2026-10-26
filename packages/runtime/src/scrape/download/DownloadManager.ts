@@ -19,7 +19,7 @@ import type {
   DownloadExecutionPlan,
 } from "./assets/types";
 import { ImageDownloadService } from "./ImageDownloadService";
-import { type ImageHostCooldownStore, ImageHostCooldownTracker } from "./ImageHostCooldownTracker";
+import { getUrlHost, type ImageHostCooldownStore, ImageHostCooldownTracker } from "./ImageHostCooldownTracker";
 import { SceneImageDownloader } from "./SceneImageDownloader";
 
 export type { DownloadCallbacks } from "./assets/types";
@@ -73,12 +73,13 @@ export class DownloadManager {
     };
 
     const plan = this.createExecutionPlan(outputDir, data, config, imageAlternatives, callbacks, options);
-    let cover: Promise<string | undefined> | undefined;
+    let cover: Promise<{ path: string; url: string } | undefined> | undefined;
     const context: DownloadExecutionContext = {
       plan,
       assets,
       imageDownloader: this.imageDownloader,
       sceneImageDownloader: this.sceneImageDownloader,
+      imageSources: new Map(),
       // outputDir is the publication staging folder, so a cover fetched there only as a source is never published.
       resolveCover: async () => {
         if (assets.thumb || config.download.downloadThumb) return assets.thumb;
@@ -87,7 +88,14 @@ export class DownloadManager {
           join(outputDir, ".mdcz-cover.jpg"),
           plan.signal,
         );
-        return await cover;
+        const downloaded = await cover;
+        if (downloaded) {
+          context.imageSources.set(downloaded.path, {
+            source: plan.imageAlternatives.image_sources?.thumb_url?.[downloaded.url] ?? "unknown",
+            url: downloaded.url,
+          });
+        }
+        return downloaded?.path;
       },
       logger: this.logger,
     };
@@ -115,6 +123,34 @@ export class DownloadManager {
     if (existingKinds.length > 0) {
       this.logger.info(`[${data.number}] Using existing local assets: ${existingKinds.join(", ")}`);
     }
+
+    const imageFields = {
+      thumb: { enabled: config.download.downloadThumb, paths: assets.thumb ? [assets.thumb] : [] },
+      poster: { enabled: config.download.downloadPoster, paths: assets.poster ? [assets.poster] : [] },
+      fanart: { enabled: config.download.downloadFanart, paths: assets.fanart ? [assets.fanart] : [] },
+      scene_images: { enabled: config.download.downloadSceneImages, paths: assets.sceneImages },
+    };
+    this.logger.info(
+      `[image-sources] ${JSON.stringify({
+        number: data.number,
+        fields: Object.fromEntries(
+          Object.entries(imageFields).map(([field, { enabled, paths }]) => [
+            field,
+            paths.length === 0
+              ? { status: enabled ? "missing" : "disabled" }
+              : paths.map((path) => {
+                  const origin = context.imageSources.get(path);
+                  return {
+                    status: downloadedPaths.has(path) ? (origin?.derivedFrom ? "derived" : "downloaded") : "local",
+                    source: origin?.source ?? (downloadedPaths.has(path) ? "unknown" : "local"),
+                    host: origin?.url ? (getUrlHost(origin.url) ?? "unknown") : undefined,
+                    derivedFrom: origin?.derivedFrom,
+                  };
+                }),
+          ]),
+        ),
+      })}`,
+    );
 
     return assets;
   }

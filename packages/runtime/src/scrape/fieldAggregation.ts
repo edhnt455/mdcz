@@ -47,6 +47,7 @@ type ResolvedField = {
   value: unknown;
   source?: Website;
   alternatives?: string[];
+  imageSources?: Record<string, Website>;
   sceneImageAlternatives?: string[][];
   sceneImageAlternativeSources?: Website[];
 };
@@ -102,7 +103,8 @@ export class FieldAggregator {
     imageAlternatives: ImageAlternatives;
   } {
     const sources: SourceMap = {};
-    const imageAlternatives: ImageAlternatives = { ...EMPTY_IMAGE_ALTERNATIVES };
+    const imageSources: NonNullable<ImageAlternatives["image_sources"]> = {};
+    const imageAlternatives: ImageAlternatives = { ...EMPTY_IMAGE_ALTERNATIVES, image_sources: imageSources };
     const entries: SourceEntry[] = Array.from(results.entries()).map(([site, data]) => ({ site, data }));
     if (entries.length === 0) {
       throw new Error("No results to aggregate");
@@ -116,6 +118,7 @@ export class FieldAggregator {
       const result = this.applyStrategy(field, strategy, ordered);
       if (isPrimaryImageField(field)) {
         imageAlternatives[field] = result.alternatives ?? [];
+        imageSources[field] = result.imageSources ?? {};
       } else if (field === "scene_images") {
         imageAlternatives.scene_images = result.sceneImageAlternatives ?? [];
         imageAlternatives.scene_images_source = result.source;
@@ -307,13 +310,15 @@ export class FieldAggregator {
     const winner = candidates.find((candidate) => candidate.value.includes("awsimgsrc.dmm.co.jp")) ?? candidates[0];
     const seen = new Set<string>([winner.value]);
     const alternatives: string[] = [];
+    const imageSources: Record<string, Website> = { [winner.value]: winner.source };
     for (const candidate of candidates) {
       if (seen.has(candidate.value)) {
         continue;
       }
       seen.add(candidate.value);
       alternatives.push(candidate.value);
+      imageSources[candidate.value] = candidate.source;
     }
-    return { value: winner.value, source: winner.source, alternatives };
+    return { value: winner.value, source: winner.source, alternatives, imageSources };
   }
 }

@@ -651,7 +651,19 @@ export function BatchNfoTranslatorWorkspaceDetail({
                         />
                       </td>
                       <td className="px-4 py-3 font-mono font-medium">{item.number}</td>
-                      <td className="px-4 py-3 font-medium text-foreground">{item.title}</td>
+                      <td className="px-4 py-3 font-medium text-foreground">
+                        {item.title}
+                        <div
+                          className={cn(
+                            "mt-1 text-[11px]",
+                            item.reason === "task_failed" ? "text-destructive" : "text-muted-foreground",
+                          )}
+                        >
+                          {item.reason === "task_failed"
+                            ? t.tools.translationTaskFailed
+                            : t.tools.translationContentDetected}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1.5">
                           {displayFields.length === 0 ? (
@@ -663,7 +675,11 @@ export function BatchNfoTranslatorWorkspaceDetail({
                                 variant="outline"
                                 className="rounded-quiet-capsule px-2 py-0.5 text-[11px] bg-surface-low border-black/10 dark:border-white/10"
                               >
-                                {field === "title" ? t.tools.fieldTitle : t.tools.fieldPlot}
+                                {field === "title"
+                                  ? t.tools.fieldTitle
+                                  : field === "plot"
+                                    ? t.tools.fieldPlot
+                                    : t.tools.tags}
                               </Badge>
                             ))
                           )}

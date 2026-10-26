@@ -27,7 +27,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
   }
 
   async download(context: DownloadExecutionContext): Promise<void> {
-    const { assets, imageDownloader, logger, plan } = context;
+    const { assets, imageDownloader, imageSources, logger, plan } = context;
 
     throwIfAborted(plan.signal);
 
@@ -62,14 +62,18 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     );
 
     for (const result of primaryResults) {
-      if (!result?.success) {
+      if (!result?.success || !result.value) {
         continue;
       }
 
       const key = result.key as PrimaryImageKey;
-      const downloadedPath = result.value ?? result.path;
+      const { path: downloadedPath, url } = result.value;
       assets[key] = downloadedPath;
       assets.downloaded.push(downloadedPath);
+      imageSources.set(downloadedPath, {
+        source: plan.imageAlternatives.image_sources?.[`${key}_url`]?.[url] ?? "unknown",
+        url,
+      });
     }
 
     for (const task of primaryTasks) {
@@ -151,10 +155,14 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
 
     const posterTargetPath = join(plan.outputDir, plan.assetFileNames.poster);
     const service = this.posterDerivationService ?? new PosterImageDerivationService(logger);
+    let coverPath: string | undefined;
     const result = await service.deriveFromThumbIfNeeded({
       posterPath: assets.poster,
       targetPath: posterTargetPath,
-      resolveThumbPath: () => context.resolveCover(),
+      resolveThumbPath: async () => {
+        coverPath = await context.resolveCover();
+        return coverPath;
+      },
     });
 
     if (result.status !== "derived") {
@@ -162,6 +170,12 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     }
 
     assets.poster = result.path;
+    const coverSource = coverPath ? context.imageSources.get(coverPath) : undefined;
+    context.imageSources.set(result.path, {
+      ...coverSource,
+      source: coverSource?.source ?? "local",
+      derivedFrom: assets.thumb === coverPath ? "thumb" : "cover",
+    });
     if (!assets.downloaded.includes(result.path)) {
       assets.downloaded.push(result.path);
     }

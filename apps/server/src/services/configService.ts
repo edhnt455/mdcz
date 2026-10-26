@@ -17,6 +17,7 @@ import { toConfigValidationDomainError } from "@mdcz/shared/error";
 export interface ServerRuntimePaths {
   configDir: string;
   dataDir: string;
+  logDir: string;
   configPath: string;
   databasePath: string;
 }
@@ -39,6 +40,7 @@ export const resolveServerRuntimePaths = (options: ResolveServerRuntimePathsOpti
   return {
     configDir,
     dataDir,
+    logDir: pathApi.join(baseDir, "logs"),
     configPath: pathApi.join(configDir, `${DEFAULT_PROFILE_NAME}${CONFIGURATION_FILE_EXTENSIONS.toml}`),
     databasePath: pathApi.resolve(env.MDCZ_DATABASE_PATH ?? pathApi.join(dataDir, "mdcz.sqlite")),
   };

@@ -176,10 +176,13 @@ describe("FieldAggregator", () => {
     ];
 
     for (const { results, expectedThumb, expectedSource } of cases) {
-      const { data, sources } = aggregator.aggregate(results);
+      const { data, sources, imageAlternatives } = aggregator.aggregate(results);
 
       expect(data.thumb_url).toBe(expectedThumb);
       expect(sources.thumb_url).toBe(expectedSource);
+      for (const [site, siteData] of results) {
+        expect(imageAlternatives.image_sources?.thumb_url?.[siteData.thumb_url ?? ""]).toBe(site);
+      }
     }
   });
 

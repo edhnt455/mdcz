@@ -1,5 +1,5 @@
 import { Website } from "@mdcz/shared/enums";
-import type { ActorProfile, CrawlerData, NfoLocalState } from "@mdcz/shared/types";
+import type { ActorProfile, CrawlerData, NfoLocalState, TranslationFailures } from "@mdcz/shared/types";
 import { XMLParser } from "fast-xml-parser";
 import { detectNfoEdits, parseFingerprints } from "../scrape/nfoEdits";
 import { isManagedMovieTag, normalizeNfoLocalState, parseManagedMovieTags, tagToUncensoredChoice } from "./movieTags";
@@ -177,6 +177,12 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
           .filter((item): item is string => Boolean(item))
       : [];
   const mdczNode = toRecord(movieNode.mdcz);
+  const failureNode = toRecord(mdczNode?.translation_failures);
+  const translationFailures: TranslationFailures = {};
+  for (const field of ["title", "plot", "genres"] as const) {
+    const reason = toStringValue(failureNode?.[field]);
+    if (reason) translationFailures[field] = reason;
+  }
   const mdczSceneImagesNode = toRecord(mdczNode?.scene_images);
   const published = parseFingerprints(mdczNode?.published);
   const sourceUrlNode = toRecord(mdczNode?.source_url);
@@ -193,6 +199,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
 
   return {
     crawlerData: {
+      ...(Object.keys(translationFailures).length ? { translation_failures: translationFailures } : {}),
       title: sourceTitle,
       title_zh: shownTitle !== sourceTitle ? shownTitle : undefined,
       number,

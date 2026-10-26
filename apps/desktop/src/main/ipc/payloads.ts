@@ -110,7 +110,8 @@ export const toolBatchTranslateApplyInputSchema = z.object({
         directory: z.string(),
         number: z.string(),
         title: z.string(),
-        pendingFields: z.array(z.enum(["title", "plot"])),
+        pendingFields: z.array(z.enum(["title", "plot", "genres"])),
+        reason: z.enum(["task_failed", "content"]),
       }),
     )
     .optional(),

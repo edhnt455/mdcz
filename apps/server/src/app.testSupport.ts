@@ -59,6 +59,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
   const paths = {
     configDir: join(directory.path, "config"),
     dataDir: join(directory.path, "data"),
+    logDir: join(directory.path, "logs"),
     configPath: join(directory.path, "config", "default.toml"),
     databasePath: join(directory.path, "data", "mdcz.sqlite"),
   };

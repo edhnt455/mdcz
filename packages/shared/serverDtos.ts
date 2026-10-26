@@ -147,6 +147,9 @@ export const taskStatusSchema = z.enum([
 export type TaskStatus = z.infer<typeof taskStatusSchema>;
 
 export const crawlerDataSchema = z.object({
+  translation_failures: z
+    .object({ title: z.string().optional(), plot: z.string().optional(), genres: z.string().optional() })
+    .optional(),
   title: z.string(),
   original_title: z.string().optional(),
   title_zh: z.string().optional(),
@@ -1275,7 +1278,8 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
           directory: z.string().trim().min(1),
           number: z.string(),
           title: z.string(),
-          pendingFields: z.array(z.enum(["title", "plot"])),
+          pendingFields: z.array(z.enum(["title", "plot", "genres"])),
+          reason: z.enum(["task_failed", "content"]),
         }),
       )
       .optional(),

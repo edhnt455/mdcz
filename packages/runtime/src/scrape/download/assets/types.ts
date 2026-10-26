@@ -1,5 +1,6 @@
 import type { MovieAssetFileNames } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
+import type { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import type { ImageAlternatives } from "../../aggregation";
 import type { DirectoryInventory } from "../../DirectoryInventory";
@@ -46,6 +47,7 @@ export interface DownloadExecutionContext {
   assets: DownloadedAssets;
   imageDownloader: ImageDownloadService;
   sceneImageDownloader: SceneImageDownloader;
+  imageSources: Map<string, { source: Website | "local" | "unknown"; url?: string; derivedFrom?: "thumb" | "cover" }>;
   /** The landscape cover that fanart and small-poster crops come from: the thumb, or with thumbs off a one-time download. */
   resolveCover(): Promise<string | undefined>;
   logger: {
