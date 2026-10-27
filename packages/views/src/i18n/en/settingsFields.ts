@@ -469,7 +469,24 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Service type",
     description: "Custom proxies must select Google or DeepSeek explicitly; the URL domain is not used for detection.",
   },
-  "translate.llmPrompt": { label: "LLM translation prompt", aliases: ["prompt"] },
+  "translate.llmSystemPrompt": {
+    label: "LLM system prompt",
+    description:
+      "Shared by translation and movie code recognition as a system prompt. Set roles, context, and general instructions; leave blank to omit.",
+    aliases: ["prompt", "prefix"],
+  },
+  "translate.llmPrompt": {
+    label: "LLM translation prompt",
+    description:
+      "Used for text, movie metadata, and batch NFO translation. {lang} is the target language and {content} is the input. Output format instructions are appended automatically.",
+    aliases: ["prompt"],
+  },
+  "translate.llmNumberRecognitionPrompt": {
+    label: "LLM movie code fallback prompt",
+    description:
+      "Used only for AI movie code fallback. The file name, immediate parent folder name, and previous code are appended automatically, with JSON output and source evidence requirements.",
+    aliases: ["prompt", "code", "fallback"],
+  },
   "translate.llmTemperature": {
     label: "LLM temperature (advanced, optional)",
     description: "Leave empty to use the server default.",

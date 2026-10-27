@@ -27,6 +27,7 @@ const textRequest = (overrides: {
   temperature?: number;
   model?: string;
   apiKey?: string;
+  systemPrompt?: string;
 }) => ({
   model: overrides.model ?? "model",
   apiKey: overrides.apiKey ?? "",
@@ -54,7 +55,7 @@ describe("LlmApiClient", () => {
         reasoning: "high" as const,
       },
       url: "https://example.test/v1/chat/completions",
-      expected: { model: "model", reasoning_effort: "high", messages: [{ role: "user", content: "hello" }] },
+      expected: { model: "model", reasoning_effort: "high" },
       absent: ["temperature", "response_format"],
       data: { choices: [{ message: { content: "ok" } }] },
     },
@@ -115,11 +116,23 @@ describe("LlmApiClient", () => {
     const postJsonDetailed = vi.fn().mockResolvedValue(response(data));
     const client = new LlmApiClient({ postJsonDetailed });
 
-    await expect(client.generateText(textRequest(request))).resolves.toBe("ok");
-    const payload = postJsonDetailed.mock.calls[0][1] as Record<string, unknown>;
-    expect(postJsonDetailed.mock.calls[0][0]).toBe(url);
-    expect(payload).toEqual(expect.objectContaining(expected));
-    for (const field of absent) expect(payload).not.toHaveProperty(field);
+    for (const systemPrompt of ["", "   ", " Shared context\nGeneral instructions "]) {
+      postJsonDetailed.mockClear();
+      await expect(client.generateText(textRequest({ ...request, systemPrompt }))).resolves.toBe("ok");
+      const payload = postJsonDetailed.mock.calls[0][1] as Record<string, unknown>;
+      expect(postJsonDetailed.mock.calls[0][0]).toBe(url);
+      expect(payload).toEqual(expect.objectContaining(expected));
+      for (const field of absent) expect(payload).not.toHaveProperty(field);
+      if (url.endsWith("/responses")) {
+        if (systemPrompt.trim()) expect(payload.instructions).toBe(systemPrompt.trim());
+        else expect(payload).not.toHaveProperty("instructions");
+      } else {
+        expect(payload.messages).toEqual([
+          ...(systemPrompt.trim() ? [{ role: "system", content: systemPrompt.trim() }] : []),
+          { role: "user", content: "hello" },
+        ]);
+      }
+    }
   });
 
   it("sends configured output formats independently of the request shape", async () => {

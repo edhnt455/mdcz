@@ -33,6 +33,7 @@ export interface LlmTextRequest {
   baseUrl: string;
   apiFormat: LlmApiFormat;
   temperature?: number;
+  systemPrompt?: string;
   prompt: string;
   reasoning: LlmReasoning;
   serviceType: LlmServiceType;
@@ -52,6 +53,7 @@ export type LlmRequestConfig = Pick<
   | "llmApiKey"
   | "llmBaseUrl"
   | "llmApiFormat"
+  | "llmSystemPrompt"
   | "llmTemperature"
   | "llmReasoning"
   | "llmServiceType"
@@ -69,6 +71,7 @@ export const toLlmTextRequest = (
   baseUrl: config.llmBaseUrl,
   apiFormat: config.llmApiFormat,
   temperature: config.llmTemperature ?? undefined,
+  systemPrompt: config.llmSystemPrompt.trim(),
   prompt,
   reasoning: config.llmReasoning,
   serviceType: config.llmServiceType,
@@ -238,6 +241,7 @@ export class LlmApiClient {
       {
         model: request.model,
         input: request.prompt,
+        ...(request.systemPrompt?.trim() ? { instructions: request.systemPrompt.trim() } : {}),
         ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
         ...(request.reasoning === "default"
           ? {}
@@ -273,6 +277,7 @@ export class LlmApiClient {
         ...this.buildChatReasoning(request, request.serviceType),
         ...this.buildOutputFormat(request, "chat-completions"),
         messages: [
+          ...(request.systemPrompt?.trim() ? [{ role: "system", content: request.systemPrompt.trim() }] : []),
           {
             role: "user",
             content: request.prompt,

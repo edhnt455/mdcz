@@ -403,6 +403,7 @@ export function TranslateSection() {
       llmBaseUrl: String(form.getValues("translate.llmBaseUrl") ?? ""),
       llmApiFormat: form.getValues("translate.llmApiFormat") ?? "responses",
       llmServiceType: form.getValues("translate.llmServiceType") ?? "openai-compatible",
+      llmSystemPrompt: String(form.getValues("translate.llmSystemPrompt") ?? ""),
       llmPrompt: String(form.getValues("translate.llmPrompt") ?? ""),
       llmTemperature: form.getValues("translate.llmTemperature"),
       llmReasoning: form.getValues("translate.llmReasoning") ?? "default",
@@ -480,7 +481,9 @@ export function TranslateSection() {
             <EnumField name="translate.llmApiFormat" options={toEnumOptions(t.settings.options.llmApiFormat)} />
           )}
           <EnumField name="translate.llmServiceType" options={toEnumOptions(t.settings.options.llmServiceType)} />
+          <PromptFieldWrapper name="translate.llmSystemPrompt" />
           <PromptFieldWrapper name="translate.llmPrompt" />
+          <PromptFieldWrapper name="translate.llmNumberRecognitionPrompt" />
           <NumberField name="translate.llmTemperature" min={0} max={2} step={0.1} optional />
           <EnumField
             name="translate.llmReasoning"

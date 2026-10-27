@@ -276,7 +276,13 @@ describe("BatchTranslateToolService", () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-translation-"));
     tempDirs.push(root);
     const config = createConfig({
-      translate: { ...defaultConfiguration.translate, llmMaxRequestsPerSecond: 100, llmApiKey: "test-key" },
+      translate: {
+        ...defaultConfiguration.translate,
+        llmMaxRequestsPerSecond: 100,
+        llmApiKey: "test-key",
+        llmSystemPrompt: "Shared context",
+        llmPrompt: "Custom translation to {lang}: {content}",
+      },
       download: {
         ...defaultConfiguration.download,
         nfoIgnoreFields: ["director"],
@@ -397,7 +403,8 @@ describe("BatchTranslateToolService", () => {
     expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual([1000]);
     expect(generateText).toHaveBeenCalledWith(
       expect.objectContaining({
-        prompt: expect.stringContaining('"Same English Title"'),
+        systemPrompt: "Shared context",
+        prompt: expect.stringContaining('Custom translation to 简体中文: ["Same English Title"'),
       }),
       undefined,
     );

@@ -410,6 +410,34 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
   );
 });
 
+test("LLM prompts save independently and verification uses edited shared and translation prompts", async () => {
+  const saveConfig = vi.fn(async () => undefined);
+  const testTranslation = vi.fn(async () => ({ status: "ok" as const, sample: "测试译文" }));
+  const screen = await render(
+    <FormHarness
+      values={{ ...defaultConfiguration, scrape: { ...defaultConfiguration.scrape, aiNumberFallback: true } }}
+      services={createSettingsServices({ saveConfig, testTranslation })}
+    >
+      <TranslateTopLevelSection />
+    </FormHarness>,
+  );
+  const prompts = [
+    ["llmSystemPrompt", "LLM 前置提示词", "Shared context"],
+    ["llmPrompt", "LLM 翻译提示词", "Translate to {lang}: {content}"],
+    ["llmNumberRecognitionPrompt", "LLM 兜底番号识别提示词", "Extract only codes present in the source"],
+  ] as const;
+  for (const [key, label, value] of prompts) {
+    const field = screen.getByLabelText(label, { exact: true });
+    await field.fill(value);
+    field.element().blur();
+    await expect.poll(() => saveConfig.mock.calls).toContainEqual([{ translate: { [key]: value } }]);
+  }
+  await screen.getByRole("button", { name: "验证元数据翻译" }).click();
+  expect(testTranslation).toHaveBeenCalledWith(
+    expect.objectContaining({ llmSystemPrompt: prompts[0][2], llmPrompt: prompts[1][2] }),
+  );
+});
+
 test("settings sections expose public labels and the library template notice", async () => {
   const network = await render(
     <FormHarness
@@ -460,6 +488,9 @@ test("settings sections expose public labels and the library template notice", a
   await expect.element(translate.getByText("翻译服务")).toBeVisible();
   await expect.element(translate.getByText("翻译引擎")).toBeVisible();
   await expect.element(translate.getByLabelText("LLM 模型名称", { exact: true })).toBeVisible();
+  await expect.element(translate.getByLabelText("LLM 前置提示词", { exact: true })).toBeVisible();
+  await expect.element(translate.getByLabelText("LLM 兜底番号识别提示词", { exact: true })).toBeVisible();
+  await expect.element(translate.getByLabelText("LLM 翻译提示词", { exact: true })).toBeVisible();
   await expect.element(translate.getByRole("button", { name: "验证元数据翻译" })).toBeVisible();
 
   const paths = await render(

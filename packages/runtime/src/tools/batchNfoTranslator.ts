@@ -19,7 +19,6 @@ import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import {
   ensureTargetChinese,
-  getTargetLanguageLabel,
   isMissingRequiredLlmApiKey,
   type LanguageTarget,
   type LlmApiClient,
@@ -30,6 +29,7 @@ import {
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { NfoGenerator, type NfoOptions, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import { LlmRequestService } from "../scrape/translate/engines/LlmRequestService";
+import { buildLlmTranslatePrompt } from "../scrape/translate/engines/OpenAiTranslator";
 import { detectLanguage, type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 
 type BatchTranslateLocalScanService = {
@@ -236,21 +236,6 @@ const toScanItem = (
   };
 };
 
-const buildBatchPrompt = (texts: string[], target: LanguageTarget): string => {
-  const targetLabel = getTargetLanguageLabel(target);
-
-  return [
-    `将输入 JSON 数组中的每一项翻译为${targetLabel}。`,
-    "规则：",
-    `1. 只返回 JSON 对象 {"translations":["译文"]}，translations 数组长度必须为 ${texts.length}。`,
-    "2. 返回数组的顺序必须与输入数组完全一致。",
-    "3. 每个元素只包含最终翻译文本，不要输出解释、代码块、Markdown、编号或额外字段。",
-    "4. 自动识别原文语言；如果原文已经是目标中文，直接返回合适的中文结果。",
-    "输入 JSON：",
-    JSON.stringify(texts),
-  ].join("\n");
-};
-
 const assertLlmConfiguration = (config: Configuration): void => {
   const model = config.translate.llmModelName.trim();
   const apiKey = config.translate.llmApiKey.trim();
@@ -280,9 +265,16 @@ const translatePendingTexts = async (
       const content = await runWithNetworkChannel("translation", () =>
         requests.requestText(
           config.translate,
-          buildBatchPrompt(
-            chunk.map((item) => item.text),
+          buildLlmTranslatePrompt(
+            config.translate.llmPrompt,
+            JSON.stringify(chunk.map((item) => item.text)),
             target,
+            [
+              `只返回 JSON 对象 {"translations":["译文"]}，translations 数组长度必须为 ${chunk.length}。`,
+              "返回数组的顺序必须与输入数组完全一致。",
+              "每个元素只包含最终翻译文本，不要输出解释、代码块、Markdown、编号或额外字段。",
+              "如果原文已经是目标中文，直接返回合适的中文结果。",
+            ].join("\n"),
           ),
           undefined,
           {

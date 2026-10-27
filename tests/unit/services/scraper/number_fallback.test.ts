@@ -247,12 +247,22 @@ describe("AI movie code fallback", () => {
     const result = service.recognize(
       `/private/absolute/path/ABC-123/${evidence === "invented evidence" ? "recording" : (evidence ?? "recording")}.mp4`,
       "",
-      config,
+      {
+        ...config,
+        translate: {
+          ...config.translate,
+          llmSystemPrompt: "Shared context",
+          llmNumberRecognitionPrompt: "Custom number extraction instructions",
+        },
+      },
     );
     if (valid) await expect(result).resolves.toBe(number);
     else await expect(result).rejects.toThrow();
-    const request = generateText.mock.calls[0]?.[0] as unknown as { prompt: string; model: string };
+    const request = generateText.mock.calls[0]?.[0];
+    expect(request.systemPrompt).toBe("Shared context");
     expect(request.model).toBe(config.translate.llmModelName);
+    expect(request.prompt).toContain("Custom number extraction instructions");
+    expect(request.prompt).toContain('"evidence"');
     expect(request.prompt).not.toContain("/private/absolute/path");
     expect(request.prompt).not.toContain(defaultConfiguration.translate.llmPrompt);
   });

@@ -370,7 +370,22 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "服务类型",
       description: "自定义代理需要显式选择 Google 或 DeepSeek；不要依赖网址域名识别。",
     },
-    "translate.llmPrompt": { label: "LLM 翻译提示词", aliases: ["提示词"] },
+    "translate.llmSystemPrompt": {
+      label: "LLM 前置提示词",
+      description: "共用于翻译和兜底番号识别，作为系统提示词发送。可填写角色、背景和通用要求；留空则不发送。",
+      aliases: ["提示词", "系统提示词", "前置"],
+    },
+    "translate.llmPrompt": {
+      label: "LLM 翻译提示词",
+      description:
+        "用于文本、影片元数据及批量 NFO 翻译。{lang} 替换为目标语言，{content} 替换为待翻译内容；输出格式由程序附加。",
+      aliases: ["提示词"],
+    },
+    "translate.llmNumberRecognitionPrompt": {
+      label: "LLM 兜底番号识别提示词",
+      description: "仅用于 AI 番号识别兜底。程序自动附加文件名、直接父目录名和原识别番号，并约束 JSON 输出和来源证据。",
+      aliases: ["提示词", "番号", "兜底"],
+    },
     "translate.llmTemperature": { label: "LLM 温度（高级，可选）", description: "留空时使用服务端默认值。" },
     "translate.llmReasoning": { label: "LLM 推理强度", aliases: ["思考", "推理强度"] },
     "translate.llmOutputFormat": {

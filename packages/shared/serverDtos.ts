@@ -1110,6 +1110,7 @@ export const translateTestInputSchema = z.object({
   llmBaseUrl: z.string().optional(),
   llmApiFormat: z.enum(LLM_API_FORMAT_OPTIONS).optional(),
   llmServiceType: z.enum(LLM_SERVICE_TYPE_OPTIONS).optional(),
+  llmSystemPrompt: z.string().optional(),
   llmPrompt: z.string().optional(),
   llmTemperature: z.number().min(0).max(2).nullable().optional(),
   llmReasoning: z.enum(LLM_REASONING_OPTIONS).optional(),

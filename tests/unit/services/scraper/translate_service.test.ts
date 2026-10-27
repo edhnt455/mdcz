@@ -580,6 +580,8 @@ describe("TranslateService term consistency", () => {
         engine: TranslateEngine.OPENAI,
         llmApiKey: "",
         llmBaseUrl: "http://127.0.0.1:11434/v1",
+        llmSystemPrompt: "Shared context",
+        llmPrompt: "Custom translation to {lang}: {content}",
         enableTranslation: true,
         llmMaxRetries: 1,
       },
@@ -591,6 +593,8 @@ describe("TranslateService term consistency", () => {
       expect.objectContaining({
         apiKey: "",
         baseUrl: "http://127.0.0.1:11434/v1",
+        systemPrompt: "Shared context",
+        prompt: expect.stringContaining("Custom translation to 简体中文: hello"),
       }),
       undefined,
     );

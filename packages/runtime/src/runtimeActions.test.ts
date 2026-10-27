@@ -176,6 +176,7 @@ describe("settings parity runtime helpers", () => {
       testTranslation(
         {
           llmModelName: "gpt-test",
+          llmSystemPrompt: "Shared context",
           llmPrompt: "{lang}:{content}",
           llmTemperature: 1.5,
           llmReasoning: "high",
@@ -189,7 +190,8 @@ describe("settings parity runtime helpers", () => {
       expect.objectContaining({
         baseUrl: "https://example.test/v1",
         model: "gpt-test",
-        prompt: expect.stringContaining("ある日の暮方の事である。"),
+        systemPrompt: "Shared context",
+        prompt: expect.stringContaining('简体中文:{"title":"ある日の暮方","plot":"ある日の暮方の事である。"'),
         reasoning: "high",
         temperature: 1.5,
         timeout: 120_000,

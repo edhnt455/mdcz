@@ -36,10 +36,12 @@ export const buildLlmTranslatePrompt = (
   promptTemplate: string,
   text: string,
   target: LanguageTarget,
-  structured = false,
+  outputInstruction = TRANSLATION_ONLY_INSTRUCTION,
 ): string => {
-  const prompt = promptTemplate.replaceAll("{lang}", getTargetLanguageLabel(target)).replaceAll("{content}", text);
-  return `${prompt.trim()}\n\n${structured ? JSON_TRANSLATION_INSTRUCTION : TRANSLATION_ONLY_INSTRUCTION}`;
+  const prompt = promptTemplate.replace(/\{lang\}|\{content\}/gu, (placeholder) =>
+    placeholder === "{lang}" ? getTargetLanguageLabel(target) : text,
+  );
+  return `${prompt.trim()}\n\n${outputInstruction}`;
 };
 
 export const cleanTranslationOutput = (
@@ -97,7 +99,12 @@ export class OpenAiTranslator {
     throwIfAborted(signal);
 
     const structured = config.translate.llmOutputFormat !== "none";
-    const contractedPrompt = buildLlmTranslatePrompt(config.translate.llmPrompt, text, target, structured);
+    const contractedPrompt = buildLlmTranslatePrompt(
+      config.translate.llmPrompt,
+      text,
+      target,
+      structured ? JSON_TRANSLATION_INSTRUCTION : TRANSLATION_ONLY_INSTRUCTION,
+    );
     const content = await this.requests.requestText(
       config.translate,
       contractedPrompt,
@@ -127,15 +134,17 @@ export class OpenAiTranslator {
 
     throwIfAborted(signal);
 
-    const prompt = [
-      `将输入 JSON 中的影片元数据翻译为${getTargetLanguageLabel(target)}。`,
-      '只返回一个 JSON 对象，字段固定为 "title"、"plot" 和 "genres"。',
-      "title 和 plot 为 null 时保持 null，否则只返回最终译文。",
-      `genres 必须返回 ${input.genres.length} 项，顺序与输入完全一致，每项只包含一个简短标签。`,
-      "不要返回解释、Markdown、提示词或原文之外的额外字段。",
-      "输入 JSON：",
+    const prompt = buildLlmTranslatePrompt(
+      config.translate.llmPrompt,
       JSON.stringify(input),
-    ].join("\n");
+      target,
+      [
+        '只返回一个 JSON 对象，字段固定为 "title"、"plot" 和 "genres"。',
+        "title 和 plot 为 null 时保持 null，否则只返回最终译文。",
+        `genres 必须返回 ${input.genres.length} 项，顺序与输入完全一致，每项只包含一个简短标签。`,
+        "不要返回解释、Markdown、提示词或原文之外的额外字段。",
+      ].join("\n"),
+    );
     const content = await this.requests.requestText(config.translate, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
     try {
       const parsed = metadataTranslationSchema.parse(JSON.parse(content ?? ""));
