@@ -117,6 +117,7 @@ export class ToolsService {
             {
               llmApiClient: this.llmApiClient,
               localScanService: this.localScanService,
+              logger: runtimeLoggerService.getLogger("BatchNfoTranslator"),
               nfoGenerator: this.nfoGenerator,
               writeNfo: writePreparedNfo,
               publication: {

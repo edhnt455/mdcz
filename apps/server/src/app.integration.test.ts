@@ -2,11 +2,12 @@ import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { deterministicMediaRootId } from "@mdcz/media-store";
 import { RECENT_ACQUISITION_LIMIT } from "@mdcz/runtime/library";
+import { LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { parseConfigurationContent } from "@mdcz/shared/configCodec";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeTestServers,
   createTempRoot,
@@ -309,6 +310,68 @@ describe("buildServer composition integration", () => {
     expect(catalogResponse.json().result.data.tools).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "single-file-scraper" })]),
     );
+
+    const directory = await createTempRoot("batch-translation-logs");
+    const filePath = join(directory, "CAWB-044.strm");
+    const nfoPath = join(directory, "CAWB-044.nfo");
+    await writeFile(filePath, "https://media.test/CAWB-044.mp4\n");
+    await writeFile(
+      nfoPath,
+      new NfoGenerator().buildXml({
+        number: "CAWB-044",
+        title: "日本語の題名",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.JAVDB,
+      }),
+    );
+    await services.config.update({ translate: { llmModelName: "test-model", llmApiKey: "test-key" } });
+    const generateText = vi.spyOn(LlmApiClient.prototype, "generateText").mockResolvedValue("抱歉，我无法翻译或处理");
+    try {
+      const response = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          toolId: "batch-nfo-translator",
+          action: "apply",
+          mode: "all",
+          items: [
+            {
+              filePath,
+              nfoPath,
+              directory,
+              number: "CAWB-044",
+              title: "日本語の題名",
+              pendingFields: ["title"],
+              reason: "content",
+            },
+          ],
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      const result = response.json().result.data.data.results[0];
+      expect(result).toMatchObject({ success: false, number: "CAWB-044" });
+      expect(result.error).toContain("is not valid JSON");
+      const logs = await fastify.inject({
+        method: "POST",
+        url: "/trpc/logs.list",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { kind: "runtime" },
+      });
+      const error = logs.json().result.data.logs.find((log: { type: string }) => log.type === "error");
+      expect(error).toMatchObject({ level: "ERR", taskId: "BatchNfoTranslator" });
+      expect(JSON.parse(error.message.slice("[batch-nfo-translation] ".length))).toMatchObject({
+        number: "CAWB-044",
+        nfoPath,
+        error: result.error,
+      });
+      await fastify.close();
+      expect(await readFile(join(services.config.runtimePaths.logDir, "mdcz.log"), "utf8")).toContain(error.message);
+    } finally {
+      generateText.mockRestore();
+    }
   });
 
   it("updates TOML-backed config through tRPC", async () => {

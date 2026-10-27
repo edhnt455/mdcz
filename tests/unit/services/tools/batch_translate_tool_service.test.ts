@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { configurationSchema, defaultConfiguration } from "@main/services/config";
+import { loggerService } from "@main/services/LoggerService";
 import type { DesktopPersistenceService } from "@main/services/persistence";
 import { BatchTranslateToolService } from "@main/services/tools/BatchTranslateToolService";
 import type { MediaRoot } from "@mdcz/media-store";
@@ -20,6 +21,7 @@ vi.mock("node:timers/promises", () => ({ setTimeout: sleepMock }));
 
 const tempDirs: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -268,6 +270,9 @@ describe("BatchTranslateToolService", () => {
   });
 
   it("batches unique texts, preserves published translations, and persists exhausted failures", async () => {
+    const logger = loggerService.getLogger("BatchTranslateToolService");
+    const logError = vi.spyOn(logger, "error").mockReturnValue(logger);
+    vi.spyOn(loggerService, "getLogger").mockReturnValue(logger);
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-translation-"));
     tempDirs.push(root);
     const config = createConfig({
@@ -409,6 +414,7 @@ describe("BatchTranslateToolService", () => {
     const secondWrite = writeNfo.mock.calls[1]?.[0] as { crawlerData: { title_zh?: string } };
     expect(secondWrite.crawlerData.title_zh).toBe("相同标题");
     expect(results.every(({ success }) => success)).toBe(true);
+    expect(logError).not.toHaveBeenCalled();
     for (const number of ["AAA-001", "BBB-002"]) {
       expect(await readFile(join(root, `${number}.nfo`), "utf8")).toContain("相同标题");
     }
@@ -419,9 +425,10 @@ describe("BatchTranslateToolService", () => {
       if (!entry?.nfoPath) throw new Error(`Missing fixture: ${videoPath}`);
       return { ...entry, crawlerData: parseNfoSnapshot(await readFile(entry.nfoPath, "utf8")).crawlerData };
     });
-    for (const [index, failure] of (["empty", "invalid", "unauthorized", "echo"] as const).entries()) {
+    for (const [index, failure] of (["empty", "invalid", "unauthorized", "refusal", "echo"] as const).entries()) {
       generateText.mockClear();
       sleepMock.mockClear();
+      logError.mockClear();
       postJsonDetailed.mockResolvedValue({
         ...emptyResponse,
         ...(failure === "unauthorized" ? { ok: false, status: 401, statusText: "Unauthorized" } : {}),
@@ -430,9 +437,11 @@ describe("BatchTranslateToolService", () => {
             ? emptyResponse.data
             : failure === "invalid"
               ? { output_text: '{"translations":["缺少简介"]}' }
-              : failure === "echo"
-                ? { output_text: '{"translations":["Same English Title","Plot 1"]}' }
-                : { error: { message: "invalid API key" } },
+              : failure === "refusal"
+                ? { output_text: "抱歉，我无法翻译或处理" }
+                : failure === "echo"
+                  ? { output_text: '{"translations":["Same English Title","Plot 1"]}' }
+                  : { error: { message: "invalid API key" } },
       });
       const failures = await service.apply(items, config, { mode: "all" });
       expect(generateText).toHaveBeenCalledTimes(failure === "empty" ? config.translate.llmMaxRetries + 1 : 1);
@@ -445,11 +454,25 @@ describe("BatchTranslateToolService", () => {
             ? "LLM response did not contain text"
             : failure === "invalid"
               ? "batch translation count"
-              : failure === "echo"
-                ? "provider returned source text"
-                : "HTTP 401",
+              : failure === "refusal"
+                ? "is not valid JSON"
+                : failure === "echo"
+                  ? "provider returned source text"
+                  : "HTTP 401",
         );
       }
+      expect(logError).toHaveBeenCalledTimes(failures.length);
+      expect(
+        logError.mock.calls.map(([message]) => JSON.parse(String(message).slice("[batch-nfo-translation] ".length))),
+      ).toEqual(
+        failures.map((result) => ({
+          number: result.number,
+          nfoPath: result.nfoPath,
+          mode: "all",
+          translatedFields: result.translatedFields,
+          error: result.error,
+        })),
+      );
       expect(writeNfo).toHaveBeenCalledTimes(2 + (index + 1) * 2);
       const failedData = parseNfoSnapshot(await readFile(items[0].nfoPath, "utf8")).crawlerData;
       expect(failedData.title_zh).toBe(parseNfoSnapshot(savedNfo).crawlerData.title_zh);

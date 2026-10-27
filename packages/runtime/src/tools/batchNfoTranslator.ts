@@ -30,8 +30,7 @@ import {
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { NfoGenerator, type NfoOptions, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import { LlmRequestService } from "../scrape/translate/engines/LlmRequestService";
-import type { RuntimeLogger } from "../shared";
-import { detectLanguage, toErrorMessage } from "../shared";
+import { detectLanguage, type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 
 type BatchTranslateLocalScanService = {
   scan(dirPath: string, sceneImagesFolder: string): Promise<LocalScanEntry[]>;
@@ -102,13 +101,6 @@ export interface BatchNfoTranslatorApplyOptions {
   mode: BatchTranslateMode;
   maxBatchItems?: number;
 }
-
-const noopLogger: RuntimeLogger = {
-  debug: () => undefined,
-  info: () => undefined,
-  warn: () => undefined,
-  error: () => undefined,
-};
 
 const normalizeText = (value: string | undefined): string => normalizeNewlines(value ?? "").trim();
 
@@ -351,7 +343,7 @@ export const applyBatchNfoTranslations = async (
   const publication = dependencies.publication;
   if (!publication) throw new Error("Batch NFO translation requires registered roots");
 
-  const logger = dependencies.logger ?? noopLogger;
+  const logger = dependencies.logger ?? runtimeLoggerService.getLogger("BatchNfoTranslator");
   const nfoGenerator = dependencies.nfoGenerator ?? new NfoGenerator();
   const writeNfo = dependencies.writeNfo ?? defaultWriteNfo;
   const target = toTarget(config.translate.targetLanguage);
@@ -572,5 +564,17 @@ export const applyBatchNfoTranslations = async (
     }
   }
 
+  for (const result of results) {
+    if (result.success) continue;
+    logger.error(
+      `[batch-nfo-translation] ${JSON.stringify({
+        number: result.number,
+        nfoPath: result.nfoPath,
+        mode: options.mode,
+        translatedFields: result.translatedFields,
+        error: result.error,
+      })}`,
+    );
+  }
   return results;
 };
