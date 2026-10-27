@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type {
+  BatchTranslateApplyMode,
   BatchTranslateApplyResultItem,
   BatchTranslateField,
   BatchTranslateMode,
@@ -63,6 +65,7 @@ export type BatchTranslateWriteNfo = (input: BatchTranslateWriteNfoInput) => Pro
 type BatchTranslationAction =
   | { field: BatchTranslateField; kind: "translate"; text: string; key: string; genreIndex?: number }
   | { field: BatchTranslateField; kind: "convert"; value: string }
+  | { field: BatchTranslateField; kind: "ignore"; fingerprint: string }
   | { field: BatchTranslateField; kind: "restore" };
 
 type BatchTranslationPlanItem = {
@@ -98,11 +101,20 @@ const MAX_BATCH_CHARS = 12_000;
 const MOVIE_NFO_NAME = "movie.nfo";
 
 export interface BatchNfoTranslatorApplyOptions {
-  mode: BatchTranslateMode;
+  mode: BatchTranslateApplyMode;
   maxBatchItems?: number;
 }
 
 const normalizeText = (value: string | undefined): string => normalizeNewlines(value ?? "").trim();
+
+const fieldFingerprint = (data: CrawlerData, field: BatchTranslateField): string =>
+  createHash("sha256")
+    .update(
+      field === "genres"
+        ? JSON.stringify(data.genres)
+        : normalizeText(data[field === "title" ? "title_zh" : "plot_zh"]) || normalizeText(data[field]),
+    )
+    .digest("hex");
 
 const batchTranslationSchema = z.strictObject({ translations: z.array(z.string().trim().min(1)) });
 
@@ -212,17 +224,24 @@ const toScanItem = (
 
   const pendingFields: BatchTranslateField[] = [];
   const failures = entry.crawlerData.translation_failures;
-  if (
-    (mode !== "restore" && failures?.title) ||
-    buildFieldAction("title", entry.crawlerData.title, entry.crawlerData.title_zh, target, mode)
-  )
-    pendingFields.push("title");
-  if (
-    (mode !== "restore" && failures?.plot) ||
-    buildFieldAction("plot", entry.crawlerData.plot, entry.crawlerData.plot_zh, target, mode)
-  )
-    pendingFields.push("plot");
-  if (failures?.genres && mode !== "restore") pendingFields.push("genres");
+  for (const field of ["title", "plot", "genres"] as const) {
+    if (
+      mode === "untranslated" &&
+      entry.crawlerData.translation_ignored?.[field] === fieldFingerprint(entry.crawlerData, field)
+    )
+      continue;
+    const action =
+      field === "genres"
+        ? undefined
+        : buildFieldAction(
+            field,
+            entry.crawlerData[field],
+            entry.crawlerData[field === "title" ? "title_zh" : "plot_zh"],
+            target,
+            mode,
+          );
+    if ((mode !== "restore" && failures?.[field]) || action) pendingFields.push(field);
+  }
   if (pendingFields.length === 0) return null;
 
   return {
@@ -231,6 +250,7 @@ const toScanItem = (
     directory: entry.currentDir,
     number: entry.crawlerData.number || entry.fileInfo.number,
     title: entry.crawlerData.title_zh?.trim() || entry.crawlerData.title,
+    plot: entry.crawlerData.plot_zh?.trim() || entry.crawlerData.plot || "",
     pendingFields,
     reason: pendingFields.some((field) => failures?.[field]) ? "task_failed" : "content",
   };
@@ -284,7 +304,12 @@ const translatePendingTexts = async (
         ),
       );
       if (!content) throw new Error("LLM returned an empty response");
-      const { translations } = batchTranslationSchema.parse(JSON.parse(content));
+      const json = content
+        .trim()
+        .replace(/^<think>[\s\S]*?<\/think>\s*/iu, "")
+        .replace(/^\[[\p{L}\p{N}_ -]+\]\s*(?=\{|```)/u, "")
+        .replace(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/iu, "$1");
+      const { translations } = batchTranslationSchema.parse(JSON.parse(json));
       if (translations.length !== chunk.length)
         throw new Error("LLM returned a batch translation count that does not match input");
       chunk.forEach((item, index) => {
@@ -359,8 +384,20 @@ export const applyBatchNfoTranslations = async (
     nfoPaths.add(nfoKey);
 
     const actions: BatchTranslationAction[] = [];
+    if (options.mode === "ignore") {
+      for (const field of new Set(item.pendingFields)) {
+        actions.push({ field, kind: "ignore", fingerprint: fieldFingerprint(entry.crawlerData, field) });
+      }
+      plans.push({ entry, actions });
+      continue;
+    }
     for (const field of ["title", "plot"] as const) {
       if (!item.pendingFields.includes(field)) continue;
+      if (
+        options.mode === "untranslated" &&
+        entry.crawlerData.translation_ignored?.[field] === fieldFingerprint(entry.crawlerData, field)
+      )
+        continue;
       const action = buildFieldAction(
         field,
         entry.crawlerData[field],
@@ -374,12 +411,16 @@ export const applyBatchNfoTranslations = async (
     if (
       item.pendingFields.includes("genres") &&
       entry.crawlerData.translation_failures?.genres &&
-      options.mode !== "restore"
+      options.mode !== "restore" &&
+      !(
+        options.mode === "untranslated" &&
+        entry.crawlerData.translation_ignored?.genres === fieldFingerprint(entry.crawlerData, "genres")
+      )
     ) {
-      entry.crawlerData.genres.forEach((genre, genreIndex) => {
+      for (const [genreIndex, genre] of entry.crawlerData.genres.entries()) {
         const action = buildFieldAction("genres", genre, undefined, target, options.mode, true);
         if (action?.kind === "translate") actions.push({ ...action, genreIndex });
-      });
+      }
     }
 
     for (const action of actions) {
@@ -425,11 +466,18 @@ export const applyBatchNfoTranslations = async (
 
     const nextCrawlerData = { ...entry.crawlerData, genres: [...entry.crawlerData.genres] };
     const failures = { ...entry.crawlerData.translation_failures };
+    const ignored = { ...entry.crawlerData.translation_ignored };
     const translatedFields: BatchTranslateField[] = [];
     const errors: string[] = [];
 
     const failedFields = new Set<BatchTranslateField>();
     for (const action of plan.actions) {
+      if (action.kind === "ignore") {
+        ignored[action.field] = action.fingerprint;
+        translatedFields.push(action.field);
+        continue;
+      }
+      delete ignored[action.field];
       const translatedKey = action.field === "title" ? "title_zh" : "plot_zh";
 
       if (action.kind !== "translate") {
@@ -458,6 +506,8 @@ export const applyBatchNfoTranslations = async (
     }
     if (Object.keys(failures).length) nextCrawlerData.translation_failures = failures;
     else delete nextCrawlerData.translation_failures;
+    if (Object.keys(ignored).length) nextCrawlerData.translation_ignored = ignored;
+    else delete nextCrawlerData.translation_ignored;
 
     if (plan.actions.length === 0) {
       results.push({
@@ -544,6 +594,8 @@ export const applyBatchNfoTranslations = async (
         success: errors.length === 0,
         translatedFields,
         savedNfoPath,
+        title: nextCrawlerData.title_zh?.trim() || nextCrawlerData.title,
+        plot: nextCrawlerData.plot_zh?.trim() || nextCrawlerData.plot || "",
         error: errors.length > 0 ? errors.join("；") : undefined,
       });
     } catch (error) {

@@ -209,7 +209,8 @@ describe("BatchTranslateToolService", () => {
       expect.objectContaining({ number: "AAA-001", pendingFields: ["title", "plot"] }),
       expect.objectContaining({ number: "CCC-003", pendingFields: ["title", "genres"], reason: "task_failed" }),
     ]);
-    expect(untranslated[0].reason).toBe("content");
+    expect(untranslated[0]).toMatchObject({ reason: "content", title: "Same English Title", plot: "English plot" });
+    expect(all.find((item) => item.number === "BBB-002")).toMatchObject({ title: "中文标题", plot: "中文简介" });
     // A Chinese source needs no translation in either mode; a translated Japanese title is retranslated.
     expect(all).toEqual<BatchTranslateScanItem[]>([
       expect.objectContaining({ number: "AAA-001", pendingFields: ["title", "plot"] }),
@@ -253,6 +254,7 @@ describe("BatchTranslateToolService", () => {
           directory: root,
           number: "CCC-003",
           title: "中文标题",
+          plot: "中文简介",
           pendingFields: ["title", "plot"],
           reason: "content",
         },
@@ -301,7 +303,7 @@ describe("BatchTranslateToolService", () => {
       .mockResolvedValueOnce(emptyResponse)
       .mockResolvedValue({
         ...emptyResponse,
-        data: { output_text: '{"translations":["相同标题","剧情一"]}' },
+        data: { output_text: '[N] {"translations":["相同标题","剧情一"]}' },
       });
     const client = new LlmApiClient({ postJsonDetailed });
     const generateText = vi.fn(client.generateText.bind(client));
@@ -375,6 +377,7 @@ describe("BatchTranslateToolService", () => {
         directory: "/library",
         number: "AAA-001",
         title: "Same English Title",
+        plot: "Plot 1",
         pendingFields: ["title", "plot"],
       },
       {
@@ -383,6 +386,7 @@ describe("BatchTranslateToolService", () => {
         directory: "/library",
         number: "BBB-002",
         title: "Same English Title",
+        plot: "",
         pendingFields: ["title"],
       },
     ].map((item) => ({
@@ -426,29 +430,47 @@ describe("BatchTranslateToolService", () => {
       expect(await readFile(join(root, `${number}.nfo`), "utf8")).toContain("相同标题");
     }
 
+    for (const output of [
+      '{"translations":["相同标题","剧情一"]}',
+      '  ```json\n{"translations":["相同标题","剧情一"]}\n```  ',
+      '<think>Inspect the input.</think>\n[Translator]\n```json\n{"translations":["相同标题","剧情一"]}\n```',
+    ]) {
+      postJsonDetailed.mockResolvedValue({ ...emptyResponse, data: { output_text: output } });
+      const repaired = await service.apply(items, config, { mode: "all" });
+      expect(repaired.every(({ success }) => success)).toBe(true);
+    }
+    const successfulWriteCount = writeNfo.mock.calls.length;
     const savedNfo = await readFile(items[0].nfoPath, "utf8");
     localScanService.scanVideo.mockImplementation(async (_root, videoPath) => {
       const entry = entriesByPath.get(videoPath);
       if (!entry?.nfoPath) throw new Error(`Missing fixture: ${videoPath}`);
       return { ...entry, crawlerData: parseNfoSnapshot(await readFile(entry.nfoPath, "utf8")).crawlerData };
     });
-    for (const [index, failure] of (["empty", "invalid", "unauthorized", "refusal", "echo"] as const).entries()) {
+    const failureResponses = {
+      empty: { data: emptyResponse.data, error: "LLM response did not contain text" },
+      invalid: { data: { output_text: '{"translations":["缺少简介"]}' }, error: "batch translation count" },
+      unauthorized: { data: { error: { message: "invalid API key" } }, error: "HTTP 401" },
+      refusal: { data: { output_text: "抱歉，我无法翻译或处理" }, error: "is not valid JSON" },
+      echo: {
+        data: { output_text: '{"translations":["Same English Title","Plot 1"]}' },
+        error: "provider returned source text",
+      },
+      truncated: { data: { output_text: '[N] {"translations":["标题"' }, error: "JSON" },
+      multiple: {
+        data: { output_text: '[N] {"translations":["标题","简介"]}\n{"translations":["另一标题","另一简介"]}' },
+        error: "JSON",
+      },
+      array: { data: { output_text: '[{"translations":["标题","简介"]}]' }, error: "expected object" },
+      extraFields: { data: { output_text: '[N] {"translations":["标题","简介"],"extra":true}' }, error: "extra" },
+    };
+    for (const [index, [failure, response]] of Object.entries(failureResponses).entries()) {
       generateText.mockClear();
       sleepMock.mockClear();
       logError.mockClear();
       postJsonDetailed.mockResolvedValue({
         ...emptyResponse,
         ...(failure === "unauthorized" ? { ok: false, status: 401, statusText: "Unauthorized" } : {}),
-        data:
-          failure === "empty"
-            ? emptyResponse.data
-            : failure === "invalid"
-              ? { output_text: '{"translations":["缺少简介"]}' }
-              : failure === "refusal"
-                ? { output_text: "抱歉，我无法翻译或处理" }
-                : failure === "echo"
-                  ? { output_text: '{"translations":["Same English Title","Plot 1"]}' }
-                  : { error: { message: "invalid API key" } },
+        data: response.data,
       });
       const failures = await service.apply(items, config, { mode: "all" });
       expect(generateText).toHaveBeenCalledTimes(failure === "empty" ? config.translate.llmMaxRetries + 1 : 1);
@@ -456,17 +478,7 @@ describe("BatchTranslateToolService", () => {
       expect(failures).toHaveLength(2);
       for (const result of failures) {
         expect(result).toMatchObject({ success: false, translatedFields: [] });
-        expect(result.error).toContain(
-          failure === "empty"
-            ? "LLM response did not contain text"
-            : failure === "invalid"
-              ? "batch translation count"
-              : failure === "refusal"
-                ? "is not valid JSON"
-                : failure === "echo"
-                  ? "provider returned source text"
-                  : "HTTP 401",
-        );
+        expect(result.error).toContain(response.error);
       }
       expect(logError).toHaveBeenCalledTimes(failures.length);
       expect(
@@ -480,11 +492,97 @@ describe("BatchTranslateToolService", () => {
           error: result.error,
         })),
       );
-      expect(writeNfo).toHaveBeenCalledTimes(2 + (index + 1) * 2);
+      expect(writeNfo).toHaveBeenCalledTimes(successfulWriteCount + (index + 1) * 2);
       const failedData = parseNfoSnapshot(await readFile(items[0].nfoPath, "utf8")).crawlerData;
       expect(failedData.title_zh).toBe(parseNfoSnapshot(savedNfo).crawlerData.title_zh);
       expect(failedData.translation_failures).toMatchObject({ title: expect.any(String), plot: expect.any(String) });
     }
+  });
+
+  it("persists manually accepted fields without translating and reconsiders changed content or explicit retranslation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-translation-ignore-"));
+    tempDirs.push(root);
+    const nfoPath = join(root, "ABC-123.nfo");
+    const entry = createEntry({
+      fileInfo: { filePath: join(root, "ABC-123.mp4") },
+      nfoPath,
+      currentDir: root,
+      crawlerData: {
+        title: "Original title",
+        title_zh: "已翻译的标题 Alice",
+        plot: "Original plot",
+        plot_zh: "已经翻译的简介 アリス",
+        genres: ["Drama"],
+        translation_failures: { title: "source echoed", plot: "source echoed", genres: "source echoed" },
+      },
+    });
+    if (!entry.crawlerData) throw new Error("Missing fixture metadata");
+    await writeFile(
+      nfoPath,
+      new NfoGenerator().buildXml(entry.crawlerData, {
+        localState: { tags: ["保留标签"], lockedFields: ["Cast"] },
+        buildTags: buildMovieTags,
+      }),
+    );
+    const readEntry = async () => {
+      const snapshot = parseNfoSnapshot(await readFile(nfoPath, "utf8"));
+      return { ...entry, crawlerData: snapshot.crawlerData, nfoLocalState: snapshot.localState };
+    };
+    const generateText = vi.fn().mockResolvedValue('{"translations":["重新翻译的标题","重新翻译的简介"]}');
+    const writeNfo = vi.fn(writePreparedNfo);
+    const { service } = createService({
+      scan: async () => [await readEntry()],
+      scanVideo: readEntry,
+      generateText,
+      writeNfo,
+      rootPath: root,
+    });
+    const config = createConfig();
+    config.translate.llmApiKey = "";
+    config.translate.llmModelName = "";
+    const items = await service.scan(root, "untranslated", config);
+    expect(items[0]).toMatchObject({ title: entry.crawlerData.title_zh, plot: entry.crawlerData.plot_zh });
+    const originalXml = await readFile(nfoPath, "utf8");
+    writeNfo.mockRejectedValueOnce(new Error("Permission denied"));
+    expect((await service.apply(items, config, { mode: "ignore" }))[0]).toMatchObject({
+      success: false,
+      error: "Permission denied",
+    });
+    expect(await readFile(nfoPath, "utf8")).toBe(originalXml);
+    const titleOnly: BatchTranslateScanItem[] = [{ ...items[0], pendingFields: ["title"] }];
+    expect((await service.apply(titleOnly, config, { mode: "ignore" }))[0]).toMatchObject({
+      success: true,
+      translatedFields: ["title"],
+    });
+    const remaining = await service.scan(root, "untranslated", config);
+    expect(remaining[0].pendingFields).toEqual(["plot", "genres"]);
+    expect((await service.apply(remaining, config, { mode: "ignore" }))[0].success).toBe(true);
+    expect(generateText).not.toHaveBeenCalled();
+    const accepted = await readEntry();
+    expect(accepted.crawlerData).toMatchObject({
+      title: "Original title",
+      title_zh: entry.crawlerData.title_zh,
+      plot: "Original plot",
+      plot_zh: entry.crawlerData.plot_zh,
+      genres: ["Drama"],
+      translation_ignored: { title: expect.any(String), plot: expect.any(String), genres: expect.any(String) },
+    });
+    expect(accepted.crawlerData.translation_failures).toBeUndefined();
+    expect(accepted.nfoLocalState).toMatchObject({ tags: ["保留标签"], lockedFields: ["Cast"] });
+    expect(await service.scan(root, "untranslated", config)).toEqual([]);
+    const acceptedXml = await readFile(nfoPath, "utf8");
+    await writeFile(nfoPath, acceptedXml.replace("已经翻译的简介 アリス", "Changed English plot"));
+    expect((await service.scan(root, "untranslated", config))[0].pendingFields).toEqual(["plot"]);
+    await writeFile(nfoPath, acceptedXml);
+    const all = await service.scan(root, "all", config);
+    expect(all[0].pendingFields).toEqual(["title", "plot"]);
+    expect((await service.apply(all, createConfig(), { mode: "all" }))[0].success).toBe(true);
+    expect((await readEntry()).crawlerData.translation_ignored).toEqual({ genres: expect.any(String) });
+    await writeFile(nfoPath, acceptedXml);
+    const restore = await service.scan(root, "restore", config);
+    expect((await service.apply(restore, config, { mode: "restore" }))[0].success).toBe(true);
+    expect((await readEntry()).crawlerData).toMatchObject({ title: "Original title", plot: "Original plot" });
+    expect((await service.scan(root, "untranslated", config))[0].pendingFields).toEqual(["title", "plot"]);
   });
 
   it("forces flagged fields through translation and clears only fields that were repaired", async () => {

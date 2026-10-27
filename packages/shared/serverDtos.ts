@@ -150,6 +150,9 @@ export const crawlerDataSchema = z.object({
   translation_failures: z
     .object({ title: z.string().optional(), plot: z.string().optional(), genres: z.string().optional() })
     .optional(),
+  translation_ignored: z
+    .object({ title: z.string().optional(), plot: z.string().optional(), genres: z.string().optional() })
+    .optional(),
   title: z.string(),
   original_title: z.string().optional(),
   title_zh: z.string().optional(),
@@ -1267,7 +1270,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
   z.object({
     toolId: z.literal("batch-nfo-translator"),
     action: z.enum(["translate-text", "scan", "apply"]).optional().default("translate-text"),
-    mode: z.enum(["untranslated", "all", "restore"]).optional(),
+    mode: z.enum(["untranslated", "all", "restore", "ignore"]).optional(),
     text: z.string().trim().min(1).optional(),
     directory: z.string().trim().min(1).optional(),
     batchSize: z.number().int().min(1).max(20).optional(),
@@ -1279,6 +1282,7 @@ export const toolExecuteInputSchema = z.discriminatedUnion("toolId", [
           directory: z.string().trim().min(1),
           number: z.string(),
           title: z.string(),
+          plot: z.string(),
           pendingFields: z.array(z.enum(["title", "plot", "genres"])),
           reason: z.enum(["task_failed", "content"]),
         }),

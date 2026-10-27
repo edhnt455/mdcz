@@ -97,6 +97,7 @@ export class ToolsService {
         if (input.action === "scan") {
           if (!input.directory) throw new Error("Batch NFO translation scan requires a directory");
           if (!input.mode) throw new Error("Batch NFO translation scan requires a mode");
+          if (input.mode === "ignore") throw new Error("Ignore translation requires selected items");
           const items = await scanBatchNfoTranslations(input.directory, input.mode, config, {
             localScanService: this.localScanService,
           });

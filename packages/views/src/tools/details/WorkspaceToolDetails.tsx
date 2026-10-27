@@ -1,5 +1,10 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { BatchTranslateApplyResultItem, BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type {
+  BatchTranslateApplyMode,
+  BatchTranslateApplyResultItem,
+  BatchTranslateMode,
+  BatchTranslateScanItem,
+} from "@mdcz/shared/ipcTypes";
 import { Badge, Button, Checkbox, cn, Input, Label, Progress } from "@mdcz/ui";
 import {
   AlertCircle,
@@ -54,7 +59,7 @@ const persistBatchTranslateDirectory = (directory: string): void => {
   }
 };
 
-type BatchTranslateItemApplyStatus = "idle" | "processing" | "success" | "partial" | "failed";
+type BatchTranslateItemApplyStatus = "idle" | "processing" | "success" | "partial" | "failed" | "ignored";
 
 type BatchNfoTranslatorApplySummary = {
   successCount: number;
@@ -155,7 +160,7 @@ export interface BatchNfoTranslatorWorkspaceDetailProps {
   onApply: (
     items: BatchTranslateScanItem[],
     batchSize: number,
-    mode: BatchTranslateMode,
+    mode: BatchTranslateApplyMode,
   ) => Promise<BatchTranslateApplyResultItem[]>;
   onApplyComplete?: (summary: BatchNfoTranslatorApplySummary) => void;
   onBrowseDirectory?: () => Promise<string | null | undefined>;
@@ -167,6 +172,7 @@ const getBatchTranslateStatusBadgeClass = (status: BatchTranslateItemApplyStatus
     case "processing":
       return "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20";
     case "success":
+    case "ignored":
       return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
     case "partial":
       return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
@@ -193,6 +199,8 @@ export function BatchNfoTranslatorWorkspaceDetail({
   const [scannedMode, setScannedMode] = useState<BatchTranslateMode>("untranslated");
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
+  const [ignoring, setIgnoring] = useState(false);
+  const [ignoredPaths, setIgnoredPaths] = useState<Set<string>>(new Set());
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
   const [applyProgress, setApplyProgress] = useState<{
@@ -204,10 +212,11 @@ export function BatchNfoTranslatorWorkspaceDetail({
   const [itemStatusByPath, setItemStatusByPath] = useState<Record<string, BatchTranslateItemApplyStatus>>({});
   const previewRows = items.slice(0, 300);
   const resultByPath = useMemo(() => new Map(results.map((result) => [result.filePath, result])), [results]);
-  const pendingFieldCount = useMemo(() => items.reduce((sum, item) => sum + item.pendingFields.length, 0), [items]);
-  const selectedItems = useMemo(() => items.filter((item) => selectedPaths.has(item.filePath)), [items, selectedPaths]);
-  const allSelected = items.length > 0 && selectedPaths.size === items.length;
-  const someSelected = selectedPaths.size > 0 && selectedPaths.size < items.length;
+  const pendingItems = useMemo(() => items.filter((item) => !ignoredPaths.has(item.filePath)), [items, ignoredPaths]);
+  const pendingFieldCount = pendingItems.reduce((sum, item) => sum + item.pendingFields.length, 0);
+  const selectedItems = pendingItems.filter((item) => selectedPaths.has(item.filePath));
+  const allSelected = pendingItems.length > 0 && selectedItems.length === pendingItems.length;
+  const someSelected = selectedItems.length > 0 && !allSelected;
   const normalizedBatchSize = normalizeBatchTranslateSize(batchSizeInput);
   const applyProgressPercent = applyProgress
     ? Math.round((applyProgress.completed / Math.max(applyProgress.total, 1)) * 100)
@@ -240,6 +249,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
 
   useEffect(() => {
     setSelectedPaths(new Set(items.map((item) => item.filePath)));
+    setIgnoredPaths(new Set());
     setResults([]);
     setItemStatusByPath({});
     setApplyProgress(null);
@@ -257,7 +267,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
   };
 
   const toggleAll = () => {
-    setSelectedPaths(allSelected ? new Set() : new Set(items.map((item) => item.filePath)));
+    setSelectedPaths(allSelected ? new Set() : new Set(pendingItems.map((item) => item.filePath)));
   };
 
   const handleScan = async () => {
@@ -270,23 +280,26 @@ export function BatchNfoTranslatorWorkspaceDetail({
     await onScan(directory, mode);
   };
 
-  const handleApply = async () => {
-    if (selectedItems.length === 0 || applying) return;
+  const handleApply = async (actionItems = selectedItems, actionMode: BatchTranslateApplyMode = scannedMode) => {
+    if (actionItems.length === 0 || applying || scanning) return;
 
     setApplying(true);
+    setIgnoring(actionMode === "ignore");
     setApplyPaused(false);
-    setResults([]);
-    setItemStatusByPath(Object.fromEntries(selectedItems.map((item) => [item.filePath, "idle"])));
-    setApplyProgress({ completed: 0, total: selectedItems.length });
+    setItemStatusByPath((current) => ({
+      ...current,
+      ...Object.fromEntries(actionItems.map((item) => [item.filePath, "idle" as const])),
+    }));
+    setApplyProgress({ completed: 0, total: actionItems.length });
 
     const accumulatedResults: BatchTranslateApplyResultItem[] = [];
     let successCount = 0;
     let partialCount = 0;
     let failedCount = 0;
 
-    for (let index = 0; index < selectedItems.length; index += normalizedBatchSize) {
+    for (let index = 0; index < actionItems.length; index += normalizedBatchSize) {
       await waitWhileApplyPaused();
-      const chunk = selectedItems.slice(index, index + normalizedBatchSize);
+      const chunk = actionItems.slice(index, index + normalizedBatchSize);
       const chunkLabel =
         chunk.length === 1
           ? chunk[0]?.number
@@ -298,12 +311,12 @@ export function BatchNfoTranslatorWorkspaceDetail({
       setApplyProgress({
         completed: accumulatedResults.length,
         currentLabel: chunkLabel,
-        total: selectedItems.length,
+        total: actionItems.length,
       });
 
       let chunkResults: BatchTranslateApplyResultItem[];
       try {
-        chunkResults = await onApply(chunk, normalizedBatchSize, scannedMode);
+        chunkResults = await onApply(chunk, normalizedBatchSize, actionMode);
       } catch (error) {
         chunkResults = chunk.map((item) => buildFailedBatchTranslateResult(item, toErrorMessage(error)));
       }
@@ -322,8 +335,18 @@ export function BatchNfoTranslatorWorkspaceDetail({
         else if (status === "partial") partialCount += 1;
         else failedCount += 1;
       }
+      if (actionMode === "ignore") {
+        const completedPaths = resolvedChunkResults
+          .filter(({ result }) => result.success)
+          .map(({ filePath }) => filePath);
+        setIgnoredPaths((current) => new Set([...current, ...completedPaths]));
+        setSelectedPaths((current) => new Set([...current].filter((path) => !completedPaths.includes(path))));
+      }
 
-      setResults([...accumulatedResults]);
+      setResults((current) => [
+        ...current.filter((result) => !chunk.some((item) => item.filePath === result.filePath)),
+        ...resolvedChunkResults.map(({ result }) => result),
+      ]);
       setItemStatusByPath((current) => ({
         ...current,
         ...Object.fromEntries(
@@ -333,19 +356,21 @@ export function BatchNfoTranslatorWorkspaceDetail({
       setApplyProgress({
         completed: accumulatedResults.length,
         currentLabel: chunkLabel,
-        total: selectedItems.length,
+        total: actionItems.length,
       });
     }
 
     setApplying(false);
+    setIgnoring(false);
     setApplyPaused(false);
     setApplyProgress(null);
-    onApplyComplete?.({
-      failedCount,
-      partialCount,
-      successCount,
-      totalCount: selectedItems.length,
-    });
+    if (actionMode !== "ignore")
+      onApplyComplete?.({
+        failedCount,
+        partialCount,
+        successCount,
+        totalCount: actionItems.length,
+      });
   };
 
   const browseDirectory = async () => {
@@ -500,19 +525,33 @@ export function BatchNfoTranslatorWorkspaceDetail({
         >
           {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           <span>
-            {applying
-              ? applyProgress
-                ? t.tools.translatingProgress(applyProgress.completed, applyProgress.total)
-                : t.tools.translating
-              : scannedMode === "restore"
-                ? selectedItems.length === items.length
-                  ? t.tools.startRestore
-                  : t.tools.restoreSelected(selectedItems.length)
-                : selectedItems.length === items.length
-                  ? t.tools.startBatchTranslate
-                  : t.tools.translateSelected(selectedItems.length)}
+            {ignoring
+              ? t.tools.ignoringTranslation
+              : applying
+                ? applyProgress
+                  ? t.tools.translatingProgress(applyProgress.completed, applyProgress.total)
+                  : t.tools.translating
+                : scannedMode === "restore"
+                  ? selectedItems.length === items.length
+                    ? t.tools.startRestore
+                    : t.tools.restoreSelected(selectedItems.length)
+                  : selectedItems.length === items.length
+                    ? t.tools.startBatchTranslate
+                    : t.tools.translateSelected(selectedItems.length)}
           </span>
         </Button>
+        {scannedMode !== "restore" ? (
+          <Button
+            variant="secondary"
+            onClick={() => void handleApply(selectedItems, "ignore")}
+            disabled={applying || scanning || selectedItems.length === 0}
+            title={t.tools.ignoreTranslationHelp}
+            className={TOOL_SECONDARY_BUTTON_CLASS}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            {t.tools.ignoreSelectedTranslations(selectedItems.length)}
+          </Button>
+        ) : null}
         {applying ? (
           <Button
             type="button"
@@ -526,6 +565,8 @@ export function BatchNfoTranslatorWorkspaceDetail({
         ) : null}
       </div>
 
+      {scannedMode !== "restore" ? <p className={TOOL_NOTE_CLASS}>{t.tools.ignoreTranslationHelp}</p> : null}
+
       {applying && applyProgress ? (
         <div className={TOOL_SUBSECTION_CLASS}>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
@@ -534,8 +575,8 @@ export function BatchNfoTranslatorWorkspaceDetail({
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
               </span>
-              {paused ? t.tools.paused : t.tools.translating} {applyProgress.currentLabel ?? "..."} (
-              {applyProgress.completed}/{applyProgress.total})
+              {paused ? t.tools.paused : ignoring ? t.tools.ignoringTranslation : t.tools.translating}{" "}
+              {applyProgress.currentLabel ?? "..."} ({applyProgress.completed}/{applyProgress.total})
             </span>
             <span className="font-mono">{applyProgressPercent}%</span>
           </div>
@@ -549,7 +590,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
             <span className="text-[11px] font-semibold uppercase tracking-wider">{t.tools.pendingItems}</span>
             <FileText className="h-3.5 w-3.5" />
           </div>
-          <div className="text-lg font-bold font-mono">{items.length}</div>
+          <div className="text-lg font-bold font-mono">{pendingItems.length}</div>
         </div>
         <div className="flex-1 min-w-[120px] rounded-quiet-lg bg-surface-low/90 p-3.5 space-y-1">
           <div className="flex items-center justify-between text-muted-foreground">
@@ -599,34 +640,41 @@ export function BatchNfoTranslatorWorkspaceDetail({
       </div>
 
       <div className={TOOL_TABLE_SHELL_CLASS}>
-        <div className="max-h-[440px] overflow-y-auto">
-          <table className="w-full text-xs border-collapse">
+        <div className="max-h-[640px] overflow-auto">
+          <table className="w-full min-w-[1000px] text-xs border-collapse">
             <thead className="sticky top-0 bg-surface-low/95 backdrop-blur-sm z-10 shadow-sm">
               <tr className="text-muted-foreground border-b border-black/5 dark:border-white/5">
-                <th className="w-12 px-4 py-3 text-left">
+                <th scope="col" className="w-12 px-4 py-3 text-left">
                   <Checkbox
                     checked={someSelected ? "indeterminate" : allSelected}
-                    disabled={items.length === 0 || scanning || applying}
+                    disabled={pendingItems.length === 0 || scanning || applying}
                     onCheckedChange={toggleAll}
                   />
                 </th>
-                <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                <th scope="col" className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
                   {t.tools.movieCode}
                 </th>
-                <th className="px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">{t.tools.title}</th>
-                <th className="w-40 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                <th scope="col" className="w-[28%] px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                  {t.tools.currentTitle}
+                </th>
+                <th scope="col" className="w-[32%] px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                  {t.tools.currentPlot}
+                </th>
+                <th scope="col" className="w-40 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
                   {t.tools.pendingFields}
                 </th>
-                <th className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">{t.tools.status}</th>
-                <th className="w-72 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
-                  {t.tools.nfoPath}
+                <th scope="col" className="w-28 px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                  {t.tools.status}
+                </th>
+                <th scope="col" className="px-4 py-3 text-left font-semibold uppercase tracking-[0.16em]">
+                  {t.tools.batchTranslateMode}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-black/5 dark:divide-white/5">
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-16 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-16 text-center text-muted-foreground">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Search className="h-8 w-8 opacity-40" />
                       <p className="text-sm font-medium">{t.tools.noPendingTranslateItems}</p>
@@ -636,33 +684,58 @@ export function BatchNfoTranslatorWorkspaceDetail({
                 </tr>
               ) : (
                 previewRows.map((item) => {
-                  const status = itemStatusByPath[item.filePath] ?? "idle";
+                  const status = ignoredPaths.has(item.filePath)
+                    ? "ignored"
+                    : (itemStatusByPath[item.filePath] ?? "idle");
                   const result = resultByPath.get(item.filePath);
-                  const displayFields = result ? result.translatedFields : item.pendingFields;
+                  const displayFields =
+                    status === "ignored" ? [] : result ? result.translatedFields : item.pendingFields;
                   const displayPath = result?.savedNfoPath || item.nfoPath;
 
                   return (
-                    <tr key={item.filePath} className="transition-colors hover:bg-surface-low/45">
+                    <tr key={item.filePath} className="align-top transition-colors hover:bg-surface-low/45">
                       <td className="px-4 py-3">
                         <Checkbox
                           checked={selectedPaths.has(item.filePath)}
-                          disabled={applying || scanning}
+                          disabled={applying || scanning || status === "ignored"}
                           onCheckedChange={() => toggleItem(item.filePath)}
                         />
                       </td>
-                      <td className="px-4 py-3 font-mono font-medium">{item.number}</td>
-                      <td className="px-4 py-3 font-medium text-foreground">
-                        {item.title}
-                        <div
-                          className={cn(
-                            "mt-1 text-[11px]",
-                            item.reason === "task_failed" ? "text-destructive" : "text-muted-foreground",
-                          )}
-                        >
-                          {item.reason === "task_failed"
-                            ? t.tools.translationTaskFailed
-                            : t.tools.translationContentDetected}
-                        </div>
+                      <td className="px-4 py-3 font-mono font-medium">
+                        {item.number}
+                        <details className="mt-2 max-w-40 text-[11px] font-normal text-muted-foreground">
+                          <summary className="cursor-pointer">{t.tools.nfoPath}</summary>
+                          <p className="mt-1 break-all">{displayPath}</p>
+                        </details>
+                      </td>
+                      <td className="break-words whitespace-pre-wrap px-4 py-3 font-medium text-foreground">
+                        <div>{result?.title ?? item.title}</div>
+                        {!result?.success ? (
+                          <div
+                            className={cn(
+                              "mt-1 text-[11px]",
+                              item.reason === "task_failed" ? "text-destructive" : "text-muted-foreground",
+                            )}
+                          >
+                            {item.reason === "task_failed"
+                              ? t.tools.translationTaskFailed
+                              : t.tools.translationContentDetected}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 leading-6">
+                        {(result?.plot ?? item.plot) ? (
+                          <details className="group">
+                            <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
+                              <span className="line-clamp-3 whitespace-pre-wrap break-words group-open:line-clamp-none">
+                                {result?.plot ?? item.plot}
+                              </span>
+                              <span className="mt-1 block text-[11px] text-muted-foreground">{t.tools.expandPlot}</span>
+                            </summary>
+                          </details>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1.5">
@@ -703,7 +776,20 @@ export function BatchNfoTranslatorWorkspaceDetail({
                           ) : null}
                         </div>
                       </td>
-                      <td className="break-all px-4 py-3 font-mono text-[11px] text-muted-foreground">{displayPath}</td>
+                      <td className="px-4 py-3">
+                        {scannedMode !== "restore" ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={applying || scanning || status === "ignored"}
+                            onClick={() => void handleApply([item], "ignore")}
+                            aria-label={`${t.tools.ignoreTranslation} ${item.number}`}
+                            className="whitespace-nowrap"
+                          >
+                            {t.tools.ignoreTranslation}
+                          </Button>
+                        ) : null}
+                      </td>
                     </tr>
                   );
                 })

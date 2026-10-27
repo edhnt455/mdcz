@@ -344,6 +344,7 @@ describe("buildServer composition integration", () => {
               directory,
               number: "CAWB-044",
               title: "日本語の題名",
+              plot: "",
               pendingFields: ["title"],
               reason: "content",
             },
@@ -367,6 +368,45 @@ describe("buildServer composition integration", () => {
         nfoPath,
         error: result.error,
       });
+      generateText.mockClear();
+      const ignored = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          toolId: "batch-nfo-translator",
+          action: "apply",
+          mode: "ignore",
+          items: [
+            {
+              filePath,
+              nfoPath,
+              directory,
+              number: "CAWB-044",
+              title: "日本語の題名",
+              plot: "",
+              pendingFields: ["title"],
+              reason: "task_failed",
+            },
+          ],
+        },
+      });
+      expect(ignored.statusCode).toBe(200);
+      expect(ignored.json().result.data.data.results[0]).toMatchObject({
+        success: true,
+        title: "日本語の題名",
+        plot: "",
+      });
+      expect(generateText).not.toHaveBeenCalled();
+      const scan = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { toolId: "batch-nfo-translator", action: "scan", mode: "untranslated", directory },
+      });
+      expect(scan.statusCode).toBe(200);
+      expect(scan.json().result.data.data.items).toEqual([]);
+      expect(await readFile(nfoPath, "utf8")).toContain("<translation_ignored>");
       await fastify.close();
       expect(await readFile(join(services.config.runtimePaths.logDir, "mdcz.log"), "utf8")).toContain(error.message);
     } finally {

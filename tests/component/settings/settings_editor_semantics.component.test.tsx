@@ -410,7 +410,7 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
   );
 });
 
-test("LLM prompts save independently and verification uses edited shared and translation prompts", async () => {
+test("LLM prompts scroll, save independently and verification uses edited shared and translation prompts", async () => {
   const saveConfig = vi.fn(async () => undefined);
   const testTranslation = vi.fn(async () => ({ status: "ok" as const, sample: "测试译文" }));
   const screen = await render(
@@ -421,15 +421,27 @@ test("LLM prompts save independently and verification uses edited shared and tra
       <TranslateTopLevelSection />
     </FormHarness>,
   );
+  const extraInstructions = "\nAdditional instruction".repeat(40);
   const prompts = [
-    ["llmSystemPrompt", "LLM 前置提示词", "Shared context"],
-    ["llmPrompt", "LLM 翻译提示词", "Translate to {lang}: {content}"],
-    ["llmNumberRecognitionPrompt", "LLM 兜底番号识别提示词", "Extract only codes present in the source"],
+    ["llmSystemPrompt", "LLM 前置提示词", `Shared context${extraInstructions}`],
+    ["llmPrompt", "LLM 翻译提示词", `Translate to {lang}: {content}${extraInstructions}`],
+    [
+      "llmNumberRecognitionPrompt",
+      "LLM 兜底番号识别提示词",
+      `Extract only codes present in the source${extraInstructions}`,
+    ],
   ] as const;
   for (const [key, label, value] of prompts) {
     const field = screen.getByLabelText(label, { exact: true });
+    const textarea = field.element() as HTMLTextAreaElement;
+    const initialHeight = textarea.clientHeight;
     await field.fill(value);
-    field.element().blur();
+    expect(textarea.clientHeight).toBe(initialHeight);
+    expect(textarea.scrollHeight).toBeGreaterThan(textarea.clientHeight);
+    textarea.scrollTop = 0;
+    textarea.scrollTop = textarea.scrollHeight;
+    expect(textarea.scrollTop).toBeGreaterThan(0);
+    textarea.blur();
     await expect.poll(() => saveConfig.mock.calls).toContainEqual([{ translate: { [key]: value } }]);
   }
   await screen.getByRole("button", { name: "验证元数据翻译" }).click();

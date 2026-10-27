@@ -179,9 +179,13 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const mdczNode = toRecord(movieNode.mdcz);
   const failureNode = toRecord(mdczNode?.translation_failures);
   const translationFailures: TranslationFailures = {};
+  const ignoredNode = toRecord(mdczNode?.translation_ignored);
+  const translationIgnored: CrawlerData["translation_ignored"] = {};
   for (const field of ["title", "plot", "genres"] as const) {
     const reason = toStringValue(failureNode?.[field]);
     if (reason) translationFailures[field] = reason;
+    const fingerprint = toStringValue(ignoredNode?.[field]);
+    if (fingerprint) translationIgnored[field] = fingerprint;
   }
   const mdczSceneImagesNode = toRecord(mdczNode?.scene_images);
   const published = parseFingerprints(mdczNode?.published);
@@ -200,6 +204,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   return {
     crawlerData: {
       ...(Object.keys(translationFailures).length ? { translation_failures: translationFailures } : {}),
+      ...(Object.keys(translationIgnored).length ? { translation_ignored: translationIgnored } : {}),
       title: sourceTitle,
       title_zh: shownTitle !== sourceTitle ? shownTitle : undefined,
       number,

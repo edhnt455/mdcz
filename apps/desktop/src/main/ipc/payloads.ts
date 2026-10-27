@@ -101,7 +101,7 @@ export const toolBatchTranslateScanInputSchema = z.object({
   mode: batchTranslateModeSchema,
 });
 export const toolBatchTranslateApplyInputSchema = z.object({
-  mode: batchTranslateModeSchema,
+  mode: z.enum(["untranslated", "all", "restore", "ignore"]),
   items: z
     .array(
       z.object({
@@ -110,6 +110,7 @@ export const toolBatchTranslateApplyInputSchema = z.object({
         directory: z.string(),
         number: z.string(),
         title: z.string(),
+        plot: z.string(),
         pendingFields: z.array(z.enum(["title", "plot", "genres"])),
         reason: z.enum(["task_failed", "content"]),
       }),

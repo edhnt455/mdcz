@@ -174,6 +174,13 @@ export const tools = {
   batchTranslateMode: "Action",
   translationTaskFailed: "Translation failed during task execution",
   translationContentDetected: "Content suggests translation may be needed",
+  currentTitle: "Current title",
+  currentPlot: "Current plot",
+  expandPlot: "Expand / collapse full text",
+  ignoreTranslation: "Ignore translation",
+  ignoreSelectedTranslations: (count: number) => `Ignore selected (${count})`,
+  ignoringTranslation: "Marking complete...",
+  ignoreTranslationHelp: "Accept the current text as complete to skip it in untranslated-only scans.",
   batchTranslateModeHelp: {
     untranslated:
       "Retry fields with recorded translation failures; otherwise detect titles and plots that may need translation.",
@@ -217,5 +224,6 @@ export const tools = {
     success: "Succeeded",
     partial: "Partial",
     failed: "Failed",
+    ignored: "Manually completed",
   },
 };

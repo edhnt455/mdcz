@@ -125,6 +125,7 @@ export type BatchTranslateField = import("./config").TranslationField;
  * drops translations so the NFO shows the source text it keeps alongside.
  */
 export type BatchTranslateMode = "untranslated" | "all" | "restore";
+export type BatchTranslateApplyMode = BatchTranslateMode | "ignore";
 
 export type BatchTranslateScanItem = {
   filePath: string;
@@ -132,6 +133,7 @@ export type BatchTranslateScanItem = {
   directory: string;
   number: string;
   title: string;
+  plot: string;
   pendingFields: BatchTranslateField[];
   reason: "task_failed" | "content";
 };
@@ -144,11 +146,13 @@ export type BatchTranslateApplyResultItem = {
   success: boolean;
   translatedFields: BatchTranslateField[];
   savedNfoPath?: string;
+  title?: string;
+  plot?: string;
   error?: string;
 };
 
 export type BatchTranslateApplyInput = {
-  mode: BatchTranslateMode;
+  mode: BatchTranslateApplyMode;
   items?: BatchTranslateScanItem[];
   batchSize?: number;
 };

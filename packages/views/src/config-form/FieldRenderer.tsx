@@ -471,13 +471,14 @@ export function PromptFieldWrapper({ name, description }: { name: FieldKey; desc
           {(control) => (
             <FormControl>
               <Textarea
+                autoSize={false}
                 name={control.name}
                 ref={control.ref}
                 value={control.value}
                 onFocus={control.handleFocus}
                 onChange={(event) => control.handleChangeValue(event.target.value)}
                 onBlur={control.handleBlur}
-                className="min-h-[120px] border-input/50 bg-background/50 text-sm transition-all focus:bg-background"
+                className="h-48 min-h-[120px] resize-y overflow-y-auto border-input/50 bg-background/50 text-sm transition-all focus:bg-background"
               />
             </FormControl>
           )}
