@@ -502,7 +502,9 @@ export const applyBatchNfoTranslations = async (
     }
 
     for (const field of translatedFields) {
-      if (!failedFields.has(field) && options.mode !== "restore") delete failures[field];
+      if (failedFields.has(field) || options.mode === "restore") continue;
+      delete failures[field];
+      ignored[field] = fieldFingerprint(nextCrawlerData, field);
     }
     if (Object.keys(failures).length) nextCrawlerData.translation_failures = failures;
     else delete nextCrawlerData.translation_failures;

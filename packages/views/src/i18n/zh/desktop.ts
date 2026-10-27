@@ -70,13 +70,6 @@ export const desktop: Messages["desktop"] = {
   retryView: "重试界面",
   reloadApp: "刷新应用",
 
-  removedFromRecent: "已从最近入库移除",
-  removeFromRecentFailed: "移除最近入库记录失败",
-  noKnownPath: "无已知路径",
-  fileMovedOrDeleted: "文件已移动或删除,无法定位原位置",
-  cannotOpenFileExplorer: "无法打开系统文件管理器",
-  recentAcquisitions: "最近入库",
-
   updatedUncensoredTypes: (count: number) => `已更新 ${count} 个文件的无码类型`,
 
   mediaFiles: "媒体文件",

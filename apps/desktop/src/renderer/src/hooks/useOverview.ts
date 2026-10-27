@@ -1,12 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchOutputSummary, fetchRecentAcquisitions, overviewKeys } from "@/api/overview";
-
-export const useRecentAcquisitions = () =>
-  useQuery({
-    queryKey: overviewKeys.recent,
-    queryFn: fetchRecentAcquisitions,
-    staleTime: 5 * 60_000,
-  });
+import { fetchOutputSummary, overviewKeys } from "@/api/overview";
 
 export const useOutputSummary = () =>
   useQuery({

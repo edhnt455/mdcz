@@ -1,18 +1,15 @@
-import { useT } from "@mdcz/views/i18n";
 import { SiteHealthCard } from "@mdcz/views/overview";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ipc } from "@/client/ipc";
 import { OverviewHeroStartCard } from "@/components/overview/OverviewHeroStartCard";
 import { OverviewMaintenanceCard } from "@/components/overview/OverviewMaintenanceCard";
-import { RecentAcquisitionsGrid } from "@/components/overview/RecentAcquisitionsGrid";
 
 export const Route = createFileRoute("/overview")({
   component: Overview,
 });
 
 function Overview() {
-  const t = useT();
   const navigate = useNavigate();
   const sitesQ = useQuery({ queryKey: ["overview", "sites"], queryFn: () => ipc.crawler.listSites() });
   return (
@@ -29,11 +26,6 @@ function Overview() {
             void navigate({ to: "/settings", search: { section: "scrape" } });
           }}
         />
-
-        <section className="col-span-12">
-          <h2 className="mb-4 text-xl font-bold tracking-tight">{t.desktop.recentAcquisitions}</h2>
-          <RecentAcquisitionsGrid />
-        </section>
       </main>
     </div>
   );

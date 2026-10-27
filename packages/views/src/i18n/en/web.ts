@@ -27,8 +27,6 @@ export const web = {
   // Overview
   goToWorkbench: "Go to Workbench",
   goToSettings: "Go to Settings",
-  recentAcquisitions: "Recent acquisitions",
-  removedFromRecent: "Removed from recent acquisitions",
 
   // Settings services
   copiedWatermarkDir: "Server watermark directory path copied.",

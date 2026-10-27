@@ -496,6 +496,7 @@ describe("BatchTranslateToolService", () => {
       const failedData = parseNfoSnapshot(await readFile(items[0].nfoPath, "utf8")).crawlerData;
       expect(failedData.title_zh).toBe(parseNfoSnapshot(savedNfo).crawlerData.title_zh);
       expect(failedData.translation_failures).toMatchObject({ title: expect.any(String), plot: expect.any(String) });
+      expect(failedData.translation_ignored).toBeUndefined();
     }
   });
 
@@ -577,7 +578,11 @@ describe("BatchTranslateToolService", () => {
     const all = await service.scan(root, "all", config);
     expect(all[0].pendingFields).toEqual(["title", "plot"]);
     expect((await service.apply(all, createConfig(), { mode: "all" }))[0].success).toBe(true);
-    expect((await readEntry()).crawlerData.translation_ignored).toEqual({ genres: expect.any(String) });
+    expect((await readEntry()).crawlerData.translation_ignored).toEqual({
+      title: expect.any(String),
+      plot: expect.any(String),
+      genres: expect.any(String),
+    });
     await writeFile(nfoPath, acceptedXml);
     const restore = await service.scan(root, "restore", config);
     expect((await service.apply(restore, config, { mode: "restore" }))[0].success).toBe(true);
@@ -585,7 +590,7 @@ describe("BatchTranslateToolService", () => {
     expect((await service.scan(root, "untranslated", config))[0].pendingFields).toEqual(["title", "plot"]);
   });
 
-  it("forces flagged fields through translation and clears only fields that were repaired", async () => {
+  it("persists successful fields as complete and retries only unfinished fields", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-translation-failures-"));
     tempDirs.push(root);
     const entry = createEntry({
@@ -616,7 +621,7 @@ describe("BatchTranslateToolService", () => {
     };
     const generateText = vi
       .fn()
-      .mockResolvedValueOnce('{"translations":["译名"]}')
+      .mockResolvedValueOnce('{"translations":["已完成的译名 アリス"]}')
       .mockRejectedValueOnce(new Error("provider unavailable"))
       .mockResolvedValueOnce('{"translations":["剧情"]}')
       .mockRejectedValueOnce(new Error("provider unavailable"));
@@ -638,16 +643,26 @@ describe("BatchTranslateToolService", () => {
       plot: expect.stringContaining("provider unavailable"),
       genres: expect.stringContaining("provider unavailable"),
     });
-    expect(first.title_zh).toBe("译名");
+    expect(first.title_zh).toBe("已完成的译名 アリス");
+    expect(first.translation_ignored).toEqual({ title: expect.any(String) });
     expect(first.genres).toEqual(["剧情", "Travel"]);
     expect((await readEntry()).nfoLocalState).toMatchObject({ tags: ["保留标签"], lockedFields: ["Cast"] });
 
-    generateText.mockResolvedValue('{"translations":["补译成功"]}');
+    generateText.mockResolvedValue('{"translations":["补译成功 アリス"]}');
     const pending = await service.scan(root, "untranslated", config);
     expect(pending[0].pendingFields).toEqual(["plot", "genres"]);
     const [repaired] = await service.apply(pending, config, { mode: "untranslated", maxBatchItems: 1 });
     expect(repaired.success).toBe(true);
     expect((await readEntry()).crawlerData.translation_failures).toBeUndefined();
+    expect((await readEntry()).crawlerData.translation_ignored).toEqual({
+      title: expect.any(String),
+      plot: expect.any(String),
+      genres: expect.any(String),
+    });
     expect(await service.scan(root, "untranslated", config)).toEqual([]);
+    const all = await service.scan(root, "all", config);
+    expect(all[0].pendingFields).toEqual(["title", "plot"]);
+    await writeFile(nfoPath, (await readFile(nfoPath, "utf8")).replace("已完成的译名 アリス", "New English title"));
+    expect((await service.scan(root, "untranslated", config))[0].pendingFields).toEqual(["title"]);
   });
 });

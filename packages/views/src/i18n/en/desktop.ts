@@ -81,12 +81,6 @@ export const desktop = {
   reloadApp: "Reload app",
 
   // Recent acquisitions & overview
-  removedFromRecent: "Removed from recent acquisitions",
-  removeFromRecentFailed: "Failed to remove from recent acquisitions",
-  noKnownPath: "No known path",
-  fileMovedOrDeleted: "File has been moved or deleted; unable to locate original position",
-  cannotOpenFileExplorer: "Unable to open system file manager",
-  recentAcquisitions: "Recent acquisitions",
 
   // Scrape completion dialog
   updatedUncensoredTypes: (count: number) => `Updated uncensored type for ${count} files`,

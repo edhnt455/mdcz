@@ -24,8 +24,6 @@ export const web: Messages["web"] = {
 
   goToWorkbench: "去工作台",
   goToSettings: "前往设置",
-  recentAcquisitions: "最近入库",
-  removedFromRecent: "已从最近入库移除",
 
   copiedWatermarkDir: "已复制服务器角标图片目录路径。",
   browserCannotOpenFolder: "浏览器无法打开服务器文件夹，请复制上方服务器路径。",

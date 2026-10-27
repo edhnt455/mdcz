@@ -33,7 +33,7 @@ export type TranslationFailures = Partial<Record<import("./config").TranslationF
 export interface CrawlerData {
   /** Failed translation fields persist with the published movie until explicitly repaired. */
   translation_failures?: TranslationFailures;
-  /** Fingerprints of field values manually accepted as complete. */
+  /** Fingerprints of field values translated successfully or manually accepted as complete. */
   translation_ignored?: Partial<Record<import("./config").TranslationField, string>>;
   title: string;
   /** Original crawler title retained when a configured title repair changes `title`. */

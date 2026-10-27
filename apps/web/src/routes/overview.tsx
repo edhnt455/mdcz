@@ -1,22 +1,19 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { OverviewRecentAcquisitionDto } from "@mdcz/shared/serverDtos";
 import { openNewWorkbenchTask } from "@mdcz/views/adapters/workbenchSession";
-import { getT, useT } from "@mdcz/views/i18n";
+import { useT } from "@mdcz/views/i18n";
 import {
   ActivityTimelineCard,
   hasActiveActivity,
   OverviewHeroStartCard,
   OverviewMaintenanceCard,
-  RecentAcquisitionRemoveDialog,
-  RecentAcquisitionsGrid,
   SiteHealthCard,
 } from "@mdcz/views/overview";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { toast } from "sonner";
 import { createWebMaintenanceActionPort } from "../adapters/ports";
-import { api, getLibraryAssetSrc } from "../client";
+import { api } from "../client";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 import { buildHref } from "../routeHelpers";
@@ -34,9 +31,7 @@ export const hasWorkbenchOutput = (input: {
 export function OverviewPage() {
   const t = useT();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const maintenancePort = useMemo(() => createWebMaintenanceActionPort(), []);
-  const [removeTarget, setRemoveTarget] = useState<OverviewRecentAcquisitionDto | null>(null);
   const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
   const overviewQ = useQuery({
     queryKey: queryKeys.overview.summary,
@@ -96,24 +91,6 @@ export function OverviewPage() {
 
         {overviewQ.error && <ErrorBanner>{toErrorMessage(overviewQ.error)}</ErrorBanner>}
 
-        <section className="col-span-12">
-          <div className="mb-4">
-            <h2 className="text-xl font-bold tracking-tight">{t.web.recentAcquisitions}</h2>
-          </div>
-          <RecentAcquisitionsGrid
-            getImageSrc={(path, item) =>
-              getLibraryAssetSrc({ format: "webp", path, rootId: item.thumbnailRootId ?? item.rootId, width: 400 })
-            }
-            isError={overviewQ.isError}
-            isLoading={overviewQ.isLoading}
-            items={recent}
-            onItemRemove={setRemoveTarget}
-            onRetry={() => {
-              void queryClient.invalidateQueries({ queryKey: queryKeys.overview.summary });
-            }}
-          />
-        </section>
-
         <ActivityTimelineCard
           entries={activityQ.data?.entries ?? []}
           onOpenMaintenance={() => {
@@ -121,30 +98,8 @@ export function OverviewPage() {
           }}
         />
       </div>
-      <RecentAcquisitionRemoveDialog
-        open={Boolean(removeTarget)}
-        onOpenChange={(open) => !open && setRemoveTarget(null)}
-        onConfirm={() => {
-          const target = removeTarget;
-          if (!target) return;
-          void removeRecentAcquisition(target, () => {
-            setRemoveTarget(null);
-            void queryClient.invalidateQueries({ queryKey: queryKeys.overview.summary });
-          });
-        }}
-      />
     </main>
   );
-}
-
-async function removeRecentAcquisition(item: OverviewRecentAcquisitionDto, onSuccess: () => void) {
-  try {
-    await api.overview.removeRecentAcquisition({ id: item.id });
-    toast.success(getT().web.removedFromRecent);
-    onSuccess();
-  } catch (error) {
-    toast.error(toErrorMessage(error));
-  }
 }
 
 export const Route = createFileRoute("/overview")({
