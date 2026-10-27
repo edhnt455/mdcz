@@ -19,7 +19,6 @@ const item = {
 };
 
 const createPort = (overrides: Partial<DetailActionPort> = {}): DetailActionPort => ({
-  showFilePath: false,
   resolveImageCandidates: async (candidates) => candidates,
   readNfo: async () => ({ path: "", crawlerData: null }),
   writeNfo: async () => undefined,

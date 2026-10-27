@@ -37,7 +37,4 @@ export const common = {
   completed: "Completed",
   showPassword: "Show password",
   hidePassword: "Hide password",
-  shortcutRecording: "Recording…",
-  shortcutUnset: "Not set",
-  shortcutChange: "Change",
 };

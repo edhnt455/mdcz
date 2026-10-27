@@ -13,8 +13,7 @@
   font-weight: 200 800;
   font-style: normal;
   font-display: swap;
-  src: url("../../../apps/desktop/src/renderer/src/assets/fonts/Manrope-VariableFont_wght.ttf")
-    format("truetype-variations");
+  src: url("./assets/fonts/Manrope-VariableFont_wght.ttf") format("truetype-variations");
   unicode-range: U+0020-007F, U+00A0-00FF, U+2000-206F;
 }
 

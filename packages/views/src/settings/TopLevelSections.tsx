@@ -22,18 +22,12 @@ import {
   PathsSection,
   QbittorrentSection,
   ScrapePacingSection,
-  ShortcutsSection,
   TranslateSection,
-  UiSection,
 } from "./settingsContent";
 import type { FieldAnchor } from "./settingsRegistry";
 
 interface SiteOptionsProps {
   siteOptions: string[];
-}
-
-interface SystemSectionProps {
-  initialUseCustomTitleBar: boolean;
 }
 
 export function PathsTopLevelSection() {
@@ -158,7 +152,6 @@ export function AutomationTopLevelSection() {
   const services = useSettingsServices();
   const search = useSettingsSearch();
   const status = useIntegrationStatus(services.integrations);
-  if ((services.settingsTarget ?? (services.isServer ? "server" : "desktop")) !== "server") return null;
 
   return (
     <SectionAnchor
@@ -192,33 +185,6 @@ export function AutomationTopLevelSection() {
       <Subsection title={t.settings.integrations.notifications} className="mb-6 last:mb-0">
         <NotificationsSection />
       </Subsection>
-    </SectionAnchor>
-  );
-}
-
-export function SystemTopLevelSection({ initialUseCustomTitleBar }: SystemSectionProps) {
-  const t = useT();
-  const services = useSettingsServices();
-  const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
-
-  if (target === "server") {
-    return null;
-  }
-
-  return (
-    <SectionAnchor
-      id="system"
-      label={t.settingsFields.sections.system.label}
-      title={t.settingsFields.sections.system.label}
-    >
-      <Subsection title={t.settings.subsections.interface} className="mb-6 last:mb-0">
-        <UiSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
-      </Subsection>
-      {!services.isServer ? (
-        <Subsection title={t.settings.subsections.shortcuts} className="mb-6 last:mb-0">
-          <ShortcutsSection />
-        </Subsection>
-      ) : null}
     </SectionAnchor>
   );
 }

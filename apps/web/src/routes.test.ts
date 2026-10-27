@@ -1,4 +1,4 @@
-import { DESKTOP_ROUTE_DEFINITIONS } from "@mdcz/shared/desktopNavigation";
+import { APP_ROUTE_DEFINITIONS } from "@mdcz/shared/navigation";
 import { PRIMARY_SHELL_NAV, SYSTEM_SHELL_NAV } from "@mdcz/views/shell";
 import { describe, expect, it } from "vitest";
 import { buildHref } from "./routeHelpers";
@@ -10,9 +10,9 @@ describe("route helpers", () => {
     );
   });
 
-  it("keeps Web navigation aligned with desktop routes", () => {
+  it("keeps Web navigation aligned with application routes", () => {
     expect([...PRIMARY_SHELL_NAV, ...SYSTEM_SHELL_NAV].map((route) => [route.id, route.to])).toEqual(
-      DESKTOP_ROUTE_DEFINITIONS.map((route) => [route.id, route.path]),
+      APP_ROUTE_DEFINITIONS.map((route) => [route.id, route.path]),
     );
   });
 });

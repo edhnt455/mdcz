@@ -3,9 +3,8 @@ import { toRootRelativePath } from "@mdcz/media-store";
 import type { DownloadedAssets } from "@mdcz/shared/types";
 
 export * from "./availability";
-export * from "./desktopInputRoot";
-export * from "./desktopOutputRoot";
 export * from "./entryDto";
+export * from "./inputRoot";
 export * from "./libraryScope";
 export * from "./mediaLibraryService";
 export * from "./mediaPathOwnership";

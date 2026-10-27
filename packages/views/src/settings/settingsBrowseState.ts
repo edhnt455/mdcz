@@ -5,7 +5,6 @@ export interface SettingsBrowseStateInput {
   query: string;
   showAdvanced: boolean;
   modifiedKeys: ReadonlySet<string>;
-  target?: "desktop" | "server";
 }
 
 export interface SettingsBrowseState {
@@ -23,14 +22,12 @@ export function buildSettingsBrowseState({
   query,
   showAdvanced,
   modifiedKeys,
-  target,
 }: SettingsBrowseStateInput): SettingsBrowseState {
   const parsedQuery = parseSettingsQuery(query);
   const visibleEntries = getVisibleEntries(FIELD_REGISTRY, {
     parsedQuery,
     showAdvanced,
     modifiedKeys,
-    target,
   });
   const visibleKeySet = new Set(visibleEntries.map((entry) => entry.key));
   const visiblePublicAnchorSet = new Set(

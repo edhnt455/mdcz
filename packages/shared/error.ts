@@ -1,6 +1,5 @@
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/gu, " ").trim();
 const stripImpitPrefix = (value: string): string => value.replace(/^impit error:\s*/iu, "").trim();
-const ELECTRON_REMOTE_METHOD_PREFIX = /^Error invoking remote method '[^']+':\s*/u;
 const CONFIG_VALIDATION_ERROR_PREFIX = /^CONFIG_VALIDATION_ERROR:\s*/u;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -65,10 +64,7 @@ export const toConfigValidationDomainError = (input: {
 });
 
 export function formatErrorMessage(message: string): string {
-  const normalized = normalizeWhitespace(message)
-    .replace(ELECTRON_REMOTE_METHOD_PREFIX, "")
-    .replace(CONFIG_VALIDATION_ERROR_PREFIX, "")
-    .trim();
+  const normalized = normalizeWhitespace(message).replace(CONFIG_VALIDATION_ERROR_PREFIX, "").trim();
   const summarizedImpitError = summarizeImpitError(normalized);
   if (summarizedImpitError) {
     return summarizedImpitError;

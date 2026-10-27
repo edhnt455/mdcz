@@ -11,7 +11,6 @@ export const AboutPage = () => {
     <AboutView
       about={aboutQ.data}
       loading={aboutQ.isLoading}
-      showUpdateCheck={false}
       onOpenExternal={(url) => window.open(url, "_blank", "noopener,noreferrer")}
     />
   );

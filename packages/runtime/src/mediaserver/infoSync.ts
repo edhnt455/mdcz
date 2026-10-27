@@ -1,5 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { MediaServerMode } from ".";
 import { createEmptyPersonSyncResult, formatPersonSyncError, runPersonSyncBatch } from "./personSync";
 import {

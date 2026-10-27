@@ -3,7 +3,7 @@ import type {
   ConnectionCheckReason,
   MediaServerCheckKey,
   PersonSyncResult,
-} from "@mdcz/shared/ipcTypes";
+} from "@mdcz/shared/toolTypes";
 
 export const tools = {
   connectionCheck: {

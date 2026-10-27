@@ -51,7 +51,6 @@ export class MaintenanceService {
             onProgress,
             inventory,
             mediaRoots: this.mediaRoots,
-            platform: "server",
           })
         ).refs;
       },

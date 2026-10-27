@@ -1,18 +1,19 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
-import { loggerService } from "@main/services/LoggerService";
-import type { DesktopPersistenceService } from "@main/services/persistence";
-import { BatchTranslateToolService } from "@main/services/tools/BatchTranslateToolService";
 import type { MediaRoot } from "@mdcz/media-store";
-import type { ConfiguredMediaRootService } from "@mdcz/runtime/library";
 import { buildMovieTags, parseNfoSnapshot, writePreparedNfo } from "@mdcz/runtime/maintenance";
-import type { NetworkClient } from "@mdcz/runtime/network";
 import { LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
-import type { BatchNfoTranslatorDependencies } from "@mdcz/runtime/tools";
+import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import {
+  applyBatchNfoTranslations,
+  type BatchNfoTranslatorApplyOptions,
+  type BatchNfoTranslatorDependencies,
+  scanBatchNfoTranslations,
+} from "@mdcz/runtime/tools";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
-import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateMode, BatchTranslateScanItem } from "@mdcz/shared/toolTypes";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -111,43 +112,26 @@ const createService = (
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };
-  const ensurePathRecord = vi.fn(async () => mediaRoot);
-  const mediaRoots = {
-    ensurePathRecord,
-    listRoots: async () => [mediaRoot],
-  } as unknown as ConfiguredMediaRootService;
-
-  const service = new BatchTranslateToolService(
-    {} as NetworkClient,
-    {
-      getState: async () => ({
-        repositories: {
-          mediaRoots: {
-            list: async () => [mediaRoot],
-            ensurePath: async () => mediaRoot,
-            upsert: async () => undefined,
-          },
-        },
-      }),
-    } as unknown as DesktopPersistenceService,
-    {
-      localScanService,
-      llmApiClient,
-      writeNfo,
-    },
-    mediaRoots,
-  );
+  const dependencies = { localScanService, llmApiClient, writeNfo, publication: { roots: [mediaRoot] } };
+  const service = {
+    scan: (directory: string, mode: BatchTranslateMode, config: ReturnType<typeof createConfig>) =>
+      scanBatchNfoTranslations(directory, mode, config, dependencies),
+    apply: (
+      items: BatchTranslateScanItem[],
+      config: ReturnType<typeof createConfig>,
+      options: BatchNfoTranslatorApplyOptions,
+    ) => applyBatchNfoTranslations(items, config, dependencies, options),
+  };
 
   return {
     service,
     localScanService,
     llmApiClient,
     writeNfo,
-    ensurePathRecord,
   };
 };
 
-describe("BatchTranslateToolService", () => {
+describe("BatchNfoTranslator", () => {
   it("scans the titles and plots the chosen mode covers", async () => {
     const config = createConfig();
 
@@ -272,9 +256,9 @@ describe("BatchTranslateToolService", () => {
   });
 
   it("batches unique texts, preserves published translations, and persists exhausted failures", async () => {
-    const logger = loggerService.getLogger("BatchTranslateToolService");
-    const logError = vi.spyOn(logger, "error").mockReturnValue(logger);
-    vi.spyOn(loggerService, "getLogger").mockReturnValue(logger);
+    const logger = runtimeLoggerService.getLogger("BatchNfoTranslator");
+    const logError = vi.spyOn(logger, "error").mockReturnValue(undefined);
+    vi.spyOn(runtimeLoggerService, "getLogger").mockReturnValue(logger);
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-translation-"));
     tempDirs.push(root);
     const config = createConfig({
@@ -357,7 +341,7 @@ describe("BatchTranslateToolService", () => {
       await writeFile(entry.nfoPath, "<movie><title>Original</title></movie>");
     }
 
-    const { service, localScanService, ensurePathRecord } = createService({
+    const { service, localScanService } = createService({
       scanVideo: async (_root, videoPath) => {
         const matched = entriesByPath.get(videoPath);
         if (!matched) {
@@ -401,8 +385,6 @@ describe("BatchTranslateToolService", () => {
     const results = await service.apply(items, config, { mode: "untranslated" });
 
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);
-    expect(ensurePathRecord).toHaveBeenCalledOnce();
-    expect(ensurePathRecord).toHaveBeenCalledWith({ hostPath: root });
     expect(generateText).toHaveBeenCalledTimes(2);
     expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual([1000]);
     expect(generateText).toHaveBeenCalledWith(

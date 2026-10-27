@@ -40,7 +40,6 @@ const sections: Record<FieldAnchor, SectionText> = {
       "notification",
     ],
   },
-  system: { label: "Interface & shortcuts", aliases: ["system", "ui", "interface", "shortcut", "hotkey"] },
 };
 
 const fields: Record<FieldKey, FieldText> = {
@@ -596,24 +595,6 @@ const fields: Record<FieldKey, FieldText> = {
     description: "Once a day, report the movies added in the last day and how many files are pending.",
   },
   "notifications.digestHour": { label: "Digest hour (0-23)", description: "Server local time." },
-  "shortcuts.startOrStopScrape": {
-    label: "Start/stop scraping",
-    description: "Example: S",
-    aliases: ["hotkey", "shortcut"],
-  },
-  "shortcuts.retryScrape": { label: "Scrape again", description: "Example: R" },
-  "shortcuts.openFolder": { label: "Open containing folder", description: "Example: F" },
-  "shortcuts.editNfo": { label: "Edit NFO", description: "Example: E" },
-  "shortcuts.playVideo": { label: "Play video", description: "Example: P" },
-  "ui.showLogsPanel": { label: "Show log panel", aliases: ["logs", "log panel"] },
-  "ui.useCustomTitleBar": {
-    label: "Use custom title bar",
-    description: "Requires restarting the app after switching.",
-    aliases: ["title bar", "window chrome"],
-  },
-  "ui.hideDock": { label: "Hide Dock icon" },
-  "ui.hideMenu": { label: "Hide menu bar" },
-  "ui.hideWindowButtons": { label: "Hide window buttons" },
 };
 
 export const settingsFields = {

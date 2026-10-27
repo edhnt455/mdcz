@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { normalizeActorName, resolveActorAliasCandidates } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
-import type { PersonSyncResult } from "@mdcz/shared/ipcTypes";
 import type {
   ActorPhotoAutoSyncStatus,
   PersonSyncJobDto,
   PersonSyncStartInput,
   PersonSyncStateDto,
 } from "@mdcz/shared/serverDtos";
+import type { PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
 import type { ActorSourceProvider } from "../actorSource";
 import { mergeActorSourceHints } from "../actorSource/sourceHints";

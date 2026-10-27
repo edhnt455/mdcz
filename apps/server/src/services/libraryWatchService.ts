@@ -197,7 +197,6 @@ class LibraryWatcher {
       configuration,
       mediaRoots: this.deps.mediaRoots,
       signal,
-      platform: "server",
       onProgress: () => {},
     });
     const roots = new Map((await this.deps.mediaRoots.listRoots()).map((root) => [root.id, root]));

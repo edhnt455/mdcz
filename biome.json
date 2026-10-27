@@ -72,12 +72,9 @@
               "options": {
                 "paths": {
                   "@mdcz/runtime": "WebUI must call runtime behavior through the server API.",
-                  "@mdcz/persistence": "Persistence is server/desktop-only.",
+                  "@mdcz/persistence": "Persistence is server-only.",
                   "@mdcz/media-store": "Media store is host filesystem code.",
-                  "@main": "Desktop main aliases are Electron-only.",
-                  "@renderer": "Desktop renderer aliases are not WebUI dependencies.",
-                  "@mdcz/server": "Server code must not be bundled into WebUI.",
-                  "electron": "Electron APIs are desktop-only."
+                  "@mdcz/server": "Server code must not be bundled into WebUI."
                 },
                 "patterns": [
                   {
@@ -86,19 +83,11 @@
                   },
                   {
                     "group": ["@mdcz/persistence/*"],
-                    "message": "Persistence is server/desktop-only."
+                    "message": "Persistence is server-only."
                   },
                   {
                     "group": ["@mdcz/media-store/*"],
                     "message": "Media store is host filesystem code."
-                  },
-                  {
-                    "group": ["@main/*"],
-                    "message": "Desktop main aliases are Electron-only."
-                  },
-                  {
-                    "group": ["@renderer/*"],
-                    "message": "Desktop renderer aliases are not WebUI dependencies."
                   },
                   {
                     "group": ["@mdcz/server/*"],
@@ -129,10 +118,7 @@
                   "@mdcz/ui": "Shared must stay UI-free.",
                   "@mdcz/views": "Shared must stay view-free.",
                   "react": "Shared must not export React composition.",
-                  "react-dom": "Shared must not export React composition.",
-                  "electron": "Shared must be runtime-neutral.",
-                  "@main": "Desktop aliases are app-only.",
-                  "@renderer": "Desktop aliases are app-only."
+                  "react-dom": "Shared must not export React composition."
                 },
                 "patterns": [
                   {
@@ -158,10 +144,6 @@
                   {
                     "group": ["react/*", "react-dom/*"],
                     "message": "Shared must not export React composition."
-                  },
-                  {
-                    "group": ["@main/*", "@renderer/*"],
-                    "message": "Desktop aliases are app-only."
                   }
                 ]
               }
@@ -183,10 +165,7 @@
                   "@mdcz/ui": "Runtime must not depend on UI packages.",
                   "@mdcz/views": "Runtime must not depend on view packages.",
                   "react": "Runtime must not depend on React.",
-                  "react-dom": "Runtime must not depend on React.",
-                  "electron": "Runtime must stay Electron-free.",
-                  "@main": "Desktop aliases are app-only.",
-                  "@renderer": "Desktop aliases are app-only."
+                  "react-dom": "Runtime must not depend on React."
                 },
                 "patterns": [
                   {
@@ -204,10 +183,6 @@
                   {
                     "group": ["react/*", "react-dom/*"],
                     "message": "Runtime must not depend on React."
-                  },
-                  {
-                    "group": ["@main/*", "@renderer/*"],
-                    "message": "Desktop aliases are app-only."
                   }
                 ]
               }

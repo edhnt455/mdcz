@@ -154,14 +154,12 @@ export interface ScrapeRunnerDependencies {
   crawlerProvider: CrawlerPort;
   imageHostCooldownStore: ImageHostCooldownStore;
   mappingStore?: TranslationMappingStore;
-  platform?: "desktop" | "server";
   logger?: {
     info(message: string): void;
     warn(message: string, error?: unknown): void;
     error(message: string, error?: unknown): void;
     debug?(message: string): void;
   };
-  mediaInfoWasmPath?: string;
   postProcessAssets?: (input: {
     assets: DownloadedAssets;
     configuration: Configuration;
@@ -220,7 +218,7 @@ export class ScrapeRunner {
       warn: (msg: string, error?: unknown) => rawLogger.warn(msg, error),
       error: (msg: string, error?: unknown) => rawLogger.error(msg, error),
     };
-    this.probeVideo = createVideoProbe(deps.mediaInfoWasmPath);
+    this.probeVideo = createVideoProbe();
     const llmRequests = new LlmRequestService(this.logger, new LlmApiClient(deps.networkClient));
     this.numberRecognitionService = new NumberRecognitionService(llmRequests);
     this.translateService = new TranslateService(deps.networkClient, {
@@ -746,7 +744,6 @@ export class ScrapeRunner {
       checkRoots,
       signal,
       onProgress,
-      platform: this.deps.platform ?? "desktop",
     });
 
     const groups = await admitScrapeGroups({

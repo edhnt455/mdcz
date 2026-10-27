@@ -5,8 +5,6 @@ import { configDefaults, defineConfig } from "vitest/config";
 const browserExecutablePath = process.env.MDCZ_BROWSER_EXECUTABLE?.trim() || undefined;
 
 export const workspaceAliases = [
-  { find: "@main", replacement: resolve(__dirname, "apps/desktop/src/main") },
-  { find: "@renderer", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") },
   {
     find: /^@mdcz\/persistence\/test$/,
     replacement: resolve(__dirname, "packages/persistence/src/testDatabase.ts"),
@@ -24,10 +22,8 @@ export const workspaceAliases = [
 ] as const;
 
 export const unitRuntimeAliases = [
-  { find: "electron", replacement: resolve(__dirname, "tests/unit/electronMock.ts") },
   { find: "impit", replacement: resolve(__dirname, "tests/unit/impitMock.ts") },
   { find: "mediainfo.js", replacement: resolve(__dirname, "tests/unit/mediaInfoMock.ts") },
-  { find: "@", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") },
 ] as const;
 
 export default defineConfig({
@@ -85,11 +81,6 @@ export default defineConfig({
         },
       },
     },
-    server: {
-      deps: {
-        inline: ["@egoist/tipc"],
-      },
-    },
     projects: [
       {
         extends: true,
@@ -106,7 +97,6 @@ export default defineConfig({
             "**/*.integration.test.ts",
           ],
           environment: "node",
-          setupFiles: ["tests/unit/setup.ts"],
         },
       },
       {
@@ -131,30 +121,13 @@ export default defineConfig({
           alias: unitRuntimeAliases,
         },
         test: {
-          name: "desktop-integration",
-          include: ["tests/desktop-integration/**/*.test.ts"],
-          environment: "node",
-          setupFiles: ["tests/unit/setup.ts"],
-          testTimeout: 120000,
-        },
-      },
-      {
-        extends: true,
-        resolve: {
-          alias: unitRuntimeAliases,
-        },
-        test: {
           name: "contract",
           include: ["tests/contracts/**/*.test.ts", "apps/**/*.contract.test.ts", "packages/**/*.contract.test.ts"],
           environment: "node",
-          setupFiles: ["tests/unit/setup.ts"],
         },
       },
       {
         extends: true,
-        resolve: {
-          alias: [{ find: "@", replacement: resolve(__dirname, "apps/desktop/src/renderer/src") }],
-        },
         optimizeDeps: {
           include: ["react/jsx-dev-runtime", "vitest-browser-react"],
         },

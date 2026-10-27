@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="apps/desktop/build/icon.png" width="96" alt="MDCz" />
+  <img src="packages/views/src/assets/logo.png" width="96" alt="MDCz" />
 </p>
 
 <h1 align="center">MDCz</h1>
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-39-47848F.svg?style=flat&logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/Docker-WebUI-2496ED.svg?style=flat&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?style=flat&logo=react&logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg?style=flat&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/pnpm-10-F69220.svg?style=flat&logo=pnpm&logoColor=white" alt="pnpm" />
@@ -38,7 +38,7 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 ## 核心功能
 
 - **多站点聚合刮削** — 支持 DMM、FC2、AVBase、AVWikiDB、JavBus、JavDB、MGStage、Prestige 等主流数据源
-- **双端支持** — 提供开箱即用的跨平台桌面客户端与轻量 WebUI / Docker 自托管方案
+- **Docker WebUI** — 通过浏览器管理影片元数据与媒体库，支持 NAS / 服务器自托管
 - **演员别名归一** — 支持自定义演员名称映射，将不同来源的别名自动合并为标准规范名
 - **Emby / Jellyfin 深度集成** — 自动同步人物头像、生成规范 NFO 文件及多级剧照
 - **多媒体格式兼容** — 完善支持分段影片（CD1/CD2/Part）、STRM 流媒体文件及外挂字幕文件关联移动
@@ -49,30 +49,9 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 
 ## 下载与安装
 
-本 fork 仅发布 Docker Hub 镜像（Linux amd64），发布与部署说明见 [Docker 指南](docker/README.md)。以下桌面客户端与 WebUI 压缩包介绍属于上游项目的发行方式。
+本项目仅支持 Docker 部署，通过浏览器访问 WebUI。发布镜像为 Linux amd64，详见 [Docker 指南](docker/README.md)。
 
-### 桌面客户端
-
-前往 [Releases](https://github.com/ShotHeadman/mdcz/releases) 下载对应文件：
-
-| 文件 | 适用于 | 自动更新 | 数据目录 |
-|---|---|---|---|
-| `MDCz-<版本>-win-x64-setup.exe` | Windows 10 及以上，**推荐** | 应用内下载，重启后安装 | `%APPDATA%\mdcz` |
-| `MDCz-<版本>-win-x64-portable.zip` | Windows 便携版，解压即用 | 提示新版本，需手动下载替换 | 程序目录下的 `data\` |
-| `MDCz-<版本>-mac-arm64.dmg` | macOS Apple Silicon（不提供 Intel 版） | 提示新版本，需手动下载替换 | `~/Library/Application Support/mdcz` |
-| `MDCz-<版本>-linux-x86_64.AppImage` | Linux x64 | 应用内下载，重启后安装 | `~/.config/mdcz` |
-
-便携版的配置、数据库和日志都在 `data\` 里，升级时保留这个文件夹，替换其余文件即可。
-
-媒体库配置保存在当前 TOML 配置档案的 `[[libraries]]` 中，切换档案会切换库列表，导入、导出和备份档案也包含库配置。媒体索引、任务历史和目录监听快照仍保存在 SQLite 数据库中。
-
-从数据库保存库配置的旧版本升级时，启动会执行 `0011_libraries_to_config` 迁移并删除旧库配置表，已有库需要重新创建，待处理记录保留但解除旧库关联。升级前请备份配置和数据库；回滚时同时恢复匹配的程序、配置和数据库备份。
-
-> [!NOTE]
-> 应用没有代码签名，首次运行时系统会拦截：
-> - **Windows** 提示「Windows 已保护你的电脑」：点「更多信息」→「仍要运行」。
-> - **macOS** 提示「已损坏，无法打开」：把 MDCz 拖进「应用程序」后，在终端执行 `xattr -cr /Applications/MDCz.app`。
-> - **Linux**：先执行 `chmod +x MDCz-*.AppImage` 再运行。
+媒体库配置保存在 TOML 档案的 `[[libraries]]` 中；索引与任务历史保存在 SQLite 中，均通过 `/data` 持久化。升级前请备份整个数据目录。
 
 ### Docker 部署（推荐 NAS / 服务器）
 
@@ -80,10 +59,6 @@ MDCz 是一款现代化的本地影片元数据刮削与整理工具。
 
 - **快速上手**：将配置模板复制为 `.env`，填写发布镜像的 Docker Hub 用户名、已发布版本号与媒体路径后，执行 `docker compose up -d` 即可启动。
 - **首次访问**：浏览器打开 `http://<服务器IP>:3838`（默认绑定 `127.0.0.1`，NAS 局域网访问请在 `.env` 中调整绑定 IP）。系统无默认密码，首次访问直接按提示设置管理员密码，随后即可在设置中添加媒体库。
-
-### WebUI 压缩包（不使用 Docker）
-
-Releases 中的 `mdcz-<版本>.tar.gz` 可直接在装有 Node.js >= 24 的机器上运行，安装和启动方式见包内 README。
 
 ### 源码运行
 

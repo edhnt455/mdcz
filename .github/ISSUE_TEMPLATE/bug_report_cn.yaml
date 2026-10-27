@@ -20,12 +20,7 @@ body:
     attributes:
       label: 运行方式
       options:
-        - Windows 安装版
-        - Windows 便携版
-        - macOS
-        - Linux AppImage
         - Docker
-        - WebUI 压缩包
     validations:
       required: true
   - type: textarea
@@ -41,12 +36,7 @@ body:
       label: 相关日志或配置
       description: |
         日志输出或相关配置片段，注意删除敏感信息。日志位置：
-        - Windows 安装版：`%APPDATA%\mdcz\logs`
-        - Windows 便携版：程序目录下的 `data\logs`
-        - macOS：`~/Library/Application Support/mdcz/logs`
-        - Linux AppImage：`~/.config/mdcz/logs`
-        - Docker：`docker compose logs --tail=200 mdcz`
-        - WebUI 压缩包：启动它的终端输出，以 systemd 运行时用 `journalctl -u mdcz`
+        - Docker：`docker compose logs --tail=200 mdcz`，文件日志位于 `/data/logs/mdcz.log`
       render: Text
     validations:
       required: false

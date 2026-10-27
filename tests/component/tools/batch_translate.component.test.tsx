@@ -1,4 +1,4 @@
-import type { BatchTranslateScanItem } from "@mdcz/shared/ipcTypes";
+import type { BatchTranslateScanItem } from "@mdcz/shared/toolTypes";
 import { getT } from "@mdcz/views/i18n";
 import { BatchNfoTranslatorWorkspaceDetail } from "@mdcz/views/tools";
 import { expect, test, vi } from "vitest";

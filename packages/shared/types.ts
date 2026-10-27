@@ -199,13 +199,6 @@ export interface MediaCandidate {
   inLibrary: boolean;
 }
 
-export interface IpcError {
-  code: string;
-  message: string;
-  fields?: string[];
-  fieldErrors?: Record<string, string>;
-}
-
 // ── Maintenance Mode ──────────────────────────────────────────────
 
 export type MaintenancePresetId = "import_local" | "refresh_metadata" | "remerge" | "local_organize" | "rebuild_all";
@@ -338,7 +331,7 @@ export interface MaintenanceAssetDecisions {
 
 export type MaintenanceItemStatus = "pending" | "processing" | "success" | "failed" | "skipped";
 
-/** Per-item execution result pushed via IPC events. */
+/** Per-item execution result in task events. */
 export interface MaintenanceItemResult {
   fileId: FileId;
   batchId?: string;

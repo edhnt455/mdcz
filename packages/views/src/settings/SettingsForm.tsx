@@ -13,17 +13,15 @@ import {
   PathsTopLevelSection,
   ScrapeTopLevelSection,
   SitesTopLevelSection,
-  SystemTopLevelSection,
   TranslateTopLevelSection,
 } from "./TopLevelSections";
 
 interface SettingsFormProps {
   extraContent?: ReactNode;
   flatDefaults: Record<string, unknown>;
-  initialUseCustomTitleBar: boolean;
 }
 
-export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitleBar }: SettingsFormProps) {
+export function SettingsForm({ extraContent, flatDefaults }: SettingsFormProps) {
   const siteOptions = useCrawlerSiteOptions(flatDefaults);
   const search = useSettingsSearch();
 
@@ -42,7 +40,6 @@ export function SettingsForm({ extraContent, flatDefaults, initialUseCustomTitle
           <DownloadTopLevelSection />
           <MediaServerTopLevelSection />
           <AutomationTopLevelSection />
-          <SystemTopLevelSection initialUseCustomTitleBar={initialUseCustomTitleBar} />
           <AdvancedTopLevelSection siteOptions={siteOptions} />
         </>
       )}

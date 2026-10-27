@@ -15,11 +15,7 @@ export interface DetailNfoReadResponse {
 }
 
 export interface DetailActionPort {
-  showFilePath: boolean;
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
-  play?(item: DetailViewItem): Promise<void> | void;
-  openFolder?(item: DetailViewItem): Promise<void> | void;
-  openMetadataFolder?(item: DetailViewItem): Promise<void> | void;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
   preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
@@ -44,15 +40,11 @@ export interface ScrapeActionPort {
   rescrape(targets: ScrapeActionTarget[], source: { manualUrl: string } | { unpin: true }): Promise<void>;
   retryFailed(itemIds?: readonly string[]): Promise<void>;
   removeRecord?(targets: ScrapeActionTarget[]): Promise<void>;
-  openFolder?(target: ScrapeActionTarget): Promise<void> | void;
-  play?(target: ScrapeActionTarget): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
 }
 
 export interface MaintenanceActionPort {
   rerunDirectory?(sessionId: string): Promise<void>;
-  openFolder?(filePath: string): Promise<void> | void;
-  play?(filePath: string): Promise<void> | void;
   openNfo(path: string): Promise<void> | void;
   getActiveSession(): Promise<MaintenanceActiveSessionSnapshot | null>;
   updateDraft(

@@ -15,7 +15,6 @@ export interface SettingsFilterState {
   parsedQuery: ParsedSettingsQuery;
   showAdvanced: boolean;
   modifiedKeys: ReadonlySet<string>;
-  target?: "desktop" | "server";
 }
 
 export interface SettingsSuggestion {
@@ -104,11 +103,6 @@ export function isFieldVisible(entry: FieldEntry, state: SettingsFilterState): b
   if (entry.visibility === "hidden") {
     return false;
   }
-  if (state.target === "server" && (entry.key.startsWith("shortcuts.") || entry.key.startsWith("ui."))) {
-    return false;
-  }
-  if (state.target === "desktop" && entry.key.startsWith("automation.")) return false;
-  if (state.target === "desktop" && entry.key.startsWith("notifications.")) return false;
 
   if (entry.visibility === "advanced" && !showAdvanced) {
     return false;

@@ -287,9 +287,6 @@ export const settings: Messages["settings"] = {
   testFailed: (error) => `测试失败: ${error}`,
   verifying: "验证中...",
   verifyTranslation: "验证元数据翻译",
-  waitForAutosave: "请等待自动保存完成，再重启应用",
-  relaunchFailed: (error) => `重启失败: ${error}`,
-  relaunchApp: "重启应用",
   sitePriority: {
     sites: {
       dmm: "DMM/FANZA 官方售卖源。标题、厂牌、封面可信度高，但受地区、登录、年龄确认和下架影响。",
@@ -373,7 +370,6 @@ export const settings: Messages["settings"] = {
     proxyAndRequests: "代理与请求",
     assetDownloads: "资源下载",
     interface: "界面",
-    shortcuts: "快捷键",
     advanced: "高级设置",
     sharedPersonSources: "共享人物资料源",
     sharedPersonSourcesHint: "同时服务 Jellyfin 和 Emby。人物简介会按顺序选择一个质量达标的主资料源。",

@@ -14,7 +14,6 @@ import { CURRENT_CONFIG_QUERY_KEY } from "../hooks/configQueries";
 import { queryKeys } from "../lib/queryKeys";
 
 export const createSettingsServices = (queryClient: QueryClient): SettingsServices => ({
-  browsePath: async () => ({ canceled: true, paths: [] }),
   checkCookies: async () => await api.network.checkCookies(),
   decrementInFlightSaves: useSettingsSavingStore.getState().decrementInFlight,
   ensureWatermarkDirectory: async () => await api.app.ensureWatermarkDirectory(),
@@ -48,7 +47,6 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
     return { copied: true, message: getT().web.copiedWatermarkDir, path: result.path, unsupported: true };
   },
   probeSiteConnectivity: async (site) => await api.crawler.probeSiteConnectivity({ site }),
-  relaunchApp: async () => window.location.reload(),
   resetConfig: async (path) => await api.config.reset(path ? { path } : undefined),
   saveConfig: async (config) => await api.config.update(config ?? {}),
   suggestDirectoryPath: async (path) => {
@@ -71,9 +69,7 @@ export const createSettingsServices = (queryClient: QueryClient): SettingsServic
     },
     status: async () => await api.integrations.status(),
   },
-  isServer: true,
   embyDeletion: { ...api.embyDeletion, origin: getApiBase() },
-  settingsTarget: "server",
   subscribeInFlightSaves: useSettingsSavingStore.subscribe,
   get watermarkDirectoryActionLabel() {
     return getT().web.copyServerPath;

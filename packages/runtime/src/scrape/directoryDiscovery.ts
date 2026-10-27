@@ -78,7 +78,6 @@ export const discoverDirectoryFiles = async (input: {
   configuration: Configuration;
   mediaRoots: ConfiguredMediaRootService;
   signal: AbortSignal;
-  platform: "desktop" | "server";
   onProgress: (progress: DiscoveryProgress) => void;
   inventory?: DirectoryInventory;
   checkRoots?: (rootIds: Iterable<string>) => Promise<void>;
@@ -127,7 +126,7 @@ export const discoverDirectoryFiles = async (input: {
     },
     excludeDirectoryPaths: scope.excludeDirPaths,
     deduplicateDirectories: true,
-    excludeFileSymlinks: input.platform === "server",
+    excludeFileSymlinks: true,
     warnings,
     onDiagnostic:
       process.env.MDCZ_SCAN_DIAGNOSTICS === "1"

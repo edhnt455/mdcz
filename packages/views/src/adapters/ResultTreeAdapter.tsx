@@ -36,14 +36,6 @@ function buildMenuContent(
   const nfoPath = actionContext.nfoPath ?? resultPath;
   const groupedTargets = actionContext.targets;
   const groupedVideoPaths = groupedTargets.map((target) => target.filePath);
-  const resultTarget = {
-    filePath: resultPath,
-    ref: result.output ?? { rootId: result.rootId, relativePath: result.relativePath },
-  };
-  const canOpenFolder = typeof port.openFolder === "function";
-  const metadataRef = result.nfo;
-  const canPlay = typeof port.play === "function";
-
   const handleCopyNumber = async () => {
     if (!resultNumber) {
       toast.error(t.scrape.numberEmpty);
@@ -85,22 +77,6 @@ function buildMenuContent(
     }
   };
 
-  const handleOpenFolder = async () => {
-    const filePath = resultPath.trim();
-    if (!filePath) {
-      toast.info(t.scrape.noOpenablePath);
-      return;
-    }
-
-    try {
-      await port.openFolder?.(resultTarget);
-    } catch (error) {
-      toast.error(t.scrape.openFolderFailed(toErrorMessage(error)));
-    }
-  };
-
-  const handlePlay = () => void port.play?.(resultTarget);
-
   const handleOpenNfo = () => {
     void port.openNfo(nfoPath);
   };
@@ -131,23 +107,21 @@ function buildMenuContent(
           <Copy className="h-3.5 w-3.5" />
         </ContextMenuShortcut>
       </ContextMenuItem>
-      {!canOpenFolder && (
-        <ContextMenuItem
-          onClick={async () => {
-            try {
-              await copyText(resultPath);
-              toast.success(t.scrape.pathCopied);
-            } catch (error) {
-              toast.error(toErrorMessage(error, t.scrape.copyPathFailed));
-            }
-          }}
-        >
-          {t.scrape.copyPath}
-          <ContextMenuShortcut>
-            <Copy className="h-3.5 w-3.5" />
-          </ContextMenuShortcut>
-        </ContextMenuItem>
-      )}
+      <ContextMenuItem
+        onClick={async () => {
+          try {
+            await copyText(resultPath);
+            toast.success(t.scrape.pathCopied);
+          } catch (error) {
+            toast.error(toErrorMessage(error, t.scrape.copyPathFailed));
+          }
+        }}
+      >
+        {t.scrape.copyPath}
+        <ContextMenuShortcut>
+          <Copy className="h-3.5 w-3.5" />
+        </ContextMenuShortcut>
+      </ContextMenuItem>
       <ContextMenuSeparator />
       <ContextMenuItem onClick={handleRetryScrape}>{t.scrape.rescrape}</ContextMenuItem>
       <ContextMenuItem onClick={handleManualUrlRescrape}>
@@ -164,33 +138,12 @@ function buildMenuContent(
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
-      {canOpenFolder ? (
-        <ContextMenuItem onClick={handleOpenFolder}>
-          {t.scrape.openSourceFolder}
-          <ContextMenuShortcut>F</ContextMenuShortcut>
-        </ContextMenuItem>
-      ) : null}
-      {canOpenFolder && metadataRef && (
-        <ContextMenuItem
-          onClick={() => {
-            void port.openFolder?.({ filePath: metadataRef.relativePath, ref: metadataRef });
-          }}
-        >
-          {t.scrape.openMetadataFolder}
-        </ContextMenuItem>
-      )}
       <ContextMenuItem onClick={handleOpenNfo}>
         {t.scrape.editNfo}
         <ContextMenuShortcut>
           <FileText className="h-3.5 w-3.5" />
         </ContextMenuShortcut>
       </ContextMenuItem>
-      {canPlay ? (
-        <ContextMenuItem onClick={handlePlay}>
-          {t.scrape.play}
-          <ContextMenuShortcut>P</ContextMenuShortcut>
-        </ContextMenuItem>
-      ) : null}
     </>
   );
 }

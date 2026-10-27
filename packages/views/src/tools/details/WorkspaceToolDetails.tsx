@@ -4,7 +4,7 @@ import type {
   BatchTranslateApplyResultItem,
   BatchTranslateMode,
   BatchTranslateScanItem,
-} from "@mdcz/shared/ipcTypes";
+} from "@mdcz/shared/toolTypes";
 import { Badge, Button, Checkbox, cn, Input, Label, Progress } from "@mdcz/ui";
 import {
   AlertCircle,

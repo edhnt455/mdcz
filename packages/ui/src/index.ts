@@ -18,7 +18,6 @@ export * from "./Resizable";
 export * from "./ScrollArea";
 export * from "./Select";
 export * from "./Separator";
-export * from "./ShortcutInput";
 export * from "./Sonner";
 export * from "./Switch";
 export * from "./Textarea";

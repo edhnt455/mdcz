@@ -101,12 +101,12 @@ describe("settings editor metadata and filtering", () => {
     expect(modified.visibleEntries.map((candidate) => candidate.key)).toEqual(["paths.actorPhotoFolder"]);
 
     const grouped = buildSettingsBrowseState({
-      query: "@group:系统 日志面板",
+      query: "@group:路径 演员头像",
       showAdvanced: false,
       modifiedKeys: new Set<string>(),
     });
     expect(grouped.hasActiveFilters).toBe(true);
-    expect(grouped.visibleEntries.map((candidate) => candidate.key)).toEqual(["ui.showLogsPanel"]);
+    expect(grouped.visibleEntries.map((candidate) => candidate.key)).toEqual(["paths.actorPhotoFolder"]);
   });
 
   it("reveals normal conditional rows in search while preserving the advanced visibility gate", () => {

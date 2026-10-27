@@ -45,10 +45,6 @@ export const Route = createFileRoute("/workbench")({
 });
 
 const createWebSetupPort = (): WorkbenchSetupPort => ({
-  browseDirectory: async (currentPath) => {
-    return currentPath || null;
-  },
-  isServer: true,
   suggestDirectory: async (path) => await api.serverPaths.suggest({ path, intent: "workbench-scan" }),
   cancelCandidates: async (scanId) => {
     await api.scans.cancelCandidates({ scanId });

@@ -1,9 +1,9 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import type { CrawlerInput, CrawlerResponse } from "@mdcz/runtime/crawler/base/types";
 import { getCrawlerExecutionSource, NetworkClient, runWithScrapeItem } from "@mdcz/runtime/network";
 import { AggregationService } from "@mdcz/runtime/scrape";
 import { noopRuntimeLogger } from "@mdcz/runtime/shared";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { FailureReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";

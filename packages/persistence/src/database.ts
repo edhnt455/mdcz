@@ -6,12 +6,6 @@ import { schema } from "./schema";
 export interface PersistenceDatabaseConfig {
   path: string;
   readonly?: boolean;
-  /**
-   * Optional explicit path to the better_sqlite3.node native binding.
-   * Used by the Electron main process to load an Electron-ABI prebuilt
-   * binary kept separate from the hoisted Node-ABI copy in node_modules.
-   */
-  nativeBinding?: string;
 }
 
 export interface PersistenceDatabase {
@@ -23,7 +17,6 @@ export interface PersistenceDatabase {
 export const createPersistenceDatabase = (config: PersistenceDatabaseConfig): PersistenceDatabase => {
   const sqlite = new Database(config.path, {
     readonly: config.readonly ?? false,
-    ...(config.nativeBinding ? { nativeBinding: config.nativeBinding } : {}),
   });
   try {
     if (!config.readonly) {

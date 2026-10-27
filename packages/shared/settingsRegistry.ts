@@ -8,7 +8,6 @@ export const SECTION_ORDER = [
   "download",
   "mediaServer",
   "automation",
-  "system",
 ] as const;
 
 export type FieldAnchor = (typeof SECTION_ORDER)[number];
@@ -199,16 +198,6 @@ const RAW_FIELD_REGISTRY = [
   { key: "notifications.ntfyToken", anchor: "automation" },
   { key: "notifications.dailyDigest", anchor: "automation" },
   { key: "notifications.digestHour", anchor: "automation" },
-  { key: "shortcuts.startOrStopScrape", anchor: "system" },
-  { key: "shortcuts.retryScrape", anchor: "system" },
-  { key: "shortcuts.openFolder", anchor: "system" },
-  { key: "shortcuts.editNfo", anchor: "system" },
-  { key: "shortcuts.playVideo", anchor: "system" },
-  { key: "ui.showLogsPanel", anchor: "system" },
-  { key: "ui.useCustomTitleBar", anchor: "system" },
-  { key: "ui.hideDock", anchor: "system" },
-  { key: "ui.hideMenu", anchor: "system" },
-  { key: "ui.hideWindowButtons", anchor: "system" },
 ] as const satisfies readonly RawFieldEntry[];
 
 /** Display text (labels, descriptions, search aliases) lives in the UI locale dictionaries, keyed by FieldKey. */
@@ -274,12 +263,6 @@ export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
     path: "embyDeletion.moviePilot",
     kind: "internal",
     reason: "The MoviePilot connection and token are edited by the deletion panel and saved in the profile file.",
-  },
-  { path: "ui.theme", kind: "internal", reason: "Theme is controlled by the application shell." },
-  {
-    path: "behavior.updateCheck",
-    kind: "internal",
-    reason: "Update checks are controlled by the Desktop lifecycle rather than the settings editor.",
   },
 ];
 

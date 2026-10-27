@@ -33,7 +33,6 @@ import { render } from "vitest-browser-react";
 const noop = vi.fn();
 
 const baseSettingsServices = {
-  browsePath: vi.fn(async () => ({})),
   checkCookies: vi.fn(async () => ({ results: [] })),
   decrementInFlightSaves: vi.fn(),
   previewWatermark: vi.fn(async () => ({ dataUrl: "data:image/png;base64,", warnings: [] })),
@@ -43,7 +42,6 @@ const baseSettingsServices = {
   listCrawlerSites: vi.fn(async () => ({ sites: [] })),
   openWatermarkDirectory: vi.fn(async () => undefined),
   probeSiteConnectivity: vi.fn(async () => ({ ok: true, latencyMs: 0, status: 200 })),
-  relaunchApp: vi.fn(async () => undefined),
   resetConfig: vi.fn(async () => undefined),
   saveConfig: vi.fn(async () => undefined),
   testTranslation: vi.fn(async () => ({ status: "ok" as const, sample: "" })),
@@ -86,12 +84,10 @@ function FormHarness({
 function SettingsSurfaceHarness({
   engine = "openai",
   baiduService = "general",
-  isServer = false,
   initialSection,
 }: {
   engine?: "openai" | "deepl" | "baidu";
   baiduService?: "general" | "llm";
-  isServer?: boolean;
   initialSection?: FieldAnchor;
 }) {
   const configuration = useMemo(
@@ -114,7 +110,7 @@ function SettingsSurfaceHarness({
   );
 
   return (
-    <SettingsServicesProvider notifier={settingsNotifier} services={{ ...baseSettingsServices, isServer }}>
+    <SettingsServicesProvider notifier={settingsNotifier} services={baseSettingsServices}>
       <SettingsEditor
         data={configuration}
         initialSection={initialSection}
@@ -133,7 +129,7 @@ function SettingsSurfaceHarness({
   );
 }
 
-test("settings categories preserve fields, search across sections and adapt to the target", async () => {
+test("settings categories preserve fields and search across sections", async () => {
   const screen = await render(<SettingsSurfaceHarness />);
   const navigation = screen.getByRole("navigation", { name: "设置分类" });
   await expect
@@ -143,7 +139,7 @@ test("settings categories preserve fields, search across sections and adapt to t
   await expect
     .element(screen.getByRole("region", { name: "网络连接", exact: true, includeHidden: true }))
     .not.toBeVisible();
-  await expect.element(navigation.getByRole("button", { name: "集成", exact: true })).not.toBeInTheDocument();
+  await expect.element(navigation.getByRole("button", { name: "集成", exact: true })).toBeVisible();
   await screen.getByRole("button", { name: "显示高级设置" }).click();
 
   const expectedFields = FIELD_REGISTRY.filter((entry) => entry.visibility !== "hidden").map((entry) => entry.key);
@@ -207,7 +203,7 @@ test("settings categories preserve fields, search across sections and adapt to t
     ["baidu", "llm"],
   ] as const) {
     const variant = await render(
-      <SettingsSurfaceHarness engine={engine} baiduService={baiduService} isServer initialSection="translate" />,
+      <SettingsSurfaceHarness engine={engine} baiduService={baiduService} initialSection="translate" />,
     );
     await expect.element(variant.getByRole("region", { name: "翻译服务", exact: true })).toBeVisible();
     const serverNavigation = variant.getByRole("navigation", { name: "设置分类" });
@@ -308,7 +304,6 @@ test("server path fields keep autocomplete suggestions without browse buttons", 
       { label: "Movies", path: "E:/Movies" },
       { label: "Output", path: "E:/Output" },
     ],
-    isServer: true,
   });
 
   const screen = await render(

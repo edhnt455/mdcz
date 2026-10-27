@@ -1,5 +1,4 @@
 import { open } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
 import type { VideoMeta } from "@mdcz/shared/types";
 import { isTrackType, type MediaInfo, type MediaInfoResult, mediaInfoFactory } from "mediainfo.js";
 import { isStrmFile } from "./strm";
@@ -32,8 +31,7 @@ const toVideoMetadata = (result: MediaInfoResult): VideoMeta | undefined => {
   };
 };
 
-/** `wasmPath` is only needed when the module is not next to mediainfo.js, as in the packaged desktop app. */
-export const createVideoProbe = (wasmPath?: string) => {
+export const createVideoProbe = () => {
   let mediaInfo: Promise<MediaInfo<"object">> | undefined;
   // The WASM instance reads one file at a time; concurrent analyzeData calls corrupt each other's reads.
   let queue: Promise<unknown> = Promise.resolve();
@@ -42,7 +40,6 @@ export const createVideoProbe = (wasmPath?: string) => {
     mediaInfo ??= mediaInfoFactory({
       format: "object",
       chunkSize: CHUNK_SIZE,
-      ...(wasmPath ? { locateFile: () => pathToFileURL(wasmPath).href } : {}),
     });
     const instance = await mediaInfo;
     const handle = await open(filePath, "r");

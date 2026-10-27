@@ -24,9 +24,6 @@ test-results/
 tests/fixtures/network/
 fixtures.tar.gz
 
-# Generated native bindings (Electron-ABI better_sqlite3.node from postinstall)
-apps/desktop/native/
-
 # Runtime scratch data
 logs/
 !packages/views/src/logs/

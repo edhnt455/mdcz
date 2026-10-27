@@ -114,7 +114,6 @@ export class AutomationService {
             configuration,
             mediaRoots: this.deps.mediaRoots,
             signal: AbortSignal.timeout(10 * 60 * 1000),
-            platform: "server",
             onProgress: () => {},
           })
         ).refs

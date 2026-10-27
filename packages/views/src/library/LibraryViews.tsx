@@ -31,7 +31,6 @@ import {
   ChevronDown,
   Copy,
   Database,
-  FolderOpen,
   Layers,
   LayoutGrid,
   Link2,
@@ -70,7 +69,6 @@ export interface LibraryIndexViewProps {
   browse?: LibraryBrowseControls;
   onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (path: string) => void;
   onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
   onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
   onLoadMore?: () => void;
@@ -104,7 +102,6 @@ export function LibraryIndexView({
   browse,
   onAvailabilityFilterChange,
   onDeleteEntry,
-  onOpenFolder,
   onRemoveFile,
   onRelinkFile,
   onLoadMore,
@@ -305,7 +302,6 @@ export function LibraryIndexView({
                         getImageSrc={getImageSrc}
                         linkComponent={LinkComponent}
                         onDeleteEntry={onDeleteEntry}
-                        onOpenFolder={onOpenFolder}
                         onRemoveFile={onRemoveFile}
                         onRelinkFile={onRelinkFile}
                       />
@@ -388,7 +384,6 @@ function LibraryEntryRow({
   getImageSrc,
   linkComponent: LinkComponent,
   onDeleteEntry,
-  onOpenFolder,
   onRemoveFile,
   onRelinkFile,
 }: {
@@ -396,7 +391,6 @@ function LibraryEntryRow({
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   onDeleteEntry?: (entry: LibraryEntryDto) => void;
-  onOpenFolder?: (path: string) => void;
   onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
   onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
 }) {
@@ -409,10 +403,9 @@ function LibraryEntryRow({
   const [filesOpen, setFilesOpen] = useState(false);
   const imageSrc = !imageLoadFailed && entry.thumbnailPath ? getImageSrc(entry.thumbnailPath, entry) : "";
   const detailClass = "font-bold text-foreground/60 transition-colors hover:text-foreground";
-  const canOpenFolder = Boolean(onOpenFolder && entry.available !== "unavailable" && displayFile?.lastKnownPath);
   const isMultiFile = entry.fileRefs.length > 1;
   const missingFileCount = entry.fileRefs.filter((file) => file.available === false).length;
-  const fileActionProps = { entry, onOpenFolder, onRemoveFile, onRelinkFile };
+  const fileActionProps = { entry, onRemoveFile, onRelinkFile };
 
   return (
     <div className="group rounded-quiet-lg border border-border/40 bg-surface p-3 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)]">
@@ -482,25 +475,6 @@ function LibraryEntryRow({
                   {t.library.scrapeInfo}
                 </Badge>
               </LinkComponent>
-            ) : null}
-            {canOpenFolder ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    aria-label={t.library.openFolder}
-                    className="h-8 w-8 text-muted-foreground transition-all hover:bg-surface-raised hover:text-foreground lg:opacity-0 lg:group-hover:opacity-100"
-                    onClick={() => displayFile?.lastKnownPath && onOpenFolder?.(displayFile.lastKnownPath)}
-                    size="icon"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t.library.openFolder}</TooltipContent>
-              </Tooltip>
-            ) : onOpenFolder ? (
-              <div className="h-8 w-8" />
             ) : null}
             {!isMultiFile && displayFile ? (
               <LibraryFileActions file={displayFile} {...fileActionProps} />
@@ -587,7 +561,6 @@ function StatusDot({ available }: { available: LibraryEntryDto["available"] }) {
 type LibraryFileActionProps = {
   entry: LibraryEntryDto;
   file: LibraryEntryDto["fileRefs"][number];
-  onOpenFolder?: LibraryIndexViewProps["onOpenFolder"];
   onRemoveFile?: LibraryIndexViewProps["onRemoveFile"];
   onRelinkFile?: LibraryIndexViewProps["onRelinkFile"];
 };
@@ -640,7 +613,7 @@ function LibraryFileRow(props: LibraryFileActionProps) {
   );
 }
 
-function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkFile }: LibraryFileActionProps) {
+function LibraryFileActions({ entry, file, onRemoveFile, onRelinkFile }: LibraryFileActionProps) {
   const t = useT();
   const [menuOpen, setMenuOpen] = useState(false);
   const [action, setAction] = useState<"remove" | "relink" | null>(null);
@@ -648,7 +621,7 @@ function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkF
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const path = file.lastKnownPath ?? file.relativePath;
-  // Single-file entries already expose "open folder" and "remove" on the card itself.
+  // Single-file entries already expose removal on the card itself.
   const isMultiFile = entry.fileRefs.length > 1;
   const menuItemClass = "h-8 w-full justify-start gap-2 px-2 text-xs font-medium";
   const openDialog = (next: "remove" | "relink") => {
@@ -685,20 +658,6 @@ function LibraryFileActions({ entry, file, onOpenFolder, onRemoveFile, onRelinkF
             <Copy className="h-3.5 w-3.5" />
             {t.library.copyPath}
           </Button>
-          {isMultiFile && onOpenFolder && file.available !== false && (
-            <Button
-              className={menuItemClass}
-              onClick={() => {
-                setMenuOpen(false);
-                onOpenFolder(path);
-              }}
-              type="button"
-              variant="ghost"
-            >
-              <FolderOpen className="h-3.5 w-3.5" />
-              {t.library.openLocation}
-            </Button>
-          )}
           {onRelinkFile && (
             <Button className={menuItemClass} onClick={() => openDialog("relink")} type="button" variant="ghost">
               <Link2 className="h-3.5 w-3.5" />

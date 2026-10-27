@@ -1,5 +1,5 @@
 import { Form } from "@mdcz/ui";
-import { lazy, type ReactNode, Suspense, useMemo, useRef } from "react";
+import { lazy, type ReactNode, Suspense, useMemo } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useForm } from "react-hook-form";
 import { SettingsLayout } from "./SettingsLayout";
@@ -53,12 +53,6 @@ export function SettingsEditor({
 }: SettingsEditorProps) {
   const flatConfigValues = useMemo(() => flattenConfig(data), [data]);
   const flatDefaultValues = useMemo(() => flattenConfig(defaultConfig), [defaultConfig]);
-  const initialUseCustomTitleBarRef = useRef<boolean | null>(null);
-
-  if (initialUseCustomTitleBarRef.current === null) {
-    initialUseCustomTitleBarRef.current = Boolean(flatConfigValues["ui.useCustomTitleBar"] ?? true);
-  }
-
   const form = useForm<FieldValues>({
     defaultValues: flatConfigValues,
     mode: "onChange",
@@ -91,11 +85,7 @@ export function SettingsEditor({
               onImportProfile={onImportProfile}
             >
               <Suspense fallback={<SettingsFormSkeleton />}>
-                <LazySettingsForm
-                  extraContent={extraContent}
-                  flatDefaults={flatConfigValues}
-                  initialUseCustomTitleBar={initialUseCustomTitleBarRef.current ?? true}
-                />
+                <LazySettingsForm extraContent={extraContent} flatDefaults={flatConfigValues} />
               </Suspense>
             </SettingsLayout>
           </SettingsSearchProvider>

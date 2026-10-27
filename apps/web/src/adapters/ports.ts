@@ -150,7 +150,6 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
-  showFilePath: false,
   resolveImageCandidates: async (candidates, baseDir, item) =>
     dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
   readNfo: async (item, path) => {

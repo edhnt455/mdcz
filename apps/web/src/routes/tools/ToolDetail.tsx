@@ -1,13 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { PersonSyncJobDto, PersonSyncStartInput, PersonSyncStateDto } from "@mdcz/shared/serverDtos";
+import type { ToolId } from "@mdcz/shared/toolCatalog";
 import type {
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
   BatchTranslateApplyResultItem,
   BatchTranslateScanItem,
   MediaServerConnectionCheckResult,
-} from "@mdcz/shared/ipcTypes";
-import type { PersonSyncJobDto, PersonSyncStartInput, PersonSyncStateDto } from "@mdcz/shared/serverDtos";
-import type { ToolId } from "@mdcz/shared/toolCatalog";
+} from "@mdcz/shared/toolTypes";
 import { useT } from "@mdcz/views/i18n";
 import { useToolNavigationStore } from "@mdcz/views/state/toolNavigationStore";
 import {

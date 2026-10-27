@@ -306,9 +306,6 @@ export const settings = {
   testFailed: (error: string) => `Test failed: ${error}`,
   verifying: "Verifying…",
   verifyTranslation: "Verify metadata translation",
-  waitForAutosave: "Wait for autosave to finish before restarting the app",
-  relaunchFailed: (error: string) => `Restart failed: ${error}`,
-  relaunchApp: "Restart app",
   sitePriority: {
     sites: {
       [Website.DMM]:
@@ -411,7 +408,6 @@ export const settings = {
     proxyAndRequests: "Proxy and requests",
     assetDownloads: "Asset downloads",
     interface: "Interface",
-    shortcuts: "Shortcuts",
     advanced: "Advanced settings",
     sharedPersonSources: "Shared person sources",
     sharedPersonSourcesHint:

@@ -206,7 +206,7 @@ describe("detail panel adapter contract", () => {
     expect(result.trailerUrl).toBe("https://example.com/remote-trailer.mp4");
   });
 
-  it("builds the same poster and thumbnail fallback candidates as the desktop detail controller", () => {
+  it("builds poster and thumbnail fallback candidates", () => {
     expect(
       buildDetailArtworkCandidates({
         id: "file:/library/ABC-123/ABC-123.mp4",

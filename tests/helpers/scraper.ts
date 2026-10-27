@@ -1,5 +1,4 @@
 import { dirname, join } from "node:path";
-import { type Configuration, configManager } from "@main/services/config";
 import {
   type CreateFileScraperOptions,
   type FileScrapeOptions,
@@ -8,8 +7,8 @@ import {
   type FileScraperDependencies,
   type ScrapeGroupResult,
 } from "@mdcz/runtime/scrape";
+import { type Configuration, defaultConfiguration } from "@mdcz/shared/config";
 import type { PublicationTarget } from "@mdcz/shared/mediaLibrary";
-import { vi } from "vitest";
 import { FileOrganizer, type OrganizePlan } from "../../packages/runtime/src/scrape/FileOrganizer";
 
 type TestFileScraperDependencies = Omit<FileScraperDependencies, "getConfiguration" | "logger" | "signalService"> &
@@ -23,7 +22,7 @@ export const createFileScraper = (
   return new FileScraper(
     {
       ...deps,
-      getConfiguration: deps.getConfiguration ?? (async () => await configManager.getValidated()),
+      getConfiguration: deps.getConfiguration ?? (async () => testConfiguration),
       logger,
       signalService: deps.signalService ?? {
         setProgress: () => {},
@@ -36,31 +35,10 @@ export const createFileScraper = (
   );
 };
 
-const getByPath = (target: Record<string, unknown>, path: string): unknown => {
-  let cursor: unknown = target;
-  for (const segment of path.split(".")) {
-    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor) || !(segment in cursor)) {
-      return undefined;
-    }
-    cursor = (cursor as Record<string, unknown>)[segment];
-  }
-  return cursor;
-};
+let testConfiguration = defaultConfiguration;
 
-export const mockConfigManager = (config: Configuration): void => {
-  const ensureLoadedSpy = vi.isMockFunction(configManager.ensureLoaded)
-    ? vi.mocked(configManager.ensureLoaded)
-    : vi.spyOn(configManager, "ensureLoaded");
-  ensureLoadedSpy.mockResolvedValue(undefined);
-
-  const getSpy = vi.isMockFunction(configManager.get) ? vi.mocked(configManager.get) : vi.spyOn(configManager, "get");
-  getSpy.mockImplementation(async (path?: string) => {
-    if (!path) {
-      return config;
-    }
-
-    return getByPath(config as unknown as Record<string, unknown>, path);
-  });
+export const setTestConfiguration = (config: Configuration): void => {
+  testConfiguration = config;
 };
 
 const testFileOrganizer = new FileOrganizer();

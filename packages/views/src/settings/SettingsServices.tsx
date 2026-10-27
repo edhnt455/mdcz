@@ -14,16 +14,6 @@ import type { SiteHealth } from "@mdcz/shared/siteResults";
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
 import type { PathAutocompleteResult } from "../path";
 
-export interface SettingsBrowseFilter {
-  name: string;
-  extensions: string[];
-}
-
-export interface SettingsBrowseResult {
-  canceled?: boolean;
-  paths?: string[];
-}
-
 export interface SettingsPathSuggestion {
   label: string;
   path: string;
@@ -66,12 +56,9 @@ export interface SettingsIntegrationServices {
 
 export interface SettingsServices {
   openActorPhotoSync?: () => void;
-  browsePath: (kind: "file" | "directory", filters?: SettingsBrowseFilter[]) => Promise<SettingsBrowseResult>;
   getPathSuggestions?: (kind: "file" | "directory") => SettingsPathSuggestion[];
   integrations?: SettingsIntegrationServices;
   embyDeletion?: ServerApiContract["embyDeletion"] & { origin: string };
-  isServer?: boolean;
-  settingsTarget?: "desktop" | "server";
   suggestDirectoryPath?: (path: string) => Promise<PathAutocompleteResult>;
   watermarkDirectoryActionLabel?: string;
   checkCookies: () => Promise<NetworkCheckCookiesResponse>;
@@ -85,7 +72,6 @@ export interface SettingsServices {
   openExternal?: (url: string) => Promise<unknown> | unknown;
   openWatermarkDirectory: () => Promise<SettingsWatermarkDirectoryOpenResult | undefined>;
   probeSiteConnectivity: (site: Website) => Promise<SiteConnectivityProbeResponse>;
-  relaunchApp: () => Promise<void>;
   resetConfig: (path?: string) => Promise<unknown>;
   saveConfig: (config?: Partial<Configuration>) => Promise<unknown>;
   testTranslation: (input: SettingsTranslateTestInput) => Promise<TranslateTestResponse>;

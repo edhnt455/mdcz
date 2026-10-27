@@ -1,5 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
-import type { PersonSyncFailure, PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { PersonSyncFailure, PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { ActorSourceHint } from "../actorSource/types";
 import type { RuntimeNetworkClient } from "../network";
 import type { MediaServerMode } from ".";

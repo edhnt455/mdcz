@@ -208,7 +208,7 @@ describe("mounted filesystem helpers", () => {
     expect(toRootRelativePath(root, path.join(root.hostPath, "nested", "movie.nfo"))).toBe("nested/movie.nfo");
   });
 
-  it("walks files with desktop-compatible symlink semantics", async () => {
+  it("walks files with configured symlink semantics", async () => {
     const root = await createTempRoot();
     await atomicWriteRootFile(root, "movie.mkv", "video");
     await atomicWriteRootFile(root, "linked/target.mp4", "video");

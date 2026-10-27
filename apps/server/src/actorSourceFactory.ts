@@ -22,7 +22,7 @@ export const createServerActorSourceProvider = (
       new LocalActorSource({ actorImageService, listLibraryDirectories }),
       new OfficialActorSource({ networkClient }),
       new GfriendsActorSource({ networkClient }),
-      // Headless host: no Electron cookie window. Avjoho still has its session challenge path.
+      // Headless host: cookie challenges cannot open a browser window. Avjoho still has its session challenge path.
       new AvjohoActorSource({ networkClient }),
       new AvbaseActorSource({ networkClient }),
     ]),

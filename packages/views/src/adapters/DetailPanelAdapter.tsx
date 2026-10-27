@@ -220,22 +220,6 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
     [nfoDirty, nfoSaving],
   );
 
-  const handlePlay = useCallback(() => {
-    if (!item) {
-      toast.info(getT().scrape.selectItemFirst);
-      return;
-    }
-    void port.play?.(item);
-  }, [item, port]);
-
-  const handleOpenFolder = useCallback(() => {
-    if (!item) {
-      toast.info(getT().scrape.selectItemFirst);
-      return;
-    }
-    void port.openFolder?.(item);
-  }, [item, port]);
-
   const handleOpenNfo = useCallback(async () => {
     const path = item?.nfoPath ?? item?.path;
     if (!path) {
@@ -287,15 +271,6 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
     }
   }, [item, port, posterCrop]);
 
-  const actions = useMemo(
-    () => ({
-      play: typeof port.play === "function" ? handlePlay : undefined,
-      openFolder: typeof port.openFolder === "function" ? handleOpenFolder : undefined,
-      openNfo: handleOpenNfo,
-    }),
-    [handleOpenFolder, handleOpenNfo, handlePlay, port.openFolder, port.play],
-  );
-
   useEffect(() => {
     const listener = (event: Event) => {
       const custom = event as CustomEvent<{ path?: string }>;
@@ -326,27 +301,11 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
         onDataChange: setNfoData,
         onSave: handleSaveNfo,
       }}
-      onPlay={actions.play}
-      onOpenFolder={actions.openFolder}
-      onOpenMetadataFolder={
-        item &&
-        port.openMetadataFolder &&
-        item.nfoRef &&
-        item.fileRef &&
-        (item.nfoRef.rootId !== item.fileRef.rootId ||
-          item.nfoRef.relativePath.split("/").slice(0, -1).join("/") !==
-            item.fileRef.relativePath.split("/").slice(0, -1).join("/"))
-          ? () => {
-              void port.openMetadataFolder?.(item);
-            }
-          : undefined
-      }
-      onOpenNfo={actions.openNfo}
+      onOpenNfo={handleOpenNfo}
       onPosterError={artwork.handlePosterError}
       onThumbError={artwork.handleThumbError}
       onTrailerError={artwork.handleTrailerError}
       resolveImageCandidates={resolveImageCandidates}
-      showFilePath={port.showFilePath}
       posterEditor={{
         open: posterEditorOpen,
         session: posterCropSession,

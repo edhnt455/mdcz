@@ -7,7 +7,7 @@ import { AdvancedSettingsFooterContent } from "./SettingsFooter";
 import { SettingsNavigationContext, type SettingsSectionId } from "./SettingsNavigationContext";
 import { SettingsSearch } from "./SettingsSearch";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
-import { useSettingsInFlightSaves, useSettingsServices } from "./SettingsServices";
+import { useSettingsInFlightSaves } from "./SettingsServices";
 import { type FieldAnchor, SECTION_ORDER } from "./settingsRegistry";
 
 interface SettingsLayoutProps {
@@ -40,15 +40,11 @@ export function SettingsLayout({
   children,
 }: SettingsLayoutProps) {
   const t = useT();
-  const services = useSettingsServices();
   const inFlightSaves = useSettingsInFlightSaves();
   const search = useOptionalSettingsSearch();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [selectedSection, setSelectedSection] = useState<SettingsSectionId>(initialSection ?? "paths");
-  const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
   const sections: { id: SettingsSectionId; label: string }[] = SECTION_ORDER.filter((id) => {
-    if (id === "system" && target === "server") return false;
-    if (id === "automation" && target !== "server") return false;
     return !search || search.hasActiveFilters || search.isAnchorVisible(id);
   }).map((id) => ({ id, label: t.settingsFields.sections[id].label }));
   if (search?.hasVisibleAdvancedEntries) {

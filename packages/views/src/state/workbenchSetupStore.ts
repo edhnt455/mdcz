@@ -5,7 +5,6 @@ import { create } from "zustand";
 export type WorkbenchSetupScanStatus = "idle" | "scanning" | "success" | "error";
 
 interface WorkbenchSetupState {
-  startTask: (() => Promise<void>) | null;
   activePreview: { id: string; stop: () => Promise<void> } | null;
   stopPreview: () => Promise<void>;
   scanDir: string;
@@ -37,7 +36,6 @@ interface WorkbenchSetupState {
 }
 
 export const useWorkbenchSetupStore = create<WorkbenchSetupState>((set, get) => ({
-  startTask: null,
   activePreview: null,
   stopPreview: async () => {
     const current = get().activePreview;

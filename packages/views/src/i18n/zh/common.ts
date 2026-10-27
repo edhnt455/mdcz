@@ -39,7 +39,4 @@ export const common: Messages["common"] = {
   completed: "已完成",
   showPassword: "显示密码",
   hidePassword: "隐藏密码",
-  shortcutRecording: "录制中...",
-  shortcutUnset: "未设置",
-  shortcutChange: "修改",
 };

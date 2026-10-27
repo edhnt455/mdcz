@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { AmazonPosterLookupResult, AmazonPosterScanItem } from "@mdcz/shared/ipcTypes";
+import type { AmazonPosterLookupResult, AmazonPosterScanItem } from "@mdcz/shared/toolTypes";
 import {
   Badge,
   Button,

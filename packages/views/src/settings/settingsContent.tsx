@@ -21,7 +21,7 @@ import {
   Input,
   Switch,
 } from "@mdcz/ui";
-import { CircleHelp, Loader2, RotateCcw, X } from "lucide-react";
+import { CircleHelp, Loader2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -36,7 +36,6 @@ import {
   PathFieldWrapper,
   PromptFieldWrapper,
   SecretField,
-  ShortcutField,
   TextField,
   UrlField,
 } from "../config-form/FieldRenderer";
@@ -44,12 +43,7 @@ import { useT } from "../i18n";
 import { AggregationPriorityEditorField } from "./AggregationPriorityEditorField";
 import { useOptionalSettingsSearch } from "./SettingsSearchContext";
 import { useSettingsSectionMode } from "./SettingsSectionModeContext";
-import {
-  type SettingsIntegrationServices,
-  useSettingsInFlightSaves,
-  useSettingsNotifier,
-  useSettingsServices,
-} from "./SettingsServices";
+import { type SettingsIntegrationServices, useSettingsNotifier, useSettingsServices } from "./SettingsServices";
 import { useHasRenderableFields } from "./sectionVisibility";
 import { AGGREGATION_PRIORITY_KEYS, isRecord } from "./settingsRegistry";
 import { WATERMARK_FIELD_KEYS, WatermarkSettings } from "./WatermarkSettings";
@@ -540,78 +534,6 @@ export function AggregationPrioritySection({ siteOptions }: { siteOptions: strin
       {AGGREGATION_PRIORITY_KEYS.map((key) => (
         <AggregationPriorityEditorField key={key} name={key} options={siteOptions} />
       ))}
-    </>
-  );
-}
-
-export function ShortcutsSection() {
-  return (
-    <>
-      <ShortcutField name="shortcuts.startOrStopScrape" />
-      <ShortcutField name="shortcuts.retryScrape" />
-      <ShortcutField name="shortcuts.openFolder" />
-      <ShortcutField name="shortcuts.editNfo" />
-      <ShortcutField name="shortcuts.playVideo" />
-    </>
-  );
-}
-
-interface UiSectionProps {
-  initialUseCustomTitleBar: boolean;
-}
-
-export function UiSection({ initialUseCustomTitleBar }: UiSectionProps) {
-  const t = useT();
-  const services = useSettingsServices();
-  const notifier = useSettingsNotifier();
-  const [relaunching, setRelaunching] = useState(false);
-  const form = useFormContext<FieldValues>();
-  const currentUseCustomTitleBar = Boolean(useWatch({ control: form.control, name: "ui.useCustomTitleBar" }) ?? true);
-  const titleBarChanged = currentUseCustomTitleBar !== initialUseCustomTitleBar;
-  const inFlightSaves = useSettingsInFlightSaves();
-  const canRelaunch = titleBarChanged && inFlightSaves === 0;
-
-  const handleRelaunch = async () => {
-    if (inFlightSaves > 0) {
-      notifier.info(t.settings.waitForAutosave);
-      return;
-    }
-
-    setRelaunching(true);
-    try {
-      await services.relaunchApp();
-    } catch (error) {
-      setRelaunching(false);
-      notifier.error(t.settings.relaunchFailed(error instanceof Error ? error.message : t.common.unknownError));
-    }
-  };
-
-  return (
-    <>
-      <BoolField name="ui.showLogsPanel" />
-      <BaseField name="ui.useCustomTitleBar">
-        {(field) => (
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant={titleBarChanged ? "default" : "outline"}
-              size="sm"
-              className="h-7 rounded-lg text-xs"
-              disabled={!canRelaunch || relaunching}
-              onClick={handleRelaunch}
-            >
-              {relaunching ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-              {t.settings.relaunchApp}
-            </Button>
-            <FormControl>
-              <Switch checked={Boolean(field.value ?? true)} onCheckedChange={field.onChange} />
-            </FormControl>
-          </div>
-        )}
-      </BaseField>
-      <BoolField name="ui.hideDock" />
-      <BoolField name="ui.hideMenu" />
-      <BoolField name="ui.hideWindowButtons" />
     </>
   );
 }

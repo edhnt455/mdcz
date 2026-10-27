@@ -7,7 +7,6 @@ interface ThemeProviderProps {
   children: ReactNode;
   defaultTheme?: Theme;
   storageKey?: string;
-  onResolvedThemeChange?: (theme: ResolvedTheme) => void;
 }
 
 interface ThemeProviderState {
@@ -22,12 +21,7 @@ const initialState: ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
-export function ThemeProvider({
-  children,
-  defaultTheme = "system",
-  storageKey = "vite-ui-theme",
-  onResolvedThemeChange,
-}: ThemeProviderProps) {
+export function ThemeProvider({ children, defaultTheme = "system", storageKey = "vite-ui-theme" }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof localStorage === "undefined") {
       return defaultTheme;
@@ -42,8 +36,7 @@ export function ThemeProvider({
     root.classList.remove("light", "dark");
     root.classList.add(resolvedTheme);
     root.style.colorScheme = resolvedTheme;
-    onResolvedThemeChange?.(resolvedTheme);
-  }, [onResolvedThemeChange, theme]);
+  }, [theme]);
 
   return (
     <ThemeProviderContext.Provider

@@ -4,7 +4,7 @@
 
 ## 镜像发布
 
-仓库使用 `.github/workflows/docker-publish.yml` 发布镜像，原有的桌面安装包、WebUI 压缩包、GitHub Release 和 GHCR 发布流程已移除。PR 的 CI 检查继续保留。
+仓库使用 `.github/workflows/docker-publish.yml` 发布镜像。PR 的 CI 检查覆盖服务端、WebUI 和 Docker 构建。
 
 1. 在本 fork 的 GitHub **Settings → Secrets and variables → Actions** 中配置两个 Repository secrets：`DOCKERHUB_USERNAME`（Docker Hub 用户名）和 `DOCKERHUB_TOKEN`（有镜像推送权限的访问令牌）。
 2. 修改根目录 `VERSION`（初始为 `0.19.1`），随代码一起提交并推送至本 fork 的 `main` 分支，即可触发构建。版本使用不带 `v` 前缀的语义版本号；支持 `0.20.0-rc.1` 形式的预发布版本，不接受 `+` 构建元数据。
@@ -12,7 +12,7 @@
 
 构建使用 `apps/server/Dockerfile`，推送 `docker.io/<DOCKERHUB_USERNAME>/mdcz:<VERSION>` 和 `docker.io/<DOCKERHUB_USERNAME>/mdcz:latest`。每次成功发布都会更新 `latest`（包括手动运行及预发布版本）。仅修改代码而未修改 `VERSION` 不会自动发布。
 
-发布流程只读取 GitHub 仓库，不会提交版本变更、推送 Git 标签或创建 Release。镜像版本由 `VERSION` 通过构建参数传入，无需同步修改桌面客户端的版本号。
+发布流程只读取 GitHub 仓库，不会提交版本变更、推送 Git 标签或创建 Release。镜像版本由 `VERSION` 通过构建参数传入，无需同步修改 `package.json` 的版本号。
 
 ## 首次部署
 

@@ -1,4 +1,3 @@
-import { configurationSchema, defaultConfiguration } from "@main/services/config";
 import type {
   AggregationService,
   DownloadManager,
@@ -7,15 +6,16 @@ import type {
   OrganizePlan,
   TranslateService,
 } from "@mdcz/runtime/scrape";
+import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
 import {
   createFileScraper,
-  mockConfigManager,
   prepareFile,
   resolveTestOutputPlan,
+  setTestConfiguration,
   testPublicationTarget,
 } from "../../../helpers/scraper";
 
@@ -96,7 +96,7 @@ describe("FileScraper plan timing", () => {
     });
     const translateCrawlerData = vi.fn().mockResolvedValue({ data: translatedData, error: null });
     let currentConfig = config;
-    mockConfigManager(config);
+    setTestConfiguration(config);
     const scraper = createFileScraper({
       aggregationService: {
         aggregate,

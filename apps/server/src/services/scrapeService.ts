@@ -165,7 +165,6 @@ export class ScrapeService {
             signalService,
             watermarkService: imageWatermarkService,
           }),
-        platform: "server",
         logger: runtimeLoggerService.getLogger("ScrapeRunner"),
         onCommitted: (runId, result) => {
           this.addEvent(

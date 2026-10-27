@@ -2,8 +2,7 @@
 
 # stage 1: build webui artifacts + staging dir via package script
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder
-ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1 \
-    SKIP_INSTALL_SIMPLE_GIT_HOOKS=1
+ENV SKIP_INSTALL_SIMPLE_GIT_HOOKS=1
 WORKDIR /repo
 RUN --mount=type=cache,target=/root/.cache/node/corepack,sharing=locked \
     corepack enable && corepack prepare pnpm@10.28.2 --activate
@@ -17,16 +16,14 @@ RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
 COPY package.json pnpm-workspace.yaml ./
 COPY apps/server apps/server
 COPY apps/web apps/web
-COPY apps/desktop/src/renderer/src/assets/fonts/Manrope-VariableFont_wght.ttf \
-    apps/desktop/src/renderer/src/assets/fonts/Manrope-VariableFont_wght.ttf
 COPY packages packages
 COPY scripts scripts
-COPY tsconfig.json tsconfig.node.json tsconfig.web.json tsconfig.desktop-renderer.json tsconfig.test.json ./
+COPY tsconfig.json tsconfig.node.json tsconfig.web.json tsconfig.test.json ./
 RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
     CI=true pnpm install --offline --frozen-lockfile --store-dir=/pnpm/store
 RUN pnpm --filter @mdcz/server build:webui
 ARG MDCZ_RELEASE_VERSION=docker
-RUN MDCZ_RELEASE_VERSION="${MDCZ_RELEASE_VERSION}" node scripts/package-server-webui.mjs --staging-only
+RUN MDCZ_RELEASE_VERSION="${MDCZ_RELEASE_VERSION}" node scripts/stage-docker.mjs
 
 # stage 2: install runtime deps inside the staging tree
 FROM node:24-bookworm-slim AS deps

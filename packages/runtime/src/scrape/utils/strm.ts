@@ -6,7 +6,6 @@ import { localPathStyle } from "@mdcz/shared/localPath";
 
 const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
 const STRM_PROPERTY_PATTERN = /^#KODIPROP:/iu;
-const DESKTOP_UNSUPPORTED_STRM_PROTOCOLS = new Set(["library:", "plugin:", "special:"]);
 
 export type StrmTargetKind = "url" | "absolute_path" | "relative_path";
 
@@ -179,46 +178,4 @@ export const prepareMovedStrmContent = async (sourcePath: string, targetPath: st
   if (!target) return undefined;
   const info = classifyStrmTarget(sourcePath, target);
   return info.kind === "relative_path" && info.resolvedPath ? replaceStrmTarget(content, info.resolvedPath) : undefined;
-};
-
-export const resolvePlayableMediaTarget = async (
-  filePath: string,
-): Promise<
-  | {
-      kind: "path";
-      target: string;
-    }
-  | {
-      kind: "url";
-      target: string;
-    }
-> => {
-  if (!isStrmFile(filePath)) {
-    return {
-      kind: "path",
-      target: filePath,
-    };
-  }
-
-  const strmTarget = await inspectStrmTarget(filePath);
-  if (!strmTarget) {
-    throw new Error(`STRM file does not contain a playable target: ${filePath}`);
-  }
-
-  if (strmTarget.kind === "url") {
-    const protocol = new URL(strmTarget.target).protocol.toLowerCase();
-    if (DESKTOP_UNSUPPORTED_STRM_PROTOCOLS.has(protocol)) {
-      throw new Error(`Desktop playback does not support STRM target protocol: ${protocol}//`);
-    }
-
-    return {
-      kind: "url",
-      target: strmTarget.target,
-    };
-  }
-
-  return {
-    kind: "path",
-    target: strmTarget.resolvedPath ?? strmTarget.target,
-  };
 };

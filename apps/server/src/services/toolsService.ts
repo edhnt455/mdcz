@@ -1,6 +1,6 @@
 import { registeredMediaLocations } from "@mdcz/runtime";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { resolveDesktopInputRootPath } from "@mdcz/runtime/library";
+import { resolveInputRootPath } from "@mdcz/runtime/library";
 import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
 import { checkEmbyConnection, checkJellyfinConnection } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
@@ -108,7 +108,7 @@ export class ToolsService {
           const items = input.items ?? [];
           if (items.length > 0) {
             await this.mediaRoots.ensurePathRecord({
-              hostPath: resolveDesktopInputRootPath(items.map((item) => item.nfoPath)),
+              hostPath: resolveInputRootPath(items.map((item) => item.nfoPath)),
             });
           }
           const state = await this.persistence.getState();
@@ -151,7 +151,7 @@ export class ToolsService {
           const items = input.items ?? [];
           if (items.length > 0) {
             await this.mediaRoots.ensurePathRecord({
-              hostPath: resolveDesktopInputRootPath(items.map((item) => item.nfoPath)),
+              hostPath: resolveInputRootPath(items.map((item) => item.nfoPath)),
             });
           }
           const state = await this.persistence.getState();

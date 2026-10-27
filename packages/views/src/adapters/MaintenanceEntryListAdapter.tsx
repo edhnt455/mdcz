@@ -1,4 +1,3 @@
-import { toErrorMessage } from "@mdcz/shared/error";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import {
   buildMaintenanceEntryViewModel,
@@ -14,9 +13,8 @@ import {
   toggleMaintenanceSelectedIds,
   useMaintenanceStore,
 } from "@mdcz/views/state/maintenanceStore";
-import { FileText, FolderOpen, Play } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useMemo } from "react";
-import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import type { MediaBrowserItemStatus } from "../common";
 import { type Messages, useT } from "../i18n";
@@ -48,45 +46,15 @@ const buildGroupSubtitle = (t: Messages, group: MaintenanceEntryGroupViewModel):
 };
 
 function buildMenuContent(t: Messages, entry: LocalScanEntry, port: MaintenanceActionPort) {
-  const handleOpenFolder = async () => {
-    const filePath = entry.fileInfo.filePath.trim();
-    if (!filePath) {
-      toast.info(t.maintenance.noOpenablePath);
-      return;
-    }
-
-    try {
-      await port.openFolder?.(filePath);
-    } catch (error) {
-      toast.error(t.maintenance.openFolderFailed(toErrorMessage(error)));
-    }
-  };
-
-  const handlePlay = () => void port.play?.(entry.fileInfo.filePath);
-
   const handleOpenNfo = () => {
     void port.openNfo(entry.nfoPath ?? entry.fileInfo.filePath);
   };
 
   return (
-    <>
-      {typeof port.openFolder === "function" ? (
-        <ContextMenuItem onClick={handleOpenFolder}>
-          <FolderOpen className="mr-2 h-4 w-4" />
-          {t.maintenance.openFolder}
-        </ContextMenuItem>
-      ) : null}
-      {typeof port.play === "function" ? (
-        <ContextMenuItem onClick={handlePlay}>
-          <Play className="mr-2 h-4 w-4" />
-          {t.maintenance.play}
-        </ContextMenuItem>
-      ) : null}
-      <ContextMenuItem onClick={handleOpenNfo}>
-        <FileText className="mr-2 h-4 w-4" />
-        {t.maintenance.editNfo}
-      </ContextMenuItem>
-    </>
+    <ContextMenuItem onClick={handleOpenNfo}>
+      <FileText className="mr-2 h-4 w-4" />
+      {t.maintenance.editNfo}
+    </ContextMenuItem>
   );
 }
 

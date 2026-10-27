@@ -1,23 +1,14 @@
 import type { SystemAboutResponse } from "@mdcz/shared/serverDtos";
-import { Badge, Button, quietHeroRadiusClass, quietPanelRadiusClass, Switch } from "@mdcz/ui";
-import { Bug, ExternalLink, Github, Server, Sparkles } from "lucide-react";
-import type { ReactNode } from "react";
+import { Badge, Button, quietHeroRadiusClass, quietPanelRadiusClass } from "@mdcz/ui";
+import { ExternalLink, Github, Server, Sparkles } from "lucide-react";
 import AppLogo from "../assets/logo.png";
 import { useT } from "../i18n";
 
 export interface AboutViewProps {
   about?: SystemAboutResponse;
   loading?: boolean;
-  updateCheck?: boolean | null;
-  showUpdateCheck?: boolean;
-  showDebugAction?: boolean;
-  debugActionLabel?: string;
   logoSrc?: string;
-  updateCheckDisabled?: boolean;
-  updateStatus?: ReactNode;
-  onDebug?: () => void;
   onOpenExternal: (url: string) => void;
-  onUpdateCheckChange?: (checked: boolean) => void;
 }
 
 const fallbackAbout: SystemAboutResponse = {
@@ -43,22 +34,8 @@ const RELATED_PROJECTS = [
 
 const compactValue = (value: string | null | undefined): string => value || "dev";
 
-export const AboutView = ({
-  about = fallbackAbout,
-  loading = false,
-  updateCheck = null,
-  showUpdateCheck = true,
-  showDebugAction = false,
-  debugActionLabel,
-  logoSrc,
-  updateCheckDisabled = false,
-  updateStatus,
-  onDebug,
-  onOpenExternal,
-  onUpdateCheckChange,
-}: AboutViewProps) => {
+export const AboutView = ({ about = fallbackAbout, loading = false, logoSrc, onOpenExternal }: AboutViewProps) => {
   const t = useT();
-  const resolvedDebugActionLabel = debugActionLabel ?? t.about.debugAction;
   const homepage = about.homepage ?? about.repository ?? fallbackAbout.homepage;
   const resolvedLogoSrc = logoSrc ?? AppLogo;
 
@@ -99,7 +76,7 @@ export const AboutView = ({
               <Sparkles className="h-3.5 w-3.5" />
               <span>{t.about.communityAndFeedback}</span>
             </div>
-            <div className={`grid gap-4 ${showDebugAction ? "grid-cols-2" : "grid-cols-1"}`}>
+            <div className="grid grid-cols-1 gap-4">
               <Button
                 className={`h-14 justify-start gap-3.5 border-border/30 bg-surface-low/30 px-4.5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
                 variant="outline"
@@ -111,37 +88,8 @@ export const AboutView = ({
                 <span className="text-sm font-semibold">{t.about.feedback}</span>
                 <ExternalLink className="ml-auto h-3 w-3 opacity-60" />
               </Button>
-              {showDebugAction && (
-                <Button
-                  className={`h-14 justify-start gap-3.5 border-border/30 bg-surface-low/30 px-4.5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
-                  variant="outline"
-                  onClick={onDebug}
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/5">
-                    <Bug className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-semibold">{resolvedDebugActionLabel}</span>
-                </Button>
-              )}
             </div>
           </section>
-
-          {showUpdateCheck && (
-            <section
-              className={`flex flex-col gap-4 border border-border/30 bg-surface-low/30 p-5 transition-all hover:border-border/60 hover:bg-surface-low/60 ${quietPanelRadiusClass}`}
-            >
-              <div className="flex items-center justify-between">
-                <h2 className="px-1 text-sm font-semibold">{t.about.autoCheckUpdates}</h2>
-                <Switch
-                  aria-label={t.about.autoCheckUpdates}
-                  checked={Boolean(updateCheck)}
-                  disabled={!onUpdateCheckChange || updateCheck === null || updateCheckDisabled}
-                  onCheckedChange={(checked) => onUpdateCheckChange?.(checked)}
-                />
-              </div>
-              {updateStatus}
-            </section>
-          )}
 
           <section className="space-y-2">
             <div className="px-1 text-xs font-bold uppercase tracking-widest text-muted-foreground opacity-50">

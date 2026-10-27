@@ -13,17 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@mdcz/ui";
-import {
-  Crop,
-  FileText,
-  FolderOpen,
-  GitCompareArrows,
-  ImageIcon,
-  MousePointerClick,
-  Play,
-  Star,
-  X,
-} from "lucide-react";
+import { Crop, FileText, GitCompareArrows, ImageIcon, MousePointerClick, Star, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useState } from "react";
 import type { PosterCropEditSession } from "../adapters/ports";
 import { NaturalAspectImageFrame } from "../common";
@@ -65,15 +55,11 @@ export interface DetailPanelViewProps {
   thumbSrc?: string;
   trailerSrc?: string;
   nfo: DetailPanelNfoState;
-  onPlay?: () => void;
-  onOpenFolder?: () => void;
-  onOpenMetadataFolder?: () => void;
   onOpenNfo?: () => void;
   onPosterError?: () => void;
   onThumbError?: () => void;
   onTrailerError?: () => void;
   resolveImageCandidates: ResolveImageCandidates;
-  showFilePath: boolean;
   posterEditor: {
     open: boolean;
     session: PosterCropEditSession | null;
@@ -91,15 +77,6 @@ function EmptyState({ message }: { message: string }) {
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center select-none">
       <MousePointerClick className="h-10 w-10 text-muted-foreground/30" strokeWidth={1.25} />
       <span className="max-w-sm text-sm text-muted-foreground/60">{message}</span>
-    </div>
-  );
-}
-
-function DetailPathBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-quiet bg-surface-low/70 p-4">
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
-      <div className="break-all font-mono text-[11px] leading-relaxed text-foreground/75">{value}</div>
     </div>
   );
 }
@@ -131,50 +108,13 @@ function DetailSectionTitle({ children }: { children: string }) {
 
 interface DetailActionButtonsProps {
   nfoLoading: boolean;
-  onPlay?: () => void;
-  onOpenFolder?: () => void;
-  onOpenMetadataFolder?: () => void;
   onOpenNfo?: () => void;
 }
 
-function DetailActionButtons({
-  nfoLoading,
-  onPlay,
-  onOpenFolder,
-  onOpenMetadataFolder,
-  onOpenNfo,
-}: DetailActionButtonsProps) {
+function DetailActionButtons({ nfoLoading, onOpenNfo }: DetailActionButtonsProps) {
   const t = useT();
   return (
     <>
-      {onPlay ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
-          onClick={onPlay}
-        >
-          <Play className="h-4 w-4" />
-          {t.detail.play}
-        </Button>
-      ) : null}
-      {onOpenFolder ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="rounded-quiet-capsule bg-surface-low/75 px-3.5 text-foreground/80 hover:bg-surface-low"
-          onClick={onOpenFolder}
-        >
-          <FolderOpen className="h-4 w-4" />
-          {t.detail.openSourceFolder}
-        </Button>
-      ) : null}
-      {onOpenMetadataFolder && (
-        <Button size="sm" variant="ghost" onClick={onOpenMetadataFolder}>
-          <FolderOpen className="h-4 w-4" />
-          {t.detail.openMetadataFolder}
-        </Button>
-      )}
       {onOpenNfo ? (
         <Button
           size="sm"
@@ -205,15 +145,11 @@ export function DetailPanelView({
   thumbSrc = "",
   trailerSrc = "",
   nfo,
-  onPlay,
-  onOpenFolder,
-  onOpenMetadataFolder,
   onOpenNfo,
   onPosterError,
   onThumbError,
   onTrailerError,
   resolveImageCandidates,
-  showFilePath,
   posterEditor,
 }: DetailPanelViewProps) {
   const t = useT();
@@ -247,9 +183,6 @@ export function DetailPanelView({
 
         <ScrollArea className="flex-1 min-h-0">
           <div className="flex min-h-full flex-col space-y-4 px-5 pb-24 md:px-6">
-            {showFilePath && compareError && item.path ? (
-              <DetailPathBlock label={t.detail.filePath} value={item.path} />
-            ) : null}
             {compareError ? <DetailErrorBlock value={compareError} /> : null}
 
             {shouldRenderDiffs ? (
@@ -316,17 +249,10 @@ export function DetailPanelView({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h2 className="text-3xl font-extrabold tracking-tight text-foreground">{titleLabel}</h2>
                     <div className="flex flex-wrap gap-2">
-                      <DetailActionButtons
-                        nfoLoading={nfo.loading}
-                        onPlay={onPlay}
-                        onOpenFolder={onOpenFolder}
-                        onOpenMetadataFolder={onOpenMetadataFolder}
-                        onOpenNfo={onOpenNfo}
-                      />
+                      <DetailActionButtons nfoLoading={nfo.loading} onOpenNfo={onOpenNfo} />
                     </div>
                   </div>
                 </div>
-                {showFilePath && item.path ? <DetailPathBlock label={t.detail.filePath} value={item.path} /> : null}
                 {item.errorMessage ? <DetailErrorBlock value={item.errorMessage} /> : null}
               </>
             ) : (
@@ -386,13 +312,7 @@ export function DetailPanelView({
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <DetailActionButtons
-                          nfoLoading={nfo.loading}
-                          onPlay={onPlay}
-                          onOpenFolder={onOpenFolder}
-                          onOpenMetadataFolder={onOpenMetadataFolder}
-                          onOpenNfo={onOpenNfo}
-                        />
+                        <DetailActionButtons nfoLoading={nfo.loading} onOpenNfo={onOpenNfo} />
                       </div>
                     </div>
 
@@ -482,8 +402,6 @@ export function DetailPanelView({
                     />
                   </section>
                 ) : null}
-
-                {showFilePath && item.path ? <DetailPathBlock label={t.detail.filePath} value={item.path} /> : null}
                 {item.errorMessage ? <DetailErrorBlock value={item.errorMessage} /> : null}
               </>
             )}

@@ -10,7 +10,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  ShortcutInput,
   Switch,
   Textarea,
   useFormField,
@@ -564,31 +563,6 @@ export function OrderedSiteFieldWrapper({
   return (
     <BaseField name={name} description={description} layout="vertical" commitMode="immediate">
       {(field) => <OrderedSiteField field={field} options={options} />}
-    </BaseField>
-  );
-}
-
-// ── Shortcut ──
-
-export function ShortcutField({ name, description }: { name: FieldKey; description?: string }) {
-  const t = useT();
-  return (
-    <BaseField name={name} description={description} commitMode="immediate">
-      {(field) => (
-        <FormControl>
-          <ShortcutInput
-            value={field.value as string}
-            onChange={field.onChange}
-            className="w-[320px] justify-end"
-            labels={{
-              recording: t.common.shortcutRecording,
-              unset: t.common.shortcutUnset,
-              change: t.common.shortcutChange,
-              clear: t.common.clear,
-            }}
-          />
-        </FormControl>
-      )}
     </BaseField>
   );
 }

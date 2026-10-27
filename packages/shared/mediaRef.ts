@@ -45,10 +45,6 @@ export const rootFileRefSchema = z
 
 export type RootFileRef = z.infer<typeof rootFileRefSchema>;
 
-export const localFileTargetSchema = z.union([z.string().trim().min(1), rootFileRefSchema]);
-
-export type LocalFileTarget = z.infer<typeof localFileTargetSchema>;
-
 export const assetRefSchema = z.discriminatedUnion("type", [
   z
     .object({

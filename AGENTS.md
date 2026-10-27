@@ -1,7 +1,7 @@
 # Agent Guidelines & Engineering Directives
 
 ## 1. Project Context & Tooling
-- **Project**: MDCz (Media metadata scraper - Monorepo with Electron desktop, server, and web UI).
+- **Project**: MDCz (Media metadata scraper - Docker-only monorepo with server and web UI).
 - **Package Manager**: Use `pnpm` exclusively. NEVER use `npm` or `yarn`.
 - **Verification Commands**:
   - Typecheck: `pnpm typecheck`

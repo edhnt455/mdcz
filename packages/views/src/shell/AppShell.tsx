@@ -1,9 +1,9 @@
 import {
-  type DesktopRouteDefinition,
-  type DesktopRouteId,
-  PRIMARY_DESKTOP_ROUTES,
-  SYSTEM_DESKTOP_ROUTES,
-} from "@mdcz/shared/desktopNavigation";
+  type AppRouteDefinition,
+  type AppRouteId,
+  PRIMARY_APP_ROUTES,
+  SYSTEM_APP_ROUTES,
+} from "@mdcz/shared/navigation";
 import { Button, cn, NavButton, Separator, Tooltip, TooltipContent, TooltipTrigger } from "@mdcz/ui";
 import {
   FileText,
@@ -33,7 +33,7 @@ import { useTheme } from "./theme";
 
 export interface ShellNavItem {
   icon: LucideIcon;
-  id: DesktopRouteId;
+  id: AppRouteId;
   to: string;
 }
 
@@ -49,15 +49,14 @@ export interface AppShellProps {
   children: ReactNode;
   currentPath: string;
   linkComponent: (props: ShellLinkProps) => ReactNode;
-  titlebar?: ReactNode;
   systemNav?: ShellNavItem[];
   /** Counts shown beside nav items, such as the pending items waiting for the user. */
-  navBadges?: Partial<Record<DesktopRouteId, number>>;
+  navBadges?: Partial<Record<AppRouteId, number>>;
 }
 
 const COLLAPSED_STORAGE_KEY = "mdcz-sidebar-collapsed";
 
-const SHELL_ROUTE_ICONS: Record<DesktopRouteId, LucideIcon> = {
+const SHELL_ROUTE_ICONS: Record<AppRouteId, LucideIcon> = {
   about: Info,
   libraries: FolderCog,
   library: Library,
@@ -69,21 +68,20 @@ const SHELL_ROUTE_ICONS: Record<DesktopRouteId, LucideIcon> = {
   workbench: PlaySquare,
 };
 
-const toShellNavItem = (route: DesktopRouteDefinition): ShellNavItem => ({
+const toShellNavItem = (route: AppRouteDefinition): ShellNavItem => ({
   icon: SHELL_ROUTE_ICONS[route.id],
   id: route.id,
   to: route.path,
 });
 
-export const PRIMARY_SHELL_NAV: ShellNavItem[] = PRIMARY_DESKTOP_ROUTES.map(toShellNavItem);
+export const PRIMARY_SHELL_NAV: ShellNavItem[] = PRIMARY_APP_ROUTES.map(toShellNavItem);
 
-export const SYSTEM_SHELL_NAV: ShellNavItem[] = SYSTEM_DESKTOP_ROUTES.map(toShellNavItem);
+export const SYSTEM_SHELL_NAV: ShellNavItem[] = SYSTEM_APP_ROUTES.map(toShellNavItem);
 
 export function AppShell({
   children,
   currentPath,
   linkComponent: LinkComponent,
-  titlebar,
   systemNav = SYSTEM_SHELL_NAV,
   navBadges = {},
 }: AppShellProps) {
@@ -111,7 +109,6 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
-      {titlebar}
       <header className="flex h-12 shrink-0 items-center gap-2 bg-sidebar px-2 text-sidebar-foreground md:hidden">
         <Button variant="ghost" size="icon" aria-label={t.shell.openMenu} onClick={() => setDrawerPath(currentPath)}>
           <Menu />
@@ -184,7 +181,7 @@ function NavContent({
   collapsed: boolean;
   currentPath: string;
   linkComponent: (props: ShellLinkProps) => ReactNode;
-  navBadges: Partial<Record<DesktopRouteId, number>>;
+  navBadges: Partial<Record<AppRouteId, number>>;
   onCollapse: (collapsed: boolean) => void;
   onThemeToggle: () => void;
   systemNav: ShellNavItem[];

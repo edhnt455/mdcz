@@ -12,22 +12,9 @@ import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
-import { ipc } from "@renderer/client/ipc";
-import { ShortcutHandler } from "@renderer/components/ShortcutHandler";
 import { expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
-
-const shortcutRoute = vi.hoisted(() => ({ pathname: "/workbench" }));
-vi.mock("@tanstack/react-router", () => ({
-  useLocation: () => shortcutRoute,
-  useNavigate: () => vi.fn(),
-}));
-vi.mock("@renderer/api/manual", () => ({ retryScrapeSelection: vi.fn(), stopScrape: vi.fn() }));
-vi.mock("@renderer/utils/playback", () => ({ playMediaPath: vi.fn() }));
-vi.mock("@renderer/client/ipc", () => ({
-  ipc: { on: { shortcut: vi.fn(() => vi.fn()) } },
-}));
 
 const rootDir = "/media";
 const library: MediaLibraryDto = {
@@ -50,8 +37,6 @@ test("submits directories without scanning and keeps explicit previews cancellab
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
   useScrapeStore.setState(useScrapeStore.getInitialState(), true);
   useUIStore.setState(useUIStore.getInitialState(), true);
-  const shortcuts = await render(<ShortcutHandler />);
-  const triggerStart = () => vi.mocked(ipc.on.shortcut).mock.calls.at(-1)?.[0]({ action: "start-or-stop-scrape" });
   const config = { ...defaultConfiguration, paths: { ...defaultConfiguration.paths, defaultScanExcludeDirs: [] } };
   const requests: Array<{ resolve: (result: CandidateScanResult) => void; reject: (error: Error) => void }> = [];
   const scanCandidates = vi.fn(
@@ -61,8 +46,6 @@ test("submits directories without scanning and keeps explicit previews cancellab
     requests.at(-1)?.reject(new Error("cancelled"));
   });
   const port: WorkbenchSetupPort = {
-    isServer: true,
-    browseDirectory: async () => null,
     scanCandidates,
     cancelCandidates,
   };
@@ -98,20 +81,13 @@ test("submits directories without scanning and keeps explicit previews cancellab
     finishStart = resolve;
   });
   onStartDirectory.mockReturnValueOnce(pendingStart);
-  triggerStart();
-  triggerStart();
+  await startWholeDirectory();
   await expect.poll(() => onStartDirectory.mock.calls.length).toBe(2);
   await expect.element(screen.getByLabelText("扫描目录", { exact: true })).toBeDisabled();
   await expect.element(screen.getByLabelText("媒体库", { exact: true })).toBeDisabled();
   finishStart();
   await expect.element(start).toBeEnabled();
   expect(onStart).not.toHaveBeenCalled();
-  shortcutRoute.pathname = "/overview";
-  await shortcuts.rerender(<ShortcutHandler />);
-  triggerStart();
-  expect(onStartDirectory).toHaveBeenCalledTimes(2);
-  shortcutRoute.pathname = "/workbench";
-  await shortcuts.rerender(<ShortcutHandler />);
   onStartDirectory.mockRejectedValueOnce(new Error("目录不存在或无法访问"));
   await startWholeDirectory();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("目录不存在或无法访问");
@@ -119,8 +95,6 @@ test("submits directories without scanning and keeps explicit previews cancellab
   await input.fill("/next");
   await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
   await expect.element(start).toBeDisabled();
-  triggerStart();
-  await useWorkbenchSetupStore.getState().startTask?.();
   expect(onStartDirectory).toHaveBeenCalledTimes(3);
   await userEvent.keyboard("{Enter}");
   await screen.getByRole("checkbox", { name: "包含子目录" }).click();
@@ -185,8 +159,7 @@ test("submits directories without scanning and keeps explicit previews cancellab
   await expect.element(screen.getByText("已选 1 / 3 个文件")).toBeVisible();
   await start.click();
   expect(onStart).toHaveBeenCalledWith([first], library.id);
-  triggerStart();
-  await expect.poll(() => onStart.mock.calls.length).toBe(2);
+  expect(onStart).toHaveBeenCalledOnce();
   await screen.getByRole("button", { name: "刷新文件" }).click();
   await expect.poll(() => requests.length).toBe(4);
   await userEvent.keyboard("{Escape}");
@@ -203,7 +176,6 @@ test("submits directories without scanning and keeps explicit previews cancellab
   await expect.poll(() => requests.length).toBe(5);
   expect(useWorkbenchSetupStore.getState().activePreview).not.toBeNull();
   await screen.unmount();
-  expect(useWorkbenchSetupStore.getState().startTask).toBeNull();
   await expect.poll(() => cancelCandidates.mock.calls.length).toBe(3);
   await expect.poll(() => useWorkbenchSetupStore.getState().activePreview).toBeNull();
   const remounted = await render(<WorkbenchSetupAdapter {...props} mode="maintenance" />);
@@ -213,7 +185,6 @@ test("submits directories without scanning and keeps explicit previews cancellab
   useWorkbenchSetupStore.setState({ activePreview: { id: "reset-preview", stop: async () => undefined } });
   useWorkbenchSetupStore.setState(useWorkbenchSetupStore.getInitialState(), true);
   expect(useWorkbenchSetupStore.getState().activePreview).toBeNull();
-  await shortcuts.unmount();
 });
 
 test("start error dialog lists every conflict without clearing the selected result", async () => {
@@ -250,9 +221,7 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       supportedExtensions={[".mp4"]}
       presetId="import_local"
       primaryDisabled
-      isServer
       formatBytes={() => "0 B"}
-      onBrowseScanDir={() => undefined}
       onRefreshScan={() => undefined}
       onPresetChange={() => undefined}
       onStart={() => undefined}

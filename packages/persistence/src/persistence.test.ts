@@ -342,6 +342,10 @@ describe("MediaRootRepository", () => {
 
     await expect(repository.get("root-1")).resolves.toEqual(root);
     await expect(repository.list()).resolves.toEqual([root]);
+    const missingPath = join("/missing-mdcz-root", "nested");
+    const missing = await repository.ensurePath(missingPath);
+    expect(missing.realPath).toBeNull();
+    await expect(repository.ensurePath(missingPath)).resolves.toEqual(missing);
   });
 
   it("registers a nested root independently of its enclosing root", async () => {
@@ -364,6 +368,9 @@ describe("MediaRootRepository", () => {
       await expect(repository.ensurePath(join(directory.path, "child"))).resolves.toEqual(admitted);
       await expect(repository.get(root.id)).resolves.toEqual({ ...root, realPath: await realpath(directory.path) });
       await expect(repository.list()).resolves.toHaveLength(2);
+      const file = join(directory.path, "movie.mp4");
+      await writeFile(file, "video");
+      await expect(repository.ensurePath(file)).rejects.toThrow("Media root is not a directory");
     } finally {
       await directory.cleanup();
     }
@@ -482,6 +489,16 @@ describe("LibraryRepository", () => {
 
     expect(rewritten.id).toBe("entry");
     expect(rewritten.title).toBe("Rescrape");
+    const refreshedAt = new Date("2026-05-01T00:00:00.000Z");
+    await expect(repository.touchEntry(rewritten.id, refreshedAt)).resolves.toMatchObject({
+      lastRefreshedAt: refreshedAt,
+    });
+    await expect(repository.getEntryById(rewritten.files[1].id)).resolves.toMatchObject({
+      id: rewritten.id,
+      files: [expect.objectContaining({ id: rewritten.files[1].id }), expect.anything()],
+    });
+    expect(repository.countCreatedSince(completedAt)).toBe(1);
+    expect(repository.countCreatedSince(new Date("2027-01-01"))).toBe(0);
     expect(rewritten.files).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "root-1:ABC-123/ABC-123.mp4", size: 13 }),
@@ -508,6 +525,7 @@ describe("LibraryRepository", () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1");
     const pending = new PendingRepository(database);
+    expect(pending.count()).toBe(0);
 
     expect(pending.upsert({ kind: "no_number", rootId: "root-1", relativePath: "A.mp4" })).toBe(true);
     expect(pending.upsert({ kind: "new_file", rootId: "root-1", relativePath: "B.mp4" })).toBe(true);
@@ -521,6 +539,12 @@ describe("LibraryRepository", () => {
       { kind: "ambiguous", relativePath: "A.mp4", number: "SW-130" },
       { kind: "new_file", relativePath: "B.mp4", number: null },
     ]);
+    expect(pending.count()).toBe(2);
+    pending.deleteFiles([]);
+    const first = pending.list()[0];
+    expect(() => pending.confirmUncensored(first.id, { id: "other-movie" }, [])).toThrow(
+      "Pending confirmation no longer matches this movie",
+    );
 
     pending.deleteFiles([{ rootId: "root-1", relativePath: "A.mp4" }]);
     expect(pending.list().map((item) => item.relativePath)).toEqual(["B.mp4"]);
@@ -790,6 +814,16 @@ describe("LibraryRepository", () => {
         },
       ],
     });
+
+    await expect(repository.getEntryByFileId("missing")).rejects.toThrow("Library file not found");
+    expect(() => repository.removeFile("missing")).toThrow("Library file not found");
+    expect(() => repository.deleteEntry("missing")).toThrow("Library entry not found");
+    await expect(
+      repository.relinkFile({ fileId: "missing", rootId: "root-1", rootRelativePath: "new.mp4" }),
+    ).rejects.toThrow("Library file not found");
+    await expect(
+      repository.relinkFile({ fileId: entry.files[0].id, rootId: "missing", rootRelativePath: "new.mp4" }),
+    ).rejects.toThrow("Media root not found");
 
     await repository.relinkFile({
       fileId: entry.files[0].id,
@@ -1080,9 +1114,25 @@ describe("ScanTaskRepository", () => {
     await repository.create({ id: "task-1", rootId: "root-1" });
     const claimed = await repository.claim("task-1");
     expect(claimed).not.toBeNull();
+    await expect(repository.requeue("task-1")).resolves.toBeNull();
 
     await repository.complete({ taskId: "task-1", rootId: "root-1", directoryCount: 0, results: [] });
     await expect(repository.requeue("task-1")).resolves.toMatchObject({ status: "queued", videoCount: 0 });
+    await expect(repository.get("missing")).rejects.toMatchObject({ code: persistenceErrorCodes.NotFound });
+    await expect(repository.fail("missing", "not found")).resolves.toBeNull();
+    await repository.claim("task-1");
+    await expect(repository.fail("task-1", "unreadable directory")).resolves.toMatchObject({
+      status: "failed",
+      error: "unreadable directory",
+    });
+    await expect(repository.fail("task-1", "duplicate failure")).resolves.toBeNull();
+    await repository.requeue("task-1");
+    await repository.create({ id: "task-2", rootId: "root-1" });
+    await repository.claim("task-2");
+    const interrupted = await repository.interruptUnfinished("server stopped");
+    expect(interrupted.map((task) => task.id).sort()).toEqual(["task-1", "task-2"]);
+    expect(interrupted.every((task) => task.status === "failed" && task.error === "server stopped")).toBe(true);
+    await expect(repository.interruptUnfinished("already stopped")).resolves.toEqual([]);
   });
 
   it("commits scan results only for a running task", async () => {

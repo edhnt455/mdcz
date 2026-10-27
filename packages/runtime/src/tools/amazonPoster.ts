@@ -6,7 +6,7 @@ import type {
   AmazonPosterApplyResultItem,
   AmazonPosterLookupResult,
   AmazonPosterScanItem,
-} from "@mdcz/shared/ipcTypes";
+} from "@mdcz/shared/toolTypes";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
 import { parseNfoSnapshot } from "../maintenance/nfoSnapshot";

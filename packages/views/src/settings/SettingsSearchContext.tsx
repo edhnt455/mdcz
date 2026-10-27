@@ -11,7 +11,6 @@ import {
 import type { FieldValues } from "react-hook-form";
 import { useFormContext, useWatch } from "react-hook-form";
 import { focusSettingFieldElement, focusSettingFieldInDom } from "./focusSettingField";
-import { useSettingsServices } from "./SettingsServices";
 import { buildSettingsBrowseState } from "./settingsBrowseState";
 import { getSettingsSuggestions, replaceLastToken, type SettingsSuggestion, valuesEqual } from "./settingsFilter";
 import { FIELD_KEYS, type FieldAnchor, type FieldEntry, flattenConfig } from "./settingsRegistry";
@@ -51,8 +50,6 @@ export function SettingsSearchProvider({
   defaultConfigReady = false,
 }: SettingsSearchProviderProps) {
   const form = useFormContext<FieldValues>();
-  const services = useSettingsServices();
-  const target = services.settingsTarget ?? (services.isServer ? "server" : "desktop");
   const [query, setQuery] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const deferredQuery = useDeferredValue(query);
@@ -85,9 +82,8 @@ export function SettingsSearchProvider({
         query: deferredQuery,
         showAdvanced,
         modifiedKeys,
-        target,
       }),
-    [deferredQuery, modifiedKeys, showAdvanced, target],
+    [deferredQuery, modifiedKeys, showAdvanced],
   );
   const {
     parsedQuery,

@@ -4,22 +4,22 @@
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/.cache/typescript/tsconfig.node.tsbuildinfo",
     "lib": ["ES2023"],
-    "types": ["node", "electron-vite/node"]
+    "types": ["node"]
   },
-  "include": [
-    "apps/desktop/electron.vite.config.ts",
-    "apps/server/src/**/*.ts",
-    "apps/server/tsconfig*.json",
-    "apps/desktop/src/main/**/*.ts",
-    "apps/desktop/src/preload/**/*.ts",
-    "apps/desktop/src/**/*.d.ts",
-    "vitest.config.ts"
-  ],
+  "include": ["apps/server/src/**/*.ts", "apps/server/tsconfig*.json", "vitest.config.ts"],
   "exclude": ["packages/**/*.test.ts"],
   "references": [
-    { "path": "./packages/shared" },
-    { "path": "./packages/media-store" },
-    { "path": "./packages/persistence" },
-    { "path": "./packages/runtime" }
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/media-store"
+    },
+    {
+      "path": "./packages/persistence"
+    },
+    {
+      "path": "./packages/runtime"
+    }
   ]
 }

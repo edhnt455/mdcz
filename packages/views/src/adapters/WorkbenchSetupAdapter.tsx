@@ -27,7 +27,6 @@ export interface CandidateScanResult {
 }
 
 export interface WorkbenchSetupPort {
-  browseDirectory(currentPath: string): Promise<string | null>;
   scanCandidates(
     scanDir: string,
     recursive: boolean,
@@ -35,7 +34,6 @@ export interface WorkbenchSetupPort {
     scanId?: string,
   ): Promise<CandidateScanResult>;
   cancelCandidates(scanId: string): Promise<void>;
-  isServer?: boolean;
   suggestDirectory?: (path: string) => Promise<ServerPathSuggestResponse>;
 }
 
@@ -208,20 +206,6 @@ export function WorkbenchSetupAdapter({
     };
   }, [scanPlan.scanKey, draftDir, stopPreview]);
 
-  const handleChooseScanDir = async () => {
-    try {
-      const selectedPath = (await port.browseDirectory(scanDir))?.trim() ?? "";
-      if (!selectedPath) {
-        return;
-      }
-      setScanDir(selectedPath);
-      setDraftDir(selectedPath);
-      setDirectoryError("");
-    } catch (error) {
-      toast.error(getT().workbench.selectScanDirFailed(toErrorMessage(error)));
-    }
-  };
-
   const handleStart = useCallback(async () => {
     if (primaryDisabled || startingRef.current) {
       return;
@@ -268,13 +252,6 @@ export function WorkbenchSetupAdapter({
     onStartScrape,
   ]);
 
-  useEffect(() => {
-    useWorkbenchSetupStore.setState({ startTask: handleStart });
-    return () => {
-      useWorkbenchSetupStore.setState({ startTask: null });
-    };
-  }, [handleStart]);
-
   return (
     <WorkbenchSetupView
       mode={mode}
@@ -309,12 +286,10 @@ export function WorkbenchSetupAdapter({
       supportedExtensions={supportedExtensions}
       presetId={presetId}
       primaryDisabled={primaryDisabled}
-      isServer={port.isServer}
       onSuggestScanDir={
         suggestDirectory ? async (path) => toPathAutocompleteResult(await suggestDirectory(path)) : undefined
       }
       formatBytes={formatBytes}
-      onBrowseScanDir={handleChooseScanDir}
       onScanDirChange={(value) => {
         setDraftDir(value);
         setDirectoryError("");

@@ -15,7 +15,6 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "集成",
       aliases: ["集成", "自动化", "下载器", "qBittorrent", "CloudDrive", "API Key", "通知", "推送"],
     },
-    system: { label: "界面与快捷键", aliases: ["系统", "界面", "快捷键"] },
   },
   fields: {
     "translate.deeplApiKey": {
@@ -476,16 +475,6 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "每日定时汇总前一天新增入库的影片数与待处理文件数。",
     },
     "notifications.digestHour": { label: "摘要发送时间（0-23 时）", description: "服务端本地时间。" },
-    "shortcuts.startOrStopScrape": { label: "开始/停止刮削", description: "示例: S", aliases: ["快捷键"] },
-    "shortcuts.retryScrape": { label: "重新刮削", description: "示例: R" },
-    "shortcuts.openFolder": { label: "打开所在目录", description: "示例: F" },
-    "shortcuts.editNfo": { label: "编辑 NFO", description: "示例: E" },
-    "shortcuts.playVideo": { label: "播放视频", description: "示例: P" },
-    "ui.showLogsPanel": { label: "显示日志面板" },
-    "ui.useCustomTitleBar": { label: "使用自定义标题栏", description: "切换后需要重启应用" },
-    "ui.hideDock": { label: "隐藏 Dock 图标" },
-    "ui.hideMenu": { label: "隐藏菜单栏" },
-    "ui.hideWindowButtons": { label: "隐藏窗口按钮" },
   },
   llmReasoningDescription: {
     google: "默认省略推理字段。Gemini 2.5 Pro 和 Gemini 3 系列不能关闭推理；其他模型由服务端校验。",

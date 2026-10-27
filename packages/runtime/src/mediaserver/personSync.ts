@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Configuration } from "@mdcz/shared/config";
-import type { PersonSyncResult } from "@mdcz/shared/ipcTypes";
+import type { PersonSyncResult } from "@mdcz/shared/toolTypes";
 import type { RuntimeNetworkClient } from "../network";
 import { detectImageFormat, parseImageDimensions } from "../scrape/utils/image";
 

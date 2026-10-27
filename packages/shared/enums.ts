@@ -51,9 +51,3 @@ export enum UiLanguage {
 export const TRANSLATION_TARGET_OPTIONS = [UiLanguage.ZH_CN, UiLanguage.ZH_TW] as const;
 
 export type TranslationTarget = (typeof TRANSLATION_TARGET_OPTIONS)[number];
-
-export enum ThemeMode {
-  SYSTEM = "system",
-  LIGHT = "light",
-  DARK = "dark",
-}

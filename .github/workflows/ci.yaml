@@ -55,14 +55,14 @@ jobs:
       - run: pnpm test:unit
 
   integration-contract:
-    name: Node/Desktop Integration and Contract Tests
+    name: Node Integration and Contract Tests
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
 
-      - name: Node, Desktop, and shared contract integration
+      - name: Node and shared contract integration
         run: pnpm test:integration
 
   build:
@@ -73,6 +73,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
 
-      - name: Build Desktop and WebUI
-        run: pnpm build:desktop && pnpm build:webui
+      - name: Build Server and WebUI
+        run: pnpm build:webui
 

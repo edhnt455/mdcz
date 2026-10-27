@@ -52,7 +52,6 @@ function PresetSelectionHarness() {
         presetId={presetId}
         primaryDisabled
         formatBytes={() => "0 B"}
-        onBrowseScanDir={() => undefined}
         onRefreshScan={() => undefined}
         onPresetChange={setPresetId}
         onStart={() => undefined}

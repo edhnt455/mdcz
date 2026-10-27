@@ -12,40 +12,11 @@ node dist/server.js
 
 The server listens on `127.0.0.1:3838` by default and serves the WebUI from the same origin. Open `http://127.0.0.1:3838` after startup. Use `pnpm build:server` only when you need the Node server bundle without rebuilding or embedding the WebUI static files.
 
-## Deploy (Docker — recommended for self-hosters)
+## Deploy (Docker)
 
 Use the maintained [Compose file](../../compose.yaml) and [deployment guide](../../docker/README.md).
-The image supports Linux amd64 and arm64, stores application state in `/data`, and uses `/media` for mounted movies.
+Published images target Linux amd64; CI also checks arm64 builds. The container stores application state in `/data` and uses `/media` for mounted movies.
 The guide covers initialization, NAS permissions, health checks, proxying, backups, upgrades and offline recovery.
-
-## Release Artifact
-
-The GitHub release workflow uploads `mdcz-<version>.tar.gz` next to the Desktop installers. This is a lightweight no-Docker bundle: it does not include `node_modules` or a bundled Node runtime, so the first install stays small and compiles/downloads platform-specific native dependencies on the target machine.
-
-The archive contains:
-
-- `server.js` - Node server entrypoint;
-- `web/` - bundled WebUI static files served by the server;
-- `persistence/drizzle/` - SQLite migration files;
-- `package.json` - runtime dependency manifest and `pnpm-lock.yaml` with `pnpm start`;
-- `.env.example` - deployment environment reference;
-- `install.sh` / `install.ps1` - setup helpers that check for Node 24+, skip Node setup when it is already installed, create `.env` if needed, and install runtime dependencies;
-- `start.sh` / `start.bat` - launchers that load `./.env` (POSIX) and apply defaults;
-- `systemd/mdcz.service` - systemd unit template (edit `# REPLACE_ME` lines);
-- `README.md` - end-user deployment guide (Docker -> portable -> systemd).
-
-Extract the archive, run the setup helper once, then start:
-
-```bash
-tar -xzf mdcz-<version>.tar.gz
-cd mdcz-<version>
-./install.sh
-./start.sh
-```
-
-Windows users run `.\install.ps1` and then `.\start.bat`.
-
-For the systemd / AUR / Deb path, see the bundled `README.md` and `systemd/mdcz.service`.
 
 ## Runtime Environment
 
@@ -58,7 +29,7 @@ For the systemd / AUR / Deb path, see the bundled `README.md` and `systemd/mdcz.
 | `MDCZ_DATA_DIR` | Directory for server data. | `$MDCZ_HOME/data` |
 | `MDCZ_DATABASE_PATH` | SQLite database path. | `$MDCZ_DATA_DIR/mdcz.sqlite` |
 | `MDCZ_ADMIN_PASSWORD` | Overrides the persisted single-admin password. Never persisted. | unset |
-| `MDCZ_WEB_DIST_DIR` | Static WebUI bundle directory. | `dist/web` in repo builds, `web` in release bundles |
+| `MDCZ_WEB_DIST_DIR` | Static WebUI bundle directory. | `dist/web` in local builds, `/app/web` in Docker |
 | `MDCZ_SERVER_BUILD` | Optional build label shown on About. | unset |
 | `MDCZ_WEB_BUILD` | Optional Web build label shown on About. | unset |
 

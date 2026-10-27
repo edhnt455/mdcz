@@ -10,7 +10,7 @@ export interface ResolvedCookie {
 
 /**
  * Supplies cookies for a URL from outside the runtime — a host that owns a real browser context
- * (Electron sessions, a headless browser) implements this so runtime sources can pass age gates.
+ * (for example, a headless browser) implements this so runtime sources can pass age gates.
  */
 export type CookieResolver = (url: string) => Promise<ResolvedCookie[]>;
 

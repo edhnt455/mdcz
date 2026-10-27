@@ -3,7 +3,7 @@ import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES } from "./assetNaming";
 import { embyDeletionConfigSchema } from "./embyDeletion";
-import { ProxyType, ThemeMode, TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
+import { ProxyType, TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 import {
   DEFAULT_LLM_BASE_URL,
@@ -371,33 +371,12 @@ const embySchema = z.object({
   notifyAfterPublish: z.boolean().default(true),
 });
 
-const shortcutsSchema = z.object({
-  startOrStopScrape: z.string().default("S"),
-  retryScrape: z.string().default("R"),
-  openFolder: z.string().default("F"),
-  editNfo: z.string().default("E"),
-  playVideo: z.string().default("P"),
-});
-
-const uiSchema = z.object({
-  theme: z.enum(ThemeMode).default(ThemeMode.SYSTEM),
-  showLogsPanel: z.boolean().default(true),
-  hideDock: z.boolean().default(false),
-  hideMenu: z.boolean().default(false),
-  hideWindowButtons: z.boolean().default(false),
-  useCustomTitleBar: z.boolean().default(true),
-});
-
 const pathsSchema = z.object({
   actorPhotoFolder: z.string().default(""),
   defaultScanExcludeDirs: z.array(z.string()).default([]),
   sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
   outputSummaryPath: z.string().default(""),
-});
-
-const behaviorSchema = z.object({
-  updateCheck: z.boolean().default(true),
 });
 
 /** Downloader paths are translated before matching library roots, as with *arr remote path mappings. */
@@ -626,10 +605,7 @@ export const configurationSchema = z
     jellyfin: jellyfinSchema.default(() => jellyfinSchema.parse({})),
     emby: embySchema.default(() => embySchema.parse({})),
     embyDeletion: embyDeletionConfigSchema.default(() => embyDeletionConfigSchema.parse({})),
-    shortcuts: shortcutsSchema.default(() => shortcutsSchema.parse({})),
-    ui: uiSchema.default(() => uiSchema.parse({})),
     paths: pathsSchema.default(() => pathsSchema.parse({})),
-    behavior: behaviorSchema.default(() => behaviorSchema.parse({})),
     automation: automationSchema.default(() => automationSchema.parse({})),
     notifications: notificationsSchema.default(() => notificationsSchema.parse({})),
     titleRepair: titleRepairSchema.default(() => titleRepairSchema.parse({})),

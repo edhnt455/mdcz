@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="apps/desktop/build/icon.png" width="96" alt="MDCz" />
+  <img src="packages/views/src/assets/logo.png" width="96" alt="MDCz" />
 </p>
 
 <h1 align="center">MDCz</h1>
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-39-47848F.svg?style=flat&logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/Docker-WebUI-2496ED.svg?style=flat&logo=docker&logoColor=white" alt="Docker" />
   <img src="https://img.shields.io/badge/React-19-61DAFB.svg?style=flat&logo=react&logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6.svg?style=flat&logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/pnpm-10-F69220.svg?style=flat&logo=pnpm&logoColor=white" alt="pnpm" />
@@ -38,7 +38,7 @@ Designed to work seamlessly alongside Emby, Jellyfin, and local media libraries,
 ## Features
 
 - **Multi-Provider Scraping** — Aggregated scraping support for DMM, FC2, AVBase, AVWikiDB, JavBus, JavDB, MGStage, Prestige, and more
-- **Dual Form Factors** — Cross-platform desktop application and lightweight Docker self-hosted WebUI
+- **Docker WebUI** — Self-hosted media management through your browser
 - **Actor Alias Normalization** — Merge disparate naming variants from different sources into unified canonical actor names
 - **Emby / Jellyfin Integration** — Automated actor headshot synchronization, standardized NFO generation, and backdrop fetching
 - **Media Format Support** — Robust handling of multipart videos (CD1/CD2/Part), STRM streaming files, and sidecar subtitles
@@ -49,26 +49,7 @@ Designed to work seamlessly alongside Emby, Jellyfin, and local media libraries,
 
 ## Download & Install
 
-This fork publishes only Docker Hub images for Linux amd64. See the [Docker guide](docker/README.md) for publishing and deployment. The desktop and WebUI bundle descriptions below refer to upstream releases.
-
-### Desktop Application
-
-Download the file for your system from [Releases](https://github.com/ShotHeadman/mdcz/releases):
-
-| File | For | Auto-update | Data directory |
-|---|---|---|---|
-| `MDCz-<version>-win-x64-setup.exe` | Windows 10 or later, **recommended** | Downloads in-app, installs on restart | `%APPDATA%\mdcz` |
-| `MDCz-<version>-win-x64-portable.zip` | Windows portable, runs after unzipping | Notifies only, replace manually | `data\` next to the executable |
-| `MDCz-<version>-mac-arm64.dmg` | macOS Apple Silicon (no Intel build) | Notifies only, replace manually | `~/Library/Application Support/mdcz` |
-| `MDCz-<version>-linux-x86_64.AppImage` | Linux x64 | Downloads in-app, installs on restart | `~/.config/mdcz` |
-
-The portable build keeps its config, database, and logs in `data\`. To upgrade, keep that folder and replace everything else.
-
-> [!NOTE]
-> The apps are not code-signed, so the OS blocks the first launch:
-> - **Windows** shows "Windows protected your PC": click "More info" → "Run anyway".
-> - **macOS** says the app "is damaged and can't be opened": move MDCz to Applications, then run `xattr -cr /Applications/MDCz.app` in Terminal.
-> - **Linux**: run `chmod +x MDCz-*.AppImage` before launching.
+MDCz supports Docker deployment with a browser-based WebUI. Published images target Linux amd64.
 
 ### Docker (Recommended for NAS / Server)
 
@@ -76,10 +57,6 @@ We recommend deploying with the maintained [compose.yaml](compose.yaml). See the
 
 - **Quick Start**: Copy `docker/compose.env.example` as `.env`, configure the publisher's Docker Hub username, a published image version, and your media path, then run `docker compose up -d`.
 - **First Visit**: Open `http://<server-ip>:3838` in your browser (defaults to `127.0.0.1`; set `MDCZ_BIND_IP` in `.env` for LAN access). There is no default password; set the administrator password directly in the WebUI on first visit, then add your media directory under `/media` in settings.
-
-### WebUI Bundle (without Docker)
-
-`mdcz-<version>.tar.gz` on the Releases page runs on any machine with Node.js >= 24; see the README inside the bundle for install and startup.
 
 ### Local Development
 
