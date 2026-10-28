@@ -112,7 +112,7 @@ export const createScrapeNumberResolver = (input: {
               signal,
             );
             throwIfAborted(signal);
-            member.numberRecognition = recognition;
+            member.numberRecognition = { ...recognition, trigger: "automatic" };
             if (recognition.status !== "recognized" || !recognition.number) {
               logger.warn(
                 `[number-recognition] ${fileInfo.fileName}: ${recognition.status}; number=${recognition.number ?? "none"}${recognition.error ? `; ${recognition.error}` : ""}; manual repair required`,

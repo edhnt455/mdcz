@@ -454,7 +454,6 @@ export class ScrapeRunner {
       const file = entry.files.find((f) => f.id === id) ?? entry.files[0];
       const nfoAsset = entry.assets.find((a) => a.kind === "nfo");
       const crawlerData = entry.crawlerDataJson ? (JSON.parse(entry.crawlerDataJson) as CrawlerData) : null;
-      const translationError = Object.values(crawlerData?.translation_failures ?? {}).join("; ");
       const root = await this.deps.persistence.mediaRoots.get(file.rootId).catch(() => null);
       return {
         result: {
@@ -465,8 +464,8 @@ export class ScrapeRunner {
           outputRootId: file.rootId,
           relativePath: file.rootRelativePath,
           fileName: file.fileName,
-          status: translationError ? "failed" : "success",
-          error: translationError ? `Translation failed: ${translationError}` : null,
+          status: "success",
+          error: null,
           crawlerData,
           nfoRootId: nfoAsset?.rootId ?? null,
           nfoRelativePath: nfoAsset?.relativePath ?? null,
@@ -1169,8 +1168,7 @@ export class ScrapeRunner {
             fileId: libraryEntries[output.files.indexOf(video)].fileId,
             resultId: libraryEntries[output.files.indexOf(video)].fileId,
             size: video.size,
-            status: facts.error ? "failed" : "success",
-            error: facts.error,
+            status: "success",
             crawlerData: output.scrape?.crawlerData,
             sources: output.scrape?.sources,
             videoMeta: facts.videoMeta,

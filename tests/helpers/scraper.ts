@@ -60,7 +60,6 @@ export const preparedPublicationFiles = (group: ScrapeGroupResult) => [
       videoMeta: file.scrape?.videoMeta,
       output: file.target,
       assets: [...(group.output?.movieAssets ?? []), ...file.assets],
-      error: file.scrape?.error,
     };
   }) ?? []),
   ...group.results,

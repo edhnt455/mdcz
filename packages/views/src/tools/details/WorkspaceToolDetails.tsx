@@ -197,6 +197,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
   const [mode, setMode] = useState<BatchTranslateMode>("untranslated");
   // Apply must translate with the mode that produced the listed items.
   const [scannedMode, setScannedMode] = useState<BatchTranslateMode>("untranslated");
+  const [reasonFilter, setReasonFilter] = useState<"all" | BatchTranslateScanItem["reason"]>("all");
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
   const [ignoring, setIgnoring] = useState(false);
@@ -210,9 +211,16 @@ export function BatchNfoTranslatorWorkspaceDetail({
   } | null>(null);
   const [results, setResults] = useState<BatchTranslateApplyResultItem[]>([]);
   const [itemStatusByPath, setItemStatusByPath] = useState<Record<string, BatchTranslateItemApplyStatus>>({});
-  const previewRows = items.slice(0, 300);
+  const filteredItems = items.filter((item) => reasonFilter === "all" || item.reason === reasonFilter);
+  const previewRows = filteredItems.slice(0, 300);
   const resultByPath = useMemo(() => new Map(results.map((result) => [result.filePath, result])), [results]);
-  const pendingItems = useMemo(() => items.filter((item) => !ignoredPaths.has(item.filePath)), [items, ignoredPaths]);
+  const pendingItems = filteredItems.filter((item) => !ignoredPaths.has(item.filePath));
+  const reasonCounts = { all: 0, task_failed: 0, content: 0 };
+  for (const item of items) {
+    if (ignoredPaths.has(item.filePath)) continue;
+    reasonCounts.all += 1;
+    reasonCounts[item.reason] += 1;
+  }
   const pendingFieldCount = pendingItems.reduce((sum, item) => sum + item.pendingFields.length, 0);
   const selectedItems = pendingItems.filter((item) => selectedPaths.has(item.filePath));
   const allSelected = pendingItems.length > 0 && selectedItems.length === pendingItems.length;
@@ -248,6 +256,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
   };
 
   useEffect(() => {
+    setReasonFilter("all");
     setSelectedPaths(new Set(items.map((item) => item.filePath)));
     setIgnoredPaths(new Set());
     setResults([]);
@@ -271,6 +280,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
   };
 
   const handleScan = async () => {
+    setReasonFilter("all");
     setResults([]);
     setItemStatusByPath({});
     setApplyProgress(null);
@@ -567,6 +577,41 @@ export function BatchNfoTranslatorWorkspaceDetail({
 
       {scannedMode !== "restore" ? <p className={TOOL_NOTE_CLASS}>{t.tools.ignoreTranslationHelp}</p> : null}
 
+      {items.length > 0 && scannedMode !== "restore" ? (
+        <div className="space-y-2">
+          <fieldset aria-label={t.tools.translationReasonFilter} className="flex flex-wrap items-center gap-2">
+            <legend className="mb-2 text-xs font-semibold text-muted-foreground">
+              {t.tools.translationReasonFilter}
+            </legend>
+            {(["all", "task_failed", "content"] as const).map((reason) => (
+              <Button
+                key={reason}
+                type="button"
+                variant={reasonFilter === reason ? "default" : "secondary"}
+                aria-pressed={reasonFilter === reason}
+                disabled={scanning || applying}
+                onClick={() => {
+                  setReasonFilter(reason);
+                  setSelectedPaths(
+                    new Set(
+                      items
+                        .filter(
+                          (item) => !ignoredPaths.has(item.filePath) && (reason === "all" || item.reason === reason),
+                        )
+                        .map((item) => item.filePath),
+                    ),
+                  );
+                }}
+                className="h-auto rounded-quiet-capsule px-3.5 py-2 text-xs whitespace-normal"
+              >
+                {t.tools.translationReasonOptions[reason]} ({reasonCounts[reason]})
+              </Button>
+            ))}
+          </fieldset>
+          <p className={TOOL_NOTE_CLASS}>{t.tools.translationReasonFilterHelp}</p>
+        </div>
+      ) : null}
+
       {applying && applyProgress ? (
         <div className={TOOL_SUBSECTION_CLASS}>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
@@ -678,7 +723,9 @@ export function BatchNfoTranslatorWorkspaceDetail({
                     <div className="flex flex-col items-center justify-center gap-2">
                       <Search className="h-8 w-8 opacity-40" />
                       <p className="text-sm font-medium">{t.tools.noPendingTranslateItems}</p>
-                      <p className="text-xs text-muted-foreground">{t.tools.noPendingTranslateItemsHelp}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {items.length > 0 ? t.tools.noMatchingTranslationReason : t.tools.noPendingTranslateItemsHelp}
+                      </p>
                     </div>
                   </td>
                 </tr>

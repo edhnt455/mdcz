@@ -97,6 +97,7 @@ test("pending details show AI outcomes, inputs, rejected output and missing or s
   await expect.element(screen.getByText("此条目未保存提取诊断，重试后可查看本次执行结果。")).toBeVisible();
   const attempt: NumberRecognitionResult = {
     status: "recognized",
+    trigger: "manual",
     fileName: "www.98T.la@IPZZ-802DIGITALCHANNEL.strm",
     parentDirectory: "Normal",
     previousNumber: "IPZZ-802D",
@@ -142,6 +143,34 @@ test("pending details show AI outcomes, inputs, rejected output and missing or s
   await screen.getByText("查看请求提示词", { exact: true }).click();
   await expect.element(screen.getByText(attempt.prompt, { exact: true })).toBeVisible();
   await expect.element(screen.getByText(attempt.systemPrompt, { exact: true })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "用 AI 番号重试刮削", exact: true })).not.toBeInTheDocument();
+  for (const [trigger, label] of [
+    ["manual", "手动调试提取，未启动刮削；上方仍显示上次刮削结果"],
+    ["automatic", "本次刮削的自动兜底提取"],
+    [undefined, "历史提取记录，未记录自动或手动来源"],
+  ] as const) {
+    await screen.rerender(
+      <PendingView
+        {...props}
+        onBatch={vi.fn()}
+        detail={{
+          item: { ...items[0], number: "IPZZ-802D" },
+          siteResults: [],
+          numberRecognition: { ...attempt, trigger },
+        }}
+      />,
+    );
+    await expect.element(screen.getByText(label, { exact: true })).toBeVisible();
+    await expect
+      .element(
+        screen.getByText("当前失败记录查询的是 IPZZ-802D，不是 AI 提取的 IPZZ-802。可用新番号重新刮削。", {
+          exact: true,
+        }),
+      )
+      .toBeVisible();
+  }
+  await screen.getByRole("button", { name: "用 AI 番号重试刮削", exact: true }).click();
+  expect(props.onRetry).toHaveBeenCalledWith({ id: items[0].id, libraryId: "library", number: "IPZZ-802" });
   await screen.rerender(
     <PendingView
       {...props}

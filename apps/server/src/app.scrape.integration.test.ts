@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
-import { type AggregationResult, ImageWatermarkService, TranslateService } from "@mdcz/runtime/scrape";
+import { type AggregationResult, ImageWatermarkService, LlmApiClient, TranslateService } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { PendingBatchResponse, PendingKindDto } from "@mdcz/shared/pending";
@@ -129,28 +129,19 @@ beforeEach(() => {
 });
 
 describe("buildServer scrape integration", () => {
-  it("records published movies with translation errors as failed and retries from their published paths", async () => {
+  it("completes published scrapes with translation errors and repairs them through batch NFO translation", async () => {
     const root = await createTempRoot("translation-failed-scrape");
     await writeFile(join(root, "ABC-123.mp4"), "video");
     const translate = vi
       .spyOn(TranslateService.prototype, "translateMetadata")
-      .mockRejectedValueOnce(new Error("Translation provider unavailable"))
-      .mockImplementationOnce(async (input) => ({
-        title: "补译标题",
-        plot: input.plot,
-        genres: input.genres.map(() => "剧情"),
-      }))
-      .mockImplementation(async (input) => ({
-        title: input.title ? "补译标题" : null,
-        plot: input.plot ? "补译简介" : null,
-        genres: input.genres.map(() => "剧情"),
-      }));
+      .mockRejectedValue(new Error("Translation provider unavailable"));
+    const generateText = vi.spyOn(LlmApiClient.prototype, "generateText");
     try {
       const { fastify, services } = await createTestServer({
         scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
       });
       await services.config.update({
-        translate: { enableTranslation: true },
+        translate: { enableTranslation: true, llmModelName: "test-model", llmApiKey: "test-key" },
         download: {
           downloadThumb: false,
           downloadPoster: false,
@@ -171,12 +162,12 @@ describe("buildServer scrape integration", () => {
       });
       expect(started.statusCode).toBe(200);
       const taskId = started.json().result.data.runId;
-      await waitForScrapeRunStatus(fastify, token, taskId, "failed");
+      await waitForScrapeRunStatus(fastify, token, taskId, "completed");
       const snapshot = await services.scrape.snapshot({ taskId });
-      expect(snapshot.task).toMatchObject({ successCount: 0, failedCount: 1 });
+      expect(snapshot.task).toMatchObject({ successCount: 1, failedCount: 0, error: null });
       expect(snapshot.items[0]).toMatchObject({
-        status: "failed",
-        error: expect.stringContaining("Translation failed"),
+        status: "success",
+        error: null,
       });
       const state = await services.persistence.getState();
       const [movie] = await state.repositories.library.listEntries();
@@ -184,6 +175,19 @@ describe("buildServer scrape integration", () => {
       expect(JSON.parse(movie.crawlerDataJson).translation_failures).toMatchObject({
         title: "Translation provider unavailable",
       });
+      expect((await services.scrape.result(snapshot.items[0].id)).result).toMatchObject({
+        status: "success",
+        error: null,
+      });
+      expect((await services.scrape.result(movie.id)).result).toMatchObject({
+        taskId: "",
+        status: "success",
+        error: null,
+        crawlerData: { translation_failures: { title: "Translation provider unavailable" } },
+      });
+      const history = await services.scrape.history({ taskId });
+      expect(history.runs[0]).toMatchObject({ disposition: "completed", successCount: 1, failedCount: 0 });
+      expect(history.results[0]).toMatchObject({ status: "success", error: null });
       const { nfoRootId, nfoRelativePath } = snapshot.items[0];
       if (!nfoRootId || !nfoRelativePath) throw new Error("Missing published NFO");
       const nfoRoot = await state.repositories.mediaRoots.get(nfoRootId);
@@ -193,30 +197,66 @@ describe("buildServer scrape integration", () => {
       );
       await expect(stat(join(root, "ABC-123.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
 
-      const retried = await services.scrape.retry({ taskId });
-      await waitForScrapeRunStatus(fastify, token, retried.task.id, "failed");
-      const partial = await services.scrape.snapshot({ taskId: retried.task.id });
-      expect(partial.items[0].crawlerData?.translation_failures).toEqual({
-        plot: expect.stringContaining("source echoed"),
+      const scan = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { toolId: "batch-nfo-translator", action: "scan", mode: "untranslated", directory: root },
       });
-      expect(partial.items[0].outputRelativePath).not.toBe(snapshot.items[0].outputRelativePath);
-      const repairedRun = await services.scrape.retry({ taskId: retried.task.id });
-      await waitForScrapeRunStatus(fastify, token, repairedRun.task.id, "completed");
-      const repairedSnapshot = await services.scrape.snapshot({ taskId: repairedRun.task.id });
-      expect(repairedSnapshot.task).toMatchObject({
+      expect(scan.statusCode).toBe(200);
+      const items = scan.json().result.data.data.items;
+      expect(items).toEqual([
+        expect.objectContaining({
+          number: "ABC-123",
+          reason: "task_failed",
+          pendingFields: ["title", "plot", "genres"],
+        }),
+      ]);
+      const batchNfoPath = items[0].nfoPath;
+      generateText.mockResolvedValueOnce(JSON.stringify({ translations: ["补译标题", "Runtime plot", "剧情"] }));
+      const partial = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { toolId: "batch-nfo-translator", action: "apply", mode: "untranslated", items },
+      });
+      expect(partial.statusCode).toBe(200);
+      expect(partial.json().result.data.ok).toBe(false);
+      expect(parseNfoSnapshot(await readFile(batchNfoPath, "utf8")).crawlerData.translation_failures).toEqual({
+        plot: expect.stringContaining("provider returned source text"),
+      });
+      expect((await services.scrape.snapshot({ taskId })).task).toMatchObject({
+        status: "completed",
         successCount: 1,
         failedCount: 0,
       });
-      const repairedPath = repairedSnapshot.items[0].nfoRelativePath;
-      if (!repairedPath) throw new Error("Missing repaired NFO path");
-      const repaired = parseNfoSnapshot(await readFile(join(nfoRoot.hostPath, repairedPath), "utf8")).crawlerData;
+      generateText.mockResolvedValueOnce(JSON.stringify({ translations: ["补译简介"] }));
+      const repairedResponse = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { toolId: "batch-nfo-translator", action: "apply", mode: "untranslated", items },
+      });
+      expect(repairedResponse.statusCode).toBe(200);
+      expect(repairedResponse.json().result.data.ok).toBe(true);
+      const repaired = parseNfoSnapshot(await readFile(batchNfoPath, "utf8")).crawlerData;
       expect(repaired.title_zh).toBe("补译标题");
+      expect(repaired.plot_zh).toBe("补译简介");
       expect(repaired.translation_failures).toBeUndefined();
       const [updated] = await state.repositories.library.listEntries();
       if (!updated.crawlerDataJson) throw new Error("Missing repaired metadata");
       expect(JSON.parse(updated.crawlerDataJson).translation_failures).toBeUndefined();
+      const rescanned = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { toolId: "batch-nfo-translator", action: "scan", mode: "untranslated", directory: root },
+      });
+      expect(rescanned.statusCode).toBe(200);
+      expect(rescanned.json().result.data.data.items).toEqual([]);
     } finally {
       translate.mockRestore();
+      generateText.mockRestore();
     }
   });
 

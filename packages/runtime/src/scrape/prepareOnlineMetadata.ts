@@ -29,5 +29,5 @@ export const prepareOnlineMetadata = async (input: {
     signal: input.signal,
   });
   throwIfAborted(input.signal);
-  return { aggregation, crawlerData: publication.data, translationError: publication.error };
+  return { aggregation, crawlerData: publication.data };
 };

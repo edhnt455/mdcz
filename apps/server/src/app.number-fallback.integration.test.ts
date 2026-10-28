@@ -1,8 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { NetworkClient } from "@mdcz/runtime/network";
 import { ScrapeFailureError } from "@mdcz/runtime/scrape/scrapeFailure";
 import { LlmRequestService } from "@mdcz/runtime/scrape/translate/engines/LlmRequestService";
-import { TranslateEngine } from "@mdcz/shared/enums";
+import { defaultConfiguration } from "@mdcz/shared/config";
+import { TranslateEngine, Website } from "@mdcz/shared/enums";
 import { pendingDetailResponseSchema } from "@mdcz/shared/pending";
 import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import {
@@ -30,8 +32,10 @@ it.each([
   const root = await createTempRoot("ai-number-fallback");
   const source = join(root, "ABC-123");
   await mkdir(source);
-  const original = scenario === "missing" || scenario === "unknown" ? "recording" : "ZZZ-999";
-  const fileName = `${original}.mp4`;
+  const original =
+    scenario === "missing" || scenario === "unknown" ? "recording" : scenario === "miss" ? "IPZZ-802D" : "ZZZ-999";
+  const recoveredNumber = scenario === "miss" ? "IPZZ-802" : "ABC-123";
+  const fileName = scenario === "miss" ? "www.98T.la@IPZZ-802DIGITALCHANNELDC144_restored.strm" : `${original}.mp4`;
   await writeFile(join(source, fileName), "video");
   const inner = createTestAggregation("https://unused.test/cover.jpg");
   const aggregate = vi.fn(async (number: string) => {
@@ -43,17 +47,38 @@ it.each([
     scenario === "invalid_output"
       ? "not JSON"
       : JSON.stringify({
-          number: scenario === "unknown" ? null : scenario === "unchanged" ? "ZZZ-999" : "ABC-123",
-          evidence: scenario === "unknown" ? null : scenario === "unchanged" ? "ZZZ-999" : "ABC-123",
+          number: scenario === "unknown" ? null : scenario === "unchanged" ? "ZZZ-999" : recoveredNumber,
+          evidence: scenario === "unknown" ? null : scenario === "unchanged" ? "ZZZ-999" : recoveredNumber,
         });
   const recognize = vi.spyOn(LlmRequestService.prototype, "requestText").mockImplementation(async () => {
     if (scenario === "request_failed") throw new Error("AI service unavailable");
     return rawResponse;
   });
   onTestFinished(() => recognize.mockRestore());
-  const { fastify, services } = await createTestServer({ scrapeAggregation: { aggregate } });
+  const networkClient = scenario === "miss" ? new NetworkClient() : undefined;
+  const getText = networkClient
+    ? vi.spyOn(networkClient, "getText").mockImplementation(async (url) => {
+        const path = new URL(url).pathname + new URL(url).search;
+        if (path === `/search?q=${original}`) return "<html><body>No results</body></html>";
+        if (path === `/search?q=${recoveredNumber}`)
+          return `<a class="box" href="/v/recovered"><div class="video-title"><strong>${recoveredNumber}</strong></div></a>`;
+        if (path === "/v/recovered")
+          return `<h2 class="title is-4"><strong class="current-title">Recovered title</strong></h2><a class="button is-white copy-to-clipboard" data-clipboard-text="${recoveredNumber}"></a><img class="video-cover" src="https://images.test/cover.jpg" />`;
+        throw new Error(`Unexpected request: ${url}`);
+      })
+    : undefined;
+  onTestFinished(() => getText?.mockRestore());
+  const { fastify, services } = await createTestServer({
+    networkClient,
+    scrapeAggregation: networkClient ? undefined : { aggregate },
+  });
   await services.config.update({
-    scrape: { aiNumberFallback: scenario !== "disabled" },
+    scrape: {
+      aiNumberFallback: scenario !== "disabled",
+      sites: [Website.JAVDB],
+      restDuration: 0,
+      filenameIgnoreTokens: ["www.98T.la@"],
+    },
     translate: { enableTranslation: false, engine: TranslateEngine.GOOGLE, llmApiKey: "test-key" },
     download: {
       downloadThumb: false,
@@ -89,8 +114,8 @@ it.each([
   if (success) {
     expect(pending).toEqual([]);
     expect(movies).toHaveLength(1);
-    expect(movies[0].number).toBe("ABC-123");
-    expect(await readFile(join(root, "output", "ABC-123", "movie.nfo"), "utf8")).toContain("ABC-123");
+    expect(movies[0].number).toBe(recoveredNumber);
+    expect(await readFile(join(root, "output", recoveredNumber, "movie.nfo"), "utf8")).toContain(recoveredNumber);
   } else {
     expect(movies).toEqual([]);
     expect(pending).toEqual([
@@ -123,10 +148,22 @@ it.each([
             rawResponse: scenario === "request_failed" ? null : rawResponse,
             fileName,
             parentDirectory: "ABC-123",
+            trigger: "automatic",
           },
     );
     if (diagnostic?.status === "failed") expect(diagnostic.error).toBeTruthy();
     expect(JSON.stringify(diagnostic)).not.toContain("test-key");
+  }
+  if (getText) {
+    const prompt = recognize.mock.calls[0]?.[1];
+    expect(prompt).toContain(defaultConfiguration.translate.llmNumberRecognitionPrompt);
+    expect(prompt).toContain('"previousNumber":"IPZZ-802D"');
+    expect(getText.mock.calls.map(([url]) => new URL(url).pathname + new URL(url).search)).toEqual([
+      `/search?q=${original}`,
+      `/search?q=${recoveredNumber}`,
+      "/v/recovered",
+    ]);
+    return;
   }
   expect(aggregate.mock.calls.map(([number]) => number)).toEqual(
     scenario === "missing"
@@ -198,6 +235,7 @@ it("retries AI extraction with current settings without scraping or changing the
     });
     expect(detail.numberRecognition).toMatchObject({
       status: scenario === "invalid" || scenario === "request_failed" ? "failed" : scenario,
+      trigger: "manual",
       model: `model-${scenario}`,
       previousNumber: "ZZZ-999",
       fileName: "ZZZ-999.mp4",

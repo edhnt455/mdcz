@@ -42,6 +42,16 @@ export const pending: Messages["pending"] = {
     retry: "重试 AI 番号提取",
     retrying: "正在提取…",
     retryHint: "使用当前已保存的 LLM 配置和提示词，仅重新提取，不启动刮削。",
+    triggers: {
+      automatic: "本次刮削的自动兜底提取",
+      manual: "手动调试提取，未启动刮削；上方仍显示上次刮削结果",
+      unknown: "历史提取记录，未记录自动或手动来源",
+    },
+    notApplied: (current: string | null, extracted: string) =>
+      current
+        ? `当前失败记录查询的是 ${current}，不是 AI 提取的 ${extracted}。可用新番号重新刮削。`
+        : `当前失败记录未识别到番号，可用 AI 提取的 ${extracted} 重新刮削。`,
+    apply: "用 AI 番号重试刮削",
     statuses: {
       recognized: "AI 已提取到有效番号",
       unchanged: "AI 返回原番号",

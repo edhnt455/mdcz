@@ -113,7 +113,11 @@ export class PendingService {
       item.number ?? "",
       configuration,
     );
-    repositories.pending.updateNumberRecognition(item.id, item.updatedAt, JSON.stringify(result));
+    repositories.pending.updateNumberRecognition(
+      item.id,
+      item.updatedAt,
+      JSON.stringify({ ...result, trigger: "manual" }),
+    );
     this.deps.onChanged?.();
     return await this.detail(id);
   }

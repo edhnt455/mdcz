@@ -46,6 +46,16 @@ export const pending = {
     retry: "Retry AI code extraction",
     retrying: "Extracting…",
     retryHint: "Uses the currently saved LLM settings and prompts. Only extracts a code; does not start scraping.",
+    triggers: {
+      automatic: "Automatic fallback during this scrape",
+      manual: "Manual extraction only; the previous scrape outcome is still shown above",
+      unknown: "Historical extraction; automatic or manual origin was not recorded",
+    },
+    notApplied: (current: string | null, extracted: string) =>
+      current
+        ? `This failure queried ${current}, not the AI-extracted ${extracted}. Retry scraping with the new code.`
+        : `No code was recognized for this failure. Retry scraping with the AI-extracted ${extracted}.`,
+    apply: "Retry scraping with AI code",
     statuses: {
       recognized: "AI extracted a valid code",
       unchanged: "AI returned the original code",

@@ -50,6 +50,7 @@ export type PendingSiteResultDto = z.infer<typeof pendingSiteResultSchema>;
 
 export const numberRecognitionResultSchema = z.object({
   status: z.enum(["recognized", "unchanged", "no_number", "failed"]),
+  trigger: z.enum(["automatic", "manual"]).optional(),
   fileName: z.string(),
   parentDirectory: z.string(),
   previousNumber: z.string().nullable(),

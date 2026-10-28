@@ -33,7 +33,6 @@ export interface PreparedMovieFile {
     identity: Pick<import("@mdcz/shared/types").ScrapeResult, "rootId" | "relativePath" | "fileName" | "part">;
     fileInfo: import("@mdcz/shared/types").FileInfo;
     videoMeta?: import("@mdcz/shared/types").VideoMeta;
-    error?: string;
     uncensoredAmbiguous: boolean;
   };
 }

@@ -174,6 +174,11 @@ export const tools = {
   batchTranslateMode: "Action",
   translationTaskFailed: "Translation failed during task execution",
   translationContentDetected: "Content suggests translation may be needed",
+  translationReasonFilter: "Pending reason",
+  translationReasonOptions: { all: "All", task_failed: "Task translation failed", content: "Content detection" },
+  translationReasonFilterHelp:
+    "Switching reasons selects all pending items in that category. Batch translation or ignoring applies only to selected items.",
+  noMatchingTranslationReason: "No items for this reason. Select another reason to view items.",
   currentTitle: "Current title",
   currentPlot: "Current plot",
   expandPlot: "Expand / collapse full text",

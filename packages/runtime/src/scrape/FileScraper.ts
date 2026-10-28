@@ -142,7 +142,6 @@ export interface PreparedMovieGroup {
   assets: Array<RootFileRef & { fileId: string | null; kind: string; published: boolean }>;
   configuration: Configuration;
   crawlerData: CrawlerData;
-  translationError?: string;
   aggregation: AggregationResult;
   artifactPaths: string[];
   members: PreparedMovieMember[];
@@ -287,7 +286,7 @@ export class FileScraper {
         `Preparing movie scrape task ${randomUUID()} for ${fileInfo.number} (scrapeSessionId: ${scrapeSessionId ?? "standalone"})`,
       );
       signalService.showScrapeStep("search");
-      const { aggregation, crawlerData, translationError } = await prepareOnlineMetadata({
+      const { aggregation, crawlerData } = await prepareOnlineMetadata({
         number: fileInfo.number,
         configuration,
         aggregationService: this.deps.aggregationService,
@@ -383,7 +382,6 @@ export class FileScraper {
           assets,
           configuration,
           crawlerData,
-          translationError: translationError ? `Translation failed: ${translationError}` : undefined,
           aggregation,
           artifactPaths: plannedArtifactPaths(configuration, preparedMembers),
           members: preparedMembers,
@@ -497,7 +495,6 @@ export class FileScraper {
               identity: memberIdentity,
               fileInfo: member.fileInfo,
               videoMeta: member.videoMeta,
-              error: prepared.translationError,
               uncensoredAmbiguous:
                 classification.uncensored &&
                 !member.localState?.uncensoredChoice &&

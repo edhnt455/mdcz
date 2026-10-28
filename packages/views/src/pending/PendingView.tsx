@@ -435,10 +435,13 @@ function PendingDetail({
       {scrapable ? (
         <NumberRecognitionBlock
           attempt={detail.numberRecognition}
+          currentNumber={item.number}
           busy={busy}
           running={recognitionRunning}
           error={recognitionError}
           onRetry={() => void retryNumberRecognition()}
+          canApply={Boolean(libraryId) && !busy}
+          onApply={(number) => void retry({ number })}
         />
       ) : null}
 
@@ -528,19 +531,26 @@ function PendingDetail({
 
 function NumberRecognitionBlock({
   attempt,
+  currentNumber,
   busy,
   running,
   error,
   onRetry,
+  canApply,
+  onApply,
 }: {
   attempt: NumberRecognitionAttempt | null;
+  currentNumber: string | null;
   busy: boolean;
   running: boolean;
   error: string | null;
   onRetry: () => void;
+  canApply: boolean;
+  onApply: (number: string) => void;
 }) {
   const t = useT();
   const labels = t.pending.recognition;
+  const suggestedNumber = attempt?.status === "recognized" && attempt.number !== currentNumber ? attempt.number : null;
   return (
     <Block title={labels.title}>
       <div className="flex flex-wrap items-center gap-3">
@@ -560,11 +570,23 @@ function NumberRecognitionBlock({
         <p className="text-sm text-muted-foreground">{labels.noRecord}</p>
       ) : (
         <>
+          <p className="text-xs font-medium text-muted-foreground">
+            {labels.triggers[attempt.status === "skipped" ? "automatic" : (attempt.trigger ?? "unknown")]}
+          </p>
           <p className="text-sm font-semibold">{labels.statuses[attempt.status]}</p>
           {attempt.status === "skipped" ? (
             <p className="text-sm text-muted-foreground">{labels.skipReasons[attempt.reason]}</p>
           ) : (
             <>
+              {suggestedNumber ? (
+                <div className="space-y-2 rounded-quiet border border-border/60 bg-surface-low/50 p-3">
+                  <p className="text-sm text-muted-foreground">{labels.notApplied(currentNumber, suggestedNumber)}</p>
+                  <Button variant="outline" disabled={!canApply} onClick={() => onApply(suggestedNumber)}>
+                    <RotateCcw className="h-4 w-4" />
+                    {labels.apply}
+                  </Button>
+                </div>
+              ) : null}
               <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
                 {[
                   [labels.previousNumber, attempt.previousNumber],

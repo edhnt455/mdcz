@@ -138,7 +138,7 @@ describe("AI movie code fallback", () => {
     expect(groups[0].members[0].fileInfo.number).toBe(shouldRecognize ? "ABC-123" : "ZZZ-999");
     expect(groups[0].members[0].numberRecognition).toMatchObject(
       shouldRecognize
-        ? { status: "recognized", number: "ABC-123" }
+        ? { status: "recognized", number: "ABC-123", trigger: "automatic" }
         : {
             status: "skipped",
             reason: outcomes.some((outcome) => outcome === "found") ? "found" : "lookup_ineligible",
