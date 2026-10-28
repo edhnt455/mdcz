@@ -48,9 +48,43 @@ export type PendingListResponse = z.infer<typeof pendingListResponseSchema>;
 export const pendingSiteResultSchema = siteResultSchema.extend({ updatedAt: z.string() });
 export type PendingSiteResultDto = z.infer<typeof pendingSiteResultSchema>;
 
+export const numberRecognitionResultSchema = z.object({
+  status: z.enum(["recognized", "unchanged", "no_number", "failed"]),
+  fileName: z.string(),
+  parentDirectory: z.string(),
+  previousNumber: z.string().nullable(),
+  model: z.string(),
+  number: z.string().nullable(),
+  evidence: z.string().nullable(),
+  rawResponse: z.string().nullable(),
+  error: z.string().nullable(),
+  prompt: z.string(),
+  systemPrompt: z.string(),
+  elapsedMs: z.number().nonnegative(),
+});
+export type NumberRecognitionResult = z.infer<typeof numberRecognitionResultSchema>;
+
+export const numberRecognitionAttemptSchema = z.union([
+  numberRecognitionResultSchema,
+  z.object({
+    status: z.literal("skipped"),
+    reason: z.enum([
+      "disabled",
+      "manual_number",
+      "manual_url",
+      "source_pin",
+      "source_error",
+      "lookup_ineligible",
+      "found",
+    ]),
+  }),
+]);
+export type NumberRecognitionAttempt = z.infer<typeof numberRecognitionAttemptSchema>;
+
 export const pendingDetailResponseSchema = z.object({
   item: pendingItemSchema,
   siteResults: z.array(pendingSiteResultSchema),
+  numberRecognition: numberRecognitionAttemptSchema.nullable(),
 });
 export type PendingDetailResponse = z.infer<typeof pendingDetailResponseSchema>;
 

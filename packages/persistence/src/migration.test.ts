@@ -43,6 +43,7 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 9, when: 1_792_886_400_000, tag: "0009_strm_cloud_deletion" }),
       expect.objectContaining({ idx: 10, when: 1_792_972_800_000, tag: "0010_emby_deletion_settings_to_config" }),
       expect.objectContaining({ idx: 11, when: 1_793_059_200_000, tag: "0011_libraries_to_config" }),
+      expect.objectContaining({ idx: 12, when: 1_793_145_600_000, tag: "0012_pending_number_recognition" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
@@ -62,6 +63,14 @@ describe("Persistence migration baseline", () => {
       const pending = database.sqlite.prepare("SELECT * FROM pending_items").get() as Record<string, unknown>;
       database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0011_libraries_to_config.sql"), "utf8"));
       expect(database.sqlite.prepare("SELECT * FROM pending_items").get()).toEqual({ ...pending, library_id: null });
+      database.sqlite.exec(
+        await readFile(join(defaultMigrationsFolder, "0012_pending_number_recognition.sql"), "utf8"),
+      );
+      expect(database.sqlite.prepare("SELECT * FROM pending_items").get()).toEqual({
+        ...pending,
+        library_id: null,
+        number_recognition_json: null,
+      });
       expect(database.sqlite.prepare("SELECT * FROM library_watch_snapshots").all()).toEqual([
         { library_id: "library", file_keys_json: '["movie.mp4"]' },
       ]);

@@ -53,6 +53,11 @@ export function PendingPage() {
           requestScrapeLiveRunsRefresh();
         }, t.pending.submitted)
       }
+      onRetryNumberRecognition={async (id) => {
+        const detail = await api.pending.retryNumberRecognition({ id });
+        queryClient.setQueryData(queryKeys.pending.detail(id), detail);
+        await refresh();
+      }}
       onConfirmUncensored={async (input) => await act(() => api.pending.confirmUncensored(input), t.pending.confirmed)}
       onIgnore={async (id) => await act(() => api.pending.ignore({ id }), t.pending.ignored)}
       onBatch={async (input) => {

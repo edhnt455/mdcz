@@ -15,12 +15,28 @@ import type { LlmApiClient } from "@mdcz/runtime/scrape/translate/engines/LlmApi
 import { LlmRequestService } from "@mdcz/runtime/scrape/translate/engines/LlmRequestService";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
+import type { NumberRecognitionResult } from "@mdcz/shared/pending";
 import type { FailureReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { createTempDirectory } from "../../../harness/tempDirectory";
 
 const logger = { info: vi.fn(), warn: vi.fn() };
+const recognitionResult = (overrides: Partial<NumberRecognitionResult> = {}): NumberRecognitionResult => ({
+  status: "recognized",
+  number: "ABC-123",
+  evidence: "ABC-123",
+  previousNumber: "ZZZ-999",
+  fileName: "ZZZ-999.mp4",
+  parentDirectory: "ABC-123",
+  model: "test-model",
+  prompt: "test-prompt",
+  systemPrompt: "",
+  rawResponse: '{"number":"ABC-123","evidence":"ABC-123"}',
+  error: null,
+  elapsedMs: 1,
+  ...overrides,
+});
 const config = configurationSchema.parse({
   scrape: { aiNumberFallback: true, sites: [Website.JAVBUS, Website.JAV321], threadNumber: 2 },
   translate: { enableTranslation: false, engine: "google", llmApiKey: "test-key", llmMaxRequestsPerSecond: 100 },
@@ -111,7 +127,7 @@ describe("AI movie code fallback", () => {
   ] as const)("requires a real successful query with no movie (%j)", async (outcomes, shouldRecognize) => {
     const input = await createInput(["ZZZ-999.mp4"], onTestFinished);
     const { service, crawl } = createAggregation(outcomes);
-    const recognize = vi.fn(async () => "ABC-123");
+    const recognize = vi.fn(async () => recognitionResult());
     const resolver = createScrapeNumberResolver({
       ...input,
       aggregationService: service,
@@ -120,6 +136,14 @@ describe("AI movie code fallback", () => {
     const groups = await resolver.resolveGroups(input.groups);
     expect(recognize).toHaveBeenCalledTimes(shouldRecognize ? 1 : 0);
     expect(groups[0].members[0].fileInfo.number).toBe(shouldRecognize ? "ABC-123" : "ZZZ-999");
+    expect(groups[0].members[0].numberRecognition).toMatchObject(
+      shouldRecognize
+        ? { status: "recognized", number: "ABC-123" }
+        : {
+            status: "skipped",
+            reason: outcomes.some((outcome) => outcome === "found") ? "found" : "lookup_ineligible",
+          },
+    );
     await resolver.aggregationService.aggregate("ZZZ-999").catch(() => undefined);
     expect(crawl).toHaveBeenCalledTimes(2);
   });
@@ -133,7 +157,7 @@ describe("AI movie code fallback", () => {
     const aggregate = vi.fn(
       async (number: string) => ({ data: data(number) }) as Awaited<ReturnType<AggregationService["aggregate"]>>,
     );
-    const recognize = vi.fn(async () => "ABC-123");
+    const recognize = vi.fn(async () => recognitionResult({ previousNumber: null }));
     const resolver = createScrapeNumberResolver({
       ...input,
       aggregationService: { aggregate },
@@ -195,9 +219,13 @@ describe("AI movie code fallback", () => {
       aggregationService: { aggregate },
       recognitionService: { recognize },
     });
-    await resolver.resolveGroups(input.groups);
+    const resolved = await resolver.resolveGroups(input.groups);
     expect(aggregate).not.toHaveBeenCalled();
     expect(recognize).not.toHaveBeenCalled();
+    expect(resolved[0].members[0].numberRecognition).toEqual({
+      status: "skipped",
+      reason: mode === "mapping" ? "manual_number" : mode,
+    });
   });
 
   it.each([
@@ -211,9 +239,12 @@ describe("AI movie code fallback", () => {
     const failure = new ScrapeFailureError("not_found", "Normal search found no movie", [], true);
     const aggregate = vi.fn().mockRejectedValue(failure);
     const recognize = vi.fn(async () => {
-      if (mode === "failed") throw new Error("AI timed out");
       if (mode === "cancelled") controller.abort();
-      return mode === "empty" ? null : "ZZZ-999";
+      return recognitionResult({
+        status: mode === "failed" ? "failed" : mode === "empty" ? "no_number" : "unchanged",
+        number: mode === "empty" || mode === "failed" ? null : "ZZZ-999",
+        error: mode === "failed" ? "AI timed out" : null,
+      });
     });
     const resolver = createScrapeNumberResolver({
       ...input,
@@ -226,6 +257,9 @@ describe("AI movie code fallback", () => {
     } else {
       const groups = await resolving;
       expect(groups[0].members[0].fileInfo.number).toBe("ZZZ-999");
+      expect(groups[0].members[0].numberRecognition).toMatchObject({
+        status: mode === "failed" ? "failed" : mode === "empty" ? "no_number" : "unchanged",
+      });
       await expect(resolver.aggregationService.aggregate("ZZZ-999")).rejects.toBe(failure);
     }
     expect(recognize).toHaveBeenCalledOnce();
@@ -256,8 +290,16 @@ describe("AI movie code fallback", () => {
         },
       },
     );
-    if (valid) await expect(result).resolves.toBe(number);
-    else await expect(result).rejects.toThrow();
+    await expect(result).resolves.toMatchObject({
+      status: valid ? (number === null ? "no_number" : "recognized") : "failed",
+      number: typeof number === "string" ? number.toUpperCase() : null,
+      evidence,
+      rawResponse: JSON.stringify({ number, evidence }),
+      previousNumber: null,
+      parentDirectory: "ABC-123",
+      systemPrompt: "Shared context",
+      error: valid ? null : expect.stringContaining("valid source evidence"),
+    });
     const request = generateText.mock.calls[0]?.[0];
     expect(request.systemPrompt).toBe("Shared context");
     expect(request.model).toBe(config.translate.llmModelName);
@@ -265,5 +307,42 @@ describe("AI movie code fallback", () => {
     expect(request.prompt).toContain('"evidence"');
     expect(request.prompt).not.toContain("/private/absolute/path");
     expect(request.prompt).not.toContain(defaultConfiguration.translate.llmPrompt);
+  });
+
+  it("records request and decoding failures while propagating cancellation", async () => {
+    for (const mode of ["invalid_json", "invalid_schema", "request_error", "missing_config", "cancelled"] as const) {
+      const controller = new AbortController();
+      const rawResponse = mode === "invalid_json" ? "not JSON" : '{"number":123,"evidence":"ABC-123"}';
+      const generateText = vi.fn<LlmApiClient["generateText"]>(async () => {
+        if (mode === "cancelled") controller.abort();
+        if (mode === "request_error") throw new Error("Request rejected");
+        return rawResponse;
+      });
+      const service = new NumberRecognitionService(
+        new LlmRequestService(logger, { generateText } as unknown as LlmApiClient),
+      );
+      const result = service.recognize(
+        "/media/ABC-123/recording.mp4",
+        "",
+        {
+          ...config,
+          translate: { ...config.translate, llmModelName: mode === "missing_config" ? "" : "test-model" },
+        },
+        controller.signal,
+      );
+      if (mode === "cancelled") {
+        await expect(result).rejects.toMatchObject({ name: "AbortError" });
+        continue;
+      }
+      await expect(result).resolves.toMatchObject({
+        status: "failed",
+        number: null,
+        error: expect.any(String),
+        rawResponse: mode === "request_error" || mode === "missing_config" ? null : rawResponse,
+        fileName: "recording.mp4",
+        parentDirectory: "ABC-123",
+      });
+      expect(generateText).toHaveBeenCalledTimes(mode === "missing_config" ? 0 : 1);
+    }
   });
 });

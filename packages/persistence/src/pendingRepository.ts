@@ -17,6 +17,7 @@ export interface PendingItemInput {
   number?: string | null;
   detail?: string | null;
   candidatesJson?: string | null;
+  numberRecognitionJson?: string | null;
 }
 
 export class PendingRepository {
@@ -36,6 +37,15 @@ export class PendingRepository {
     return row;
   }
 
+  updateNumberRecognition(id: string, expectedUpdatedAt: Date, numberRecognitionJson: string): void {
+    const result = this.database.db
+      .update(pendingItems)
+      .set({ numberRecognitionJson, updatedAt: new Date() })
+      .where(and(eq(pendingItems.id, id), eq(pendingItems.updatedAt, expectedUpdatedAt)))
+      .run();
+    if (!result.changes) throw new Error("Pending item changed or was removed during AI extraction; reload and retry");
+  }
+
   /** One entry per source file: a newer outcome replaces the previous one. Returns whether the entry is new. */
   upsert(input: PendingItemInput, now = new Date()): boolean {
     const values = {
@@ -45,6 +55,7 @@ export class PendingRepository {
       number: input.number ?? null,
       detail: input.detail ?? null,
       candidatesJson: input.candidatesJson ?? null,
+      numberRecognitionJson: input.numberRecognitionJson ?? null,
       updatedAt: now,
     };
     const existing = this.database.db

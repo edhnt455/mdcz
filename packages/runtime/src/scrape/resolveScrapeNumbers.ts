@@ -1,7 +1,6 @@
 import { filesystemPathKey } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import PQueue from "p-queue";
-import { movieNumbersMatch } from "../crawler/base/identity";
 import { isUnrecoverableNetworkError } from "../network";
 import { toErrorMessage } from "../shared";
 import type { AggregationResult, AggregationService } from "./aggregation";
@@ -47,8 +46,11 @@ export const createScrapeNumberResolver = (input: {
     },
   };
   const resolveGroups = async <TMember extends MovieMember>(groups: MovieGroup<TMember>[], signal?: AbortSignal) => {
-    if (!configuration.scrape.aiNumberFallback) return groups;
     const members = groups.flatMap((group) => group.members);
+    if (!configuration.scrape.aiNumberFallback) {
+      for (const member of members) member.numberRecognition = { status: "skipped", reason: "disabled" };
+      return groups;
+    }
     for (const member of members)
       inventory.resolvedFileInfos.set(filesystemPathKey(member.fileInfo.filePath), member.fileInfo);
     const queue = new PQueue({ concurrency: configuration.scrape.threadNumber });
@@ -59,58 +61,75 @@ export const createScrapeNumberResolver = (input: {
             throwIfAborted(signal);
             if (resolvedMembers.has(member.fileId)) return;
             resolvedMembers.add(member.fileId);
-            if (member.error || member.numberIsManual || member.manualScrape?.detailUrl) return;
+            const skipReason = member.error
+              ? "source_error"
+              : member.numberIsManual
+                ? "manual_number"
+                : member.manualScrape?.detailUrl
+                  ? "manual_url"
+                  : null;
+            if (skipReason) {
+              member.numberRecognition = { status: "skipped", reason: skipReason };
+              return;
+            }
             const fileInfo = member.fileInfo;
             try {
-              if (!(await inventory.stats(fileInfo.filePath)).isFile()) return;
+              if (!(await inventory.stats(fileInfo.filePath)).isFile()) {
+                member.numberRecognition = { status: "skipped", reason: "source_error" };
+                return;
+              }
               const snapshot = await loadLocalNfoSnapshot(fileInfo, inventory, configuration.scrape);
-              if (!input.unpin && snapshot?.localState?.sourcePin) return;
+              if (!input.unpin && snapshot?.localState?.sourcePin) {
+                member.numberRecognition = { status: "skipped", reason: "source_pin" };
+                return;
+              }
             } catch (error) {
               if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
               member.error = toErrorMessage(error);
+              member.numberRecognition = { status: "skipped", reason: "source_error" };
               return;
             }
             if (fileInfo.number) {
               try {
                 await aggregationService.aggregate(fileInfo.number, { manualScrape: member.manualScrape, signal });
+                member.numberRecognition = { status: "skipped", reason: "found" };
                 return;
               } catch (error) {
                 if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
-                if (!(error instanceof ScrapeFailureError) || !error.canRetryNumber) return;
+                if (!(error instanceof ScrapeFailureError) || !error.canRetryNumber) {
+                  member.numberRecognition = { status: "skipped", reason: "lookup_ineligible" };
+                  return;
+                }
               }
             }
             logger.info(
               `[number-recognition] Trying AI for ${fileInfo.fileName}; previous=${fileInfo.number || "none"}`,
             );
-            try {
-              const number = await input.recognitionService.recognize(
-                fileInfo.filePath,
-                fileInfo.number,
-                configuration,
-                signal,
-              );
-              throwIfAborted(signal);
-              if (!number || movieNumbersMatch(number, fileInfo.number)) {
-                logger.warn(
-                  `[number-recognition] AI found no alternative number for ${fileInfo.fileName}; manual repair required`,
-                );
-                return;
-              }
-              member.fileInfo = parseFileInfo(
-                fileInfo.filePath,
-                configuration.scrape.filenameIgnoreTokens,
-                configuration.scrape.numberMappings,
-                configuration.scrape,
-                number,
-              );
-              inventory.resolvedFileInfos.set(filesystemPathKey(fileInfo.filePath), member.fileInfo);
-              logger.info(`[number-recognition] ${fileInfo.fileName}: ${fileInfo.number || "none"} -> ${number}`);
-            } catch (error) {
-              if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
+            const recognition = await input.recognitionService.recognize(
+              fileInfo.filePath,
+              fileInfo.number,
+              configuration,
+              signal,
+            );
+            throwIfAborted(signal);
+            member.numberRecognition = recognition;
+            if (recognition.status !== "recognized" || !recognition.number) {
               logger.warn(
-                `[number-recognition] AI failed for ${fileInfo.fileName}: ${toErrorMessage(error)}; manual repair required`,
+                `[number-recognition] ${fileInfo.fileName}: ${recognition.status}; number=${recognition.number ?? "none"}${recognition.error ? `; ${recognition.error}` : ""}; manual repair required`,
               );
+              return;
             }
+            member.fileInfo = parseFileInfo(
+              fileInfo.filePath,
+              configuration.scrape.filenameIgnoreTokens,
+              configuration.scrape.numberMappings,
+              configuration.scrape,
+              recognition.number,
+            );
+            inventory.resolvedFileInfos.set(filesystemPathKey(fileInfo.filePath), member.fileInfo);
+            logger.info(
+              `[number-recognition] ${fileInfo.fileName}: ${fileInfo.number || "none"} -> ${recognition.number}`,
+            );
           },
           signal ? { signal } : undefined,
         ),

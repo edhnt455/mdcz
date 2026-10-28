@@ -1,4 +1,4 @@
-import type { PendingKindDto } from "@mdcz/shared/pending";
+import type { NumberRecognitionAttempt, PendingKindDto } from "@mdcz/shared/pending";
 import type { SkipReason } from "@mdcz/shared/siteResults";
 
 export const pending = {
@@ -39,6 +39,44 @@ export const pending = {
   updated: (value: string) => `Updated ${value}`,
   siteResultsTitle: "Site results",
   noSiteResults: "No site query records yet.",
+  recognition: {
+    title: "AI code extraction",
+    noRecord: "No extraction diagnostic was saved for this entry. Retry to record the current outcome.",
+    hint: "Shows the latest extraction. AI reads only the file name and immediate parent folder; a code still needs a matching site result.",
+    retry: "Retry AI code extraction",
+    retrying: "Extracting…",
+    retryHint: "Uses the currently saved LLM settings and prompts. Only extracts a code; does not start scraping.",
+    statuses: {
+      recognized: "AI extracted a valid code",
+      unchanged: "AI returned the original code",
+      no_number: "AI returned no code",
+      failed: "AI request or response validation failed; result not used",
+      skipped: "AI extraction skipped",
+    } satisfies Record<NumberRecognitionAttempt["status"], string>,
+    skipReasons: {
+      disabled: "AI code fallback was disabled for this scrape.",
+      manual_number: "A manual code or saved mapping takes priority.",
+      manual_url: "A detail page was specified manually.",
+      source_pin: "The file has a pinned source.",
+      source_error: "The source file could not be prepared.",
+      lookup_ineligible:
+        "The lookup did not establish a normal response with no matching movie (for example, network errors or ambiguous results).",
+      found: "The original code already returned metadata.",
+    } satisfies Record<Extract<NumberRecognitionAttempt, { status: "skipped" }>["reason"], string>,
+    previousNumber: "Original code",
+    number: "AI returned code",
+    evidence: "Source evidence",
+    fileName: "File name sent to AI",
+    parentDirectory: "Parent folder sent to AI",
+    model: "Model",
+    elapsed: "Elapsed time",
+    none: "None",
+    rawResponse: "Raw AI response",
+    noResponse: "No response received",
+    prompt: "Request prompts",
+    systemPrompt: "System prompt",
+    userPrompt: "User prompt",
+  },
   siteResult: {
     success: "Found",
     skipped: (reason: string) => `Skipped: ${reason}`,

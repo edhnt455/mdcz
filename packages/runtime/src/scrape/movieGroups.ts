@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
+import type { NumberRecognitionAttempt } from "@mdcz/shared/pending";
 import type { FileInfo, UncensoredChoice } from "@mdcz/shared/types";
 import type { ManualScrapeOptions } from "./aggregation";
 import type { DirectoryInventory } from "./DirectoryInventory";
@@ -19,6 +20,7 @@ export interface MovieMember {
   manualScrape?: ManualScrapeOptions;
   uncensoredChoice?: UncensoredChoice;
   numberIsManual?: boolean;
+  numberRecognition?: NumberRecognitionAttempt;
   error?: string;
 }
 export interface MovieGroup<TMember = MovieMember> {

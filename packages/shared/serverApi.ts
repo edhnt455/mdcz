@@ -206,6 +206,7 @@ export interface ServerApiContract {
     list(): Promise<PendingListResponse>;
     detail(input: PendingIdInput): Promise<PendingDetailResponse>;
     retry(input: PendingRetryInput): Promise<PendingRetryResponse>;
+    retryNumberRecognition(input: PendingIdInput): Promise<PendingDetailResponse>;
     confirmUncensored(input: PendingConfirmUncensoredInput): Promise<{ success: true }>;
     ignore(input: PendingIdInput): Promise<{ success: true }>;
   };

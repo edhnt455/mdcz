@@ -182,7 +182,7 @@ describe("Persistence migrations", () => {
         { name: "scrape_runs" },
       ]);
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 12,
+        count: 13,
       });
 
       expect(
@@ -252,7 +252,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 12,
+        count: 13,
       });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
@@ -313,7 +313,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 10,
+        count: 11,
       });
       const fresh = createTestPersistenceDatabase();
       try {
@@ -527,7 +527,11 @@ describe("LibraryRepository", () => {
     const pending = new PendingRepository(database);
     expect(pending.count()).toBe(0);
 
-    expect(pending.upsert({ kind: "no_number", rootId: "root-1", relativePath: "A.mp4" })).toBe(true);
+    const numberRecognitionJson = JSON.stringify({ status: "skipped", reason: "disabled" });
+    expect(pending.upsert({ kind: "no_number", rootId: "root-1", relativePath: "A.mp4", numberRecognitionJson })).toBe(
+      true,
+    );
+    expect(pending.list()[0].numberRecognitionJson).toBe(numberRecognitionJson);
     expect(pending.upsert({ kind: "new_file", rootId: "root-1", relativePath: "B.mp4" })).toBe(true);
     expect(
       pending.upsert(
@@ -542,6 +546,7 @@ describe("LibraryRepository", () => {
     expect(pending.count()).toBe(2);
     pending.deleteFiles([]);
     const first = pending.list()[0];
+    expect(first.numberRecognitionJson).toBeNull();
     expect(() => pending.confirmUncensored(first.id, { id: "other-movie" }, [])).toThrow(
       "Pending confirmation no longer matches this movie",
     );

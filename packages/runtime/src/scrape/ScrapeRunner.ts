@@ -1040,6 +1040,9 @@ export class ScrapeRunner {
                 number: pending.number ?? null,
                 detail: result.error ?? null,
                 candidatesJson: pending.candidates?.length ? JSON.stringify(pending.candidates) : null,
+                numberRecognitionJson: entry.item.numberRecognition
+                  ? JSON.stringify(entry.item.numberRecognition)
+                  : null,
               });
               if (isNew) added += 1;
             }

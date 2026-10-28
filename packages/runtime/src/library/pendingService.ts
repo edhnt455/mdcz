@@ -6,6 +6,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import {
   type AmbiguousCandidate,
   ambiguousCandidateSchema,
+  numberRecognitionAttemptSchema,
   type PendingBatchInput,
   type PendingBatchResponse,
   type PendingConfirmUncensoredInput,
@@ -20,6 +21,7 @@ import type { ScrapeStartInput } from "@mdcz/shared/serverDtos";
 import { z } from "zod";
 import type { MaintenanceRuntime } from "../maintenance/MaintenanceRuntime";
 import { committedMovieRows } from "../publication/committedMovie";
+import type { NumberRecognitionService } from "../scrape/NumberRecognitionService";
 import { runtimeLoggerService } from "../shared";
 import { type MediaLibraryService, toPublicationTarget } from "./mediaLibraryService";
 import type { ConfiguredMediaRootService } from "./mediaRootService";
@@ -38,6 +40,7 @@ export interface PendingServiceDependencies {
   getConfiguration: () => Promise<Configuration>;
   updateConfiguration: (patch: DeepPartial<Configuration>) => Promise<unknown>;
   maintenanceRuntime: Pick<MaintenanceRuntime, "applyLibraryEntry">;
+  recognitionService: Pick<NumberRecognitionService, "recognize">;
   onChanged?: () => void;
 }
 
@@ -65,6 +68,9 @@ export class PendingService {
     const libraries = new Map((await this.deps.libraries.list()).map((library) => [library.id, library.name]));
     return {
       item: this.toDto(item, resolveRootRelativePath(root, item.relativePath), libraries),
+      numberRecognition: item.numberRecognitionJson
+        ? numberRecognitionAttemptSchema.parse(JSON.parse(item.numberRecognitionJson))
+        : null,
       siteResults: item.number
         ? repositories.siteResults
             .list(item.number)
@@ -94,6 +100,22 @@ export class PendingService {
       ...(input.number ? { number: input.number } : {}),
     });
     return { taskId };
+  }
+
+  async retryNumberRecognition(id: string): Promise<PendingDetailResponse> {
+    const repositories = await this.deps.repositories();
+    const item = repositories.pending.get(id);
+    if (item.kind === "uncensored") throw new Error("This movie is published; confirm its type instead");
+    const root = await this.deps.mediaRoots.get(item.rootId);
+    const configuration = await this.deps.getConfiguration();
+    const result = await this.deps.recognitionService.recognize(
+      resolveRootRelativePath(root, item.relativePath),
+      item.number ?? "",
+      configuration,
+    );
+    repositories.pending.updateNumberRecognition(item.id, item.updatedAt, JSON.stringify(result));
+    this.deps.onChanged?.();
+    return await this.detail(id);
   }
 
   async confirmUncensored(input: PendingConfirmUncensoredInput): Promise<void> {

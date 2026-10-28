@@ -2,6 +2,7 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
 import type {
   AmbiguousCandidate,
+  NumberRecognitionAttempt,
   PendingBatchInput,
   PendingBatchResponse,
   PendingConfirmUncensoredInput,
@@ -89,6 +90,7 @@ export interface PendingViewProps {
   detailLoading?: boolean;
   libraries: MediaLibraryDto[];
   onRetry: (input: PendingRetryInput) => Promise<void>;
+  onRetryNumberRecognition: (id: string) => Promise<void>;
   onConfirmUncensored: (input: PendingConfirmUncensoredInput) => Promise<void>;
   onIgnore: (id: string) => Promise<void>;
   onBatch: (input: PendingBatchInput) => Promise<PendingBatchResponse>;
@@ -104,6 +106,7 @@ export function PendingView({
   detailLoading = false,
   libraries,
   onRetry,
+  onRetryNumberRecognition,
   onConfirmUncensored,
   onIgnore,
   onBatch,
@@ -305,6 +308,7 @@ export function PendingView({
             detail={detail}
             libraries={libraries}
             onRetry={onRetry}
+            onRetryNumberRecognition={onRetryNumberRecognition}
             onConfirmUncensored={onConfirmUncensored}
             onIgnore={onIgnore}
             busy={busy}
@@ -331,6 +335,7 @@ function PendingDetail({
   detail,
   libraries,
   onRetry,
+  onRetryNumberRecognition,
   onConfirmUncensored,
   onIgnore,
   busy,
@@ -339,6 +344,7 @@ function PendingDetail({
   detail: PendingDetailResponse;
   libraries: MediaLibraryDto[];
   onRetry: PendingViewProps["onRetry"];
+  onRetryNumberRecognition: PendingViewProps["onRetryNumberRecognition"];
   onConfirmUncensored: PendingViewProps["onConfirmUncensored"];
   onIgnore: PendingViewProps["onIgnore"];
   busy: boolean;
@@ -346,6 +352,8 @@ function PendingDetail({
 }) {
   const t = useT();
   const { item, siteResults } = detail;
+  const [recognitionRunning, setRecognitionRunning] = useState(false);
+  const [recognitionError, setRecognitionError] = useState<string | null>(null);
   const [libraryId, setLibraryId] = useState(item.libraryId ?? libraries[0]?.id ?? "");
   useEffect(() => setLibraryId(item.libraryId ?? libraries[0]?.id ?? ""), [item.libraryId, libraries]);
   const run = async (action: () => Promise<void>) => {
@@ -358,6 +366,18 @@ function PendingDetail({
   };
   const retry = (input: Omit<PendingRetryInput, "id" | "libraryId">) =>
     run(() => onRetry({ id: item.id, ...(libraryId ? { libraryId } : {}), ...input }));
+  const retryNumberRecognition = async () => {
+    if (busy || recognitionRunning) return;
+    setRecognitionError(null);
+    setRecognitionRunning(true);
+    try {
+      await run(() => onRetryNumberRecognition(item.id));
+    } catch (error) {
+      setRecognitionError(toErrorMessage(error));
+    } finally {
+      setRecognitionRunning(false);
+    }
+  };
   const scrapable = item.kind !== "uncensored";
   const showIgnoreToken = item.kind === "no_number" || item.kind === "not_found";
 
@@ -411,6 +431,16 @@ function PendingDetail({
           </div>
         ) : null}
       </header>
+
+      {scrapable ? (
+        <NumberRecognitionBlock
+          attempt={detail.numberRecognition}
+          busy={busy}
+          running={recognitionRunning}
+          error={recognitionError}
+          onRetry={() => void retryNumberRecognition()}
+        />
+      ) : null}
 
       {item.candidates.length > 0 ? (
         <Block title={t.pending.candidatesTitle}>
@@ -493,6 +523,85 @@ function PendingDetail({
         </Block>
       ) : null}
     </div>
+  );
+}
+
+function NumberRecognitionBlock({
+  attempt,
+  busy,
+  running,
+  error,
+  onRetry,
+}: {
+  attempt: NumberRecognitionAttempt | null;
+  busy: boolean;
+  running: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const t = useT();
+  const labels = t.pending.recognition;
+  return (
+    <Block title={labels.title}>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="outline" disabled={busy} onClick={onRetry}>
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+          {running ? labels.retrying : labels.retry}
+        </Button>
+        <p className="text-xs text-muted-foreground">{labels.retryHint}</p>
+      </div>
+      {error ? (
+        <p role="alert" className="break-words text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <p className="text-xs text-muted-foreground">{labels.hint}</p>
+      {!attempt ? (
+        <p className="text-sm text-muted-foreground">{labels.noRecord}</p>
+      ) : (
+        <>
+          <p className="text-sm font-semibold">{labels.statuses[attempt.status]}</p>
+          {attempt.status === "skipped" ? (
+            <p className="text-sm text-muted-foreground">{labels.skipReasons[attempt.reason]}</p>
+          ) : (
+            <>
+              <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
+                {[
+                  [labels.previousNumber, attempt.previousNumber],
+                  [labels.number, attempt.number],
+                  [labels.evidence, attempt.evidence],
+                  [labels.fileName, attempt.fileName],
+                  [labels.parentDirectory, attempt.parentDirectory],
+                  [labels.model, attempt.model],
+                  [labels.elapsed, `${(attempt.elapsedMs / 1000).toFixed(1)}s`],
+                ].map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="min-w-0 break-words font-mono text-xs">{value || labels.none}</dd>
+                  </div>
+                ))}
+              </dl>
+              {attempt.error ? <p className="break-words text-sm text-destructive">{attempt.error}</p> : null}
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">{labels.rawResponse}</summary>
+                <pre className="mt-2 max-h-64 overflow-y-auto rounded-quiet bg-surface-low p-3 whitespace-pre-wrap break-words">
+                  {attempt.rawResponse ?? labels.noResponse}
+                </pre>
+              </details>
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">{labels.prompt}</summary>
+                <div className="mt-2 max-h-64 space-y-2 overflow-y-auto rounded-quiet bg-surface-low p-3">
+                  <p className="text-muted-foreground">{labels.systemPrompt}</p>
+                  <pre className="whitespace-pre-wrap break-words">{attempt.systemPrompt || labels.none}</pre>
+                  <p className="text-muted-foreground">{labels.userPrompt}</p>
+                  <pre className="whitespace-pre-wrap break-words">{attempt.prompt}</pre>
+                </div>
+              </details>
+            </>
+          )}
+        </>
+      )}
+    </Block>
   );
 }
 

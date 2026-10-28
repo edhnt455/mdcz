@@ -1181,6 +1181,7 @@ describe("buildServer scrape integration", () => {
     for (const [procedure, payload] of [
       ["pending.confirmUncensored", { id: "missing-item", choice: "uncensored" }],
       ["pending.retry", { id: "missing-item", number: "ABC-123" }],
+      ["pending.retryNumberRecognition", { id: "missing-item" }],
       ["pending.ignore", { id: "missing-item" }],
     ] as const) {
       const response = await fastify.inject({ method: "POST", url: `/trpc/${procedure}`, headers, payload });

@@ -8,6 +8,9 @@ import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
+import { NumberRecognitionService } from "@mdcz/runtime/scrape/NumberRecognitionService";
+import { LlmApiClient } from "@mdcz/runtime/scrape/translate/engines/LlmApiClient";
+import { LlmRequestService } from "@mdcz/runtime/scrape/translate/engines/LlmRequestService";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
 import { embyDeletionNotificationSchema } from "@mdcz/shared/embyDeletion";
@@ -223,6 +226,9 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       getConfiguration: async () => await config.get(),
       updateConfiguration: async (patch) => await config.update(patch),
       maintenanceRuntime,
+      recognitionService: new NumberRecognitionService(
+        new LlmRequestService(runtimeLogs.getLogger("NumberRecognition"), new LlmApiClient(networkClient)),
+      ),
       onChanged: () => taskEvents.invalidate("pending", "scrape-history"),
     });
   const services: ServerServices = {

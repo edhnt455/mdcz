@@ -1,10 +1,13 @@
 import { basename, dirname } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
+import { toErrorMessage } from "@mdcz/shared/error";
+import type { NumberRecognitionResult } from "@mdcz/shared/pending";
 import { z } from "zod";
-import { runWithNetworkChannel } from "../network";
+import { movieNumbersMatch } from "../crawler/base/identity";
+import { isUnrecoverableNetworkError, runWithNetworkChannel } from "../network";
 import { isMissingRequiredLlmApiKey } from "./translate/engines/LlmApiClient";
 import type { LlmRequestService } from "./translate/engines/LlmRequestService";
-import { throwIfAborted } from "./utils/abort";
+import { isAbortError, throwIfAborted } from "./utils/abort";
 
 const recognitionSchema = z.strictObject({
   number: z.string().trim().min(1).max(100).nullable(),
@@ -30,14 +33,9 @@ export class NumberRecognitionService {
     previousNumber: string,
     config: Configuration,
     signal?: AbortSignal,
-  ): Promise<string | null> {
+  ): Promise<NumberRecognitionResult> {
     throwIfAborted(signal);
-    if (
-      !config.translate.llmModelName.trim() ||
-      isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
-    ) {
-      throw new Error("AI movie code recognition requires a model and the endpoint's required API key");
-    }
+    const startedAt = Date.now();
     const source = { fileName: basename(filePath), parentDirectory: basename(dirname(filePath)) };
     const prompt = [
       config.translate.llmNumberRecognitionPrompt.trim(),
@@ -45,27 +43,56 @@ export class NumberRecognitionService {
       "evidence 必须逐字取自 fileName 或 parentDirectory。禁止解释、Markdown 和额外字段。",
       JSON.stringify({ ...source, previousNumber: previousNumber || null }),
     ].join("\n");
-    const content = await runWithNetworkChannel("number-recognition", () =>
-      this.requests.requestText(config.translate, prompt, signal, {
-        name: "movie_code_recognition",
-        schema: z.toJSONSchema(recognitionSchema),
-      }),
-    );
-    throwIfAborted(signal);
-    const parsed = recognitionSchema.parse(
-      JSON.parse(content?.replace(/^<think>[\s\S]*?<\/think>\s*/iu, "").trim() ?? ""),
-    );
-    if (parsed.number === null) return null;
-    const number = parsed.number.normalize("NFKC").toUpperCase();
-    const evidence = parsed.evidence?.normalize("NFKC").toUpperCase();
-    if (
-      !/^(?=.*\d)[A-Z0-9]+(?:[-_][A-Z0-9]+)*$/u.test(number) ||
-      !evidence ||
-      !Object.values(source).some((value) => value.normalize("NFKC").toUpperCase().includes(evidence)) ||
-      !normalizeEvidence(evidence).includes(normalizeEvidence(number))
-    ) {
-      throw new Error("AI movie code recognition returned a number without valid source evidence");
+    const result: NumberRecognitionResult = {
+      ...source,
+      status: "no_number",
+      previousNumber: previousNumber || null,
+      model: config.translate.llmModelName,
+      number: null,
+      evidence: null,
+      rawResponse: null,
+      error: null,
+      prompt,
+      systemPrompt: config.translate.llmSystemPrompt.trim(),
+      elapsedMs: 0,
+    };
+    try {
+      if (
+        !config.translate.llmModelName.trim() ||
+        isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
+      ) {
+        throw new Error("AI movie code recognition requires a model and the endpoint's required API key");
+      }
+      result.rawResponse = await runWithNetworkChannel("number-recognition", () =>
+        this.requests.requestText(config.translate, prompt, signal, {
+          name: "movie_code_recognition",
+          schema: z.toJSONSchema(recognitionSchema),
+        }),
+      );
+      throwIfAborted(signal);
+      const parsed = recognitionSchema.parse(
+        JSON.parse(result.rawResponse?.replace(/^<think>[\s\S]*?<\/think>\s*/iu, "").trim() ?? ""),
+      );
+      result.number = parsed.number?.normalize("NFKC").toUpperCase() ?? null;
+      result.evidence = parsed.evidence;
+      if (result.number !== null) {
+        const evidence = parsed.evidence?.normalize("NFKC").toUpperCase();
+        if (
+          !/^(?=.*\d)[A-Z0-9]+(?:[-_][A-Z0-9]+)*$/u.test(result.number) ||
+          !evidence ||
+          !Object.values(source).some((value) => value.normalize("NFKC").toUpperCase().includes(evidence)) ||
+          !normalizeEvidence(evidence).includes(normalizeEvidence(result.number))
+        ) {
+          throw new Error("AI movie code recognition returned a number without valid source evidence");
+        }
+        result.status = movieNumbersMatch(result.number, previousNumber) ? "unchanged" : "recognized";
+      }
+    } catch (error) {
+      if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
+      result.status = "failed";
+      result.error = toErrorMessage(error);
     }
-    return number;
+    result.elapsedMs = Date.now() - startedAt;
+    return result;
   }
 }

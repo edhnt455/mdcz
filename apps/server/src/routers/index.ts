@@ -289,6 +289,9 @@ export const appRouter = t.router({
     retry: protectedProcedure
       .input(pendingRetryInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.pending.retry(input)),
+    retryNumberRecognition: protectedProcedure
+      .input(pendingIdInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.retryNumberRecognition(input.id)),
     confirmUncensored: protectedProcedure
       .input(pendingConfirmUncensoredInputSchema)
       .mutation(async ({ ctx, input }) => {
