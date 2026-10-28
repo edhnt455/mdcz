@@ -191,7 +191,7 @@ const buildFieldAction = (
   field: BatchTranslateField,
   sourceValue: string | undefined,
   currentValue: string | undefined,
-  target: LanguageTarget,
+  translate: Configuration["translate"],
   mode: BatchTranslateMode,
   failed = false,
 ): BatchTranslationAction | undefined => {
@@ -201,8 +201,15 @@ const buildFieldAction = (
   const current = translated || source;
   if (!current) return undefined;
 
+  if (mode === "untranslated" && !failed) {
+    const japaneseRuns = current.normalize("NFKC").match(/[\p{Script=Hiragana}\p{Script=Katakana}ー]+/gu);
+    if (!japaneseRuns?.some((run) => Array.from(run).length >= translate.untranslatedJapaneseRunLength))
+      return undefined;
+  }
+
+  const target = toTarget(translate.targetLanguage);
   const text = mode === "all" ? source || current : current;
-  if (!failed && detectLanguage(text) === "zh") {
+  if (mode === "all" && !failed && detectLanguage(text) === "zh") {
     const value = ensureTargetChinese(text, target);
     return value === current ? undefined : { field, kind: "convert", value };
   }
@@ -217,7 +224,7 @@ const buildFieldAction = (
 
 const toScanItem = (
   entry: LocalScanEntry,
-  target: LanguageTarget,
+  translate: Configuration["translate"],
   mode: BatchTranslateMode,
 ): BatchTranslateScanItem | null => {
   if (!entry.nfoPath || !entry.crawlerData) return null;
@@ -237,8 +244,9 @@ const toScanItem = (
             field,
             entry.crawlerData[field],
             entry.crawlerData[field === "title" ? "title_zh" : "plot_zh"],
-            target,
+            translate,
             mode,
+            Boolean(failures?.[field]),
           );
     if ((mode !== "restore" && failures?.[field]) || action) pendingFields.push(field);
   }
@@ -339,10 +347,9 @@ export const scanBatchNfoTranslations = async (
     throw new Error("Batch NFO translation scan requires a localScanService dependency");
   }
 
-  const target = toTarget(config.translate.targetLanguage);
   const entries = await dependencies.localScanService.scan(resolve(directory.trim()), config.paths.sceneImagesFolder);
   return entries
-    .map((entry) => toScanItem(entry, target, mode))
+    .map((entry) => toScanItem(entry, config.translate, mode))
     .filter((item): item is BatchTranslateScanItem => item !== null)
     .sort((left, right) => left.nfoPath.localeCompare(right.nfoPath, "zh-CN"));
 };
@@ -402,7 +409,7 @@ export const applyBatchNfoTranslations = async (
         field,
         entry.crawlerData[field],
         entry.crawlerData[field === "title" ? "title_zh" : "plot_zh"],
-        target,
+        config.translate,
         options.mode,
         Boolean(entry.crawlerData.translation_failures?.[field]),
       );
@@ -418,7 +425,7 @@ export const applyBatchNfoTranslations = async (
       )
     ) {
       for (const [genreIndex, genre] of entry.crawlerData.genres.entries()) {
-        const action = buildFieldAction("genres", genre, undefined, target, options.mode, true);
+        const action = buildFieldAction("genres", genre, undefined, config.translate, options.mode, true);
         if (action?.kind === "translate") actions.push({ ...action, genreIndex });
       }
     }

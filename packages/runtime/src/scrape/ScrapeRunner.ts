@@ -383,6 +383,7 @@ export class ScrapeRunner {
           fileName: item.fileName,
           status: item.status,
           error: item.error,
+          ...(item.conflict ? { conflict: item.conflict } : {}),
           crawlerData: item.crawlerData,
           nfoRootId: item.nfoRootId,
           nfoRelativePath: item.nfoRelativePath,
@@ -434,6 +435,7 @@ export class ScrapeRunner {
           status:
             snapshotItem.status === "pending" || snapshotItem.status === "processing" ? "failed" : snapshotItem.status,
           error: snapshotItem.error,
+          ...(snapshotItem.conflict ? { conflict: snapshotItem.conflict } : {}),
           crawlerData: snapshotItem.crawlerData,
           nfoRootId: snapshotItem.nfoRootId,
           nfoRelativePath: snapshotItem.nfoRelativePath,

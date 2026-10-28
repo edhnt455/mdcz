@@ -150,6 +150,15 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
+  previewConflict: (input) => api.scrape.conflictPreview(input),
+  resolveConflict: async (input) => {
+    const result = await api.scrape.conflictResolve(input);
+    if (result.runId) {
+      const snapshot = await api.scrape.snapshot({ taskId: result.runId });
+      useScrapeStore.getState().setSnapshot(snapshot);
+      requestScrapeLiveRunsRefresh();
+    }
+  },
   resolveImageCandidates: async (candidates, baseDir, item) =>
     dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
   readNfo: async (item, path) => {

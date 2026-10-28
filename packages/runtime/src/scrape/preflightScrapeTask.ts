@@ -14,6 +14,7 @@ export interface ScrapeTargetGroup {
 }
 
 export interface ScrapeTargetConflict {
+  existingMovie?: boolean;
   itemId: string;
   sourcePath: string;
   targetPath: string;
@@ -36,6 +37,7 @@ const addConflict = (
   member: ScrapeTargetMember,
   targetPath: string,
   message: string,
+  existingMovie = false,
 ): void => {
   if (conflicts.has(member.itemId)) return;
   conflicts.set(member.itemId, {
@@ -43,6 +45,7 @@ const addConflict = (
     sourcePath: member.sourcePath,
     targetPath,
     message,
+    ...(existingMovie ? { existingMovie } : {}),
   });
 };
 
@@ -116,7 +119,13 @@ export async function checkScrapeTargets(
       if (!matches) continue;
       for (const { member } of matches) {
         if (sources.get(member.itemId) === filesystemPathKey(targetPath)) continue;
-        addConflict(conflicts, member, targetPath, "Target directory already contains a movie with the same name");
+        addConflict(
+          conflicts,
+          member,
+          targetPath,
+          "Target directory already contains a movie with the same name",
+          true,
+        );
       }
     }
   }

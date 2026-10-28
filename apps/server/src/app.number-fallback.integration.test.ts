@@ -33,9 +33,9 @@ it.each([
   const source = join(root, "ABC-123");
   await mkdir(source);
   const original =
-    scenario === "missing" || scenario === "unknown" ? "recording" : scenario === "miss" ? "IPZZ-802D" : "ZZZ-999";
-  const recoveredNumber = scenario === "miss" ? "IPZZ-802" : "ABC-123";
-  const fileName = scenario === "miss" ? "www.98T.la@IPZZ-802DIGITALCHANNELDC144_restored.strm" : `${original}.mp4`;
+    scenario === "missing" || scenario === "unknown" ? "recording" : scenario === "miss" ? "049-PROB" : "ZZZ-999";
+  const recoveredNumber = scenario === "miss" ? "MIDV-049" : "ABC-123";
+  const fileName = scenario === "miss" ? "www.98T.la@1midv049.restored_prob4.strm" : `${original}.mp4`;
   await writeFile(join(source, fileName), "video");
   const inner = createTestAggregation("https://unused.test/cover.jpg");
   const aggregate = vi.fn(async (number: string) => {
@@ -48,7 +48,14 @@ it.each([
       ? "not JSON"
       : JSON.stringify({
           number: scenario === "unknown" ? null : scenario === "unchanged" ? "ZZZ-999" : recoveredNumber,
-          evidence: scenario === "unknown" ? null : scenario === "unchanged" ? "ZZZ-999" : recoveredNumber,
+          evidence:
+            scenario === "unknown"
+              ? null
+              : scenario === "unchanged"
+                ? "ZZZ-999"
+                : scenario === "miss"
+                  ? "1midv049"
+                  : recoveredNumber,
         });
   const recognize = vi.spyOn(LlmRequestService.prototype, "requestText").mockImplementation(async () => {
     if (scenario === "request_failed") throw new Error("AI service unavailable");
@@ -77,7 +84,7 @@ it.each([
       aiNumberFallback: scenario !== "disabled",
       sites: [Website.JAVDB],
       restDuration: 0,
-      filenameIgnoreTokens: ["www.98T.la@"],
+      filenameIgnoreTokens: ["www.98T.la@", "restored"],
     },
     translate: { enableTranslation: false, engine: TranslateEngine.GOOGLE, llmApiKey: "test-key" },
     download: {
@@ -157,7 +164,7 @@ it.each([
   if (getText) {
     const prompt = recognize.mock.calls[0]?.[1];
     expect(prompt).toContain(defaultConfiguration.translate.llmNumberRecognitionPrompt);
-    expect(prompt).toContain('"previousNumber":"IPZZ-802D"');
+    expect(prompt).toContain('"previousNumber":"049-PROB"');
     expect(getText.mock.calls.map(([url]) => new URL(url).pathname + new URL(url).search)).toEqual([
       `/search?q=${original}`,
       `/search?q=${recoveredNumber}`,

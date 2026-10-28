@@ -504,6 +504,7 @@ export function TranslateSection() {
         </>
       )}
       <EnumField name="translate.targetLanguage" options={LANGUAGE_OPTIONS} />
+      <NumberField name="translate.untranslatedJapaneseRunLength" min={1} />
     </>
   );
 }

@@ -188,7 +188,7 @@ export const tools = {
   ignoreTranslationHelp: "Accept the current text as complete to skip it in untranslated-only scans.",
   batchTranslateModeHelp: {
     untranslated:
-      "Retry fields with recorded translation failures; otherwise detect titles and plots that may need translation.",
+      "Retry fields with recorded failures; otherwise use the consecutive Japanese character threshold in settings to detect untranslated titles and plots.",
     all: "Use after switching translation models; existing translations are replaced.",
     restore:
       "Remove translations so titles and plots show the source text. With translation on, the next refresh translates again.",

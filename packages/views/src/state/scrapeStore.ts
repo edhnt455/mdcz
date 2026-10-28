@@ -110,11 +110,16 @@ export const selectScrapeResults = (state: ScrapeState): ScrapeResult[] => {
   const cached = scrapeResultsBySnapshot.get(snapshot);
   if (cached) return cached;
 
-  const items = new Map<string, ScrapeLiveItemDto>();
+  const items = new Map<string, ScrapeResult>();
   for (const run of [...state.ancestors, snapshot]) {
-    for (const item of run.items) items.set(`${item.rootId}\0${item.relativePath}`, item);
+    for (const item of run.items)
+      items.set(`${item.rootId}\0${item.relativePath}`, {
+        ...liveItemToScrapeResult(item),
+        taskId: run.task.id,
+        ...(item.conflict ? { conflict: item.conflict } : {}),
+      });
   }
-  const results = [...items.values()].map(liveItemToScrapeResult);
+  const results = [...items.values()];
   scrapeResultsBySnapshot.set(snapshot, results);
   return results;
 };

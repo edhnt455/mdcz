@@ -28,11 +28,13 @@ describe("RuntimeConfigProfileStore", () => {
       ...defaultConfiguration,
       network: { ...defaultConfiguration.network, timeout: 22 },
       download: { ...defaultConfiguration.download, nfoIgnoreFields: ["plot", "director"] },
+      translate: { ...defaultConfiguration.translate, untranslatedJapaneseRunLength: 7 },
     });
 
     const reloaded = await new RuntimeConfigProfileStore({ configDir }).load();
     expect(reloaded.network.timeout).toBe(22);
     expect(reloaded.download.nfoIgnoreFields).toEqual(["plot", "director"]);
+    expect(reloaded.translate.untranslatedJapaneseRunLength).toBe(7);
   });
 
   it("serializes profile changes and keeps library settings with their profile", async () => {

@@ -500,6 +500,12 @@ const fields: Record<FieldKey, FieldText> = {
   "translate.llmMaxRetries": { label: "LLM max retries" },
   "translate.llmMaxRequestsPerSecond": { label: "LLM max requests per second" },
   "translate.targetLanguage": { label: "Target language", aliases: ["language", "locale"] },
+  "translate.untranslatedJapaneseRunLength": {
+    label: "Consecutive Japanese characters for untranslated detection",
+    description:
+      "Untranslated-only NFO scans require this many consecutive hiragana or katakana characters, including half-width kana and long vowel marks (default: 5). Kanji, spaces and punctuation break the run. Recorded failures are always retried; English and Chinese script conversion alone do not qualify.",
+    aliases: ["untranslated", "Japanese", "kana", "threshold", "batch translation"],
+  },
   "personSync.personOverviewSources": { label: "Person overview source order" },
   "personSync.personImageSources": { label: "Person photo source order" },
   "jellyfin.url": { label: "Jellyfin server URL", aliases: ["media server", "jellyfin", "server"] },

@@ -23,7 +23,7 @@ const normalizeEvidence = (value: string): string =>
     .replace(/^CARIBBEANCOM/u, "CARIB")
     .replace(/^1PONDO/u, "1PON")
     .replace(/^10MUSUME/u, "10MU")
-    .replace(/^([A-Z]+)0+(?=\d)/u, "$1");
+    .replace(/([A-Z]+)0+(?=\d)/gu, "$1");
 
 export class NumberRecognitionService {
   constructor(private readonly requests: LlmRequestService) {}

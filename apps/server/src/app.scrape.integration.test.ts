@@ -434,6 +434,10 @@ describe("buildServer scrape integration", () => {
     expect((await services.scrape.history({ taskId })).runs).toHaveLength(1);
     expect(await state.repositories.library.getEntryById(entry.id)).toEqual(entry);
     for (const number of ["ABF-981", "XYZ-222"]) {
+      expect(terminal.items.find((item) => item.relativePath === `${number}.${extension}`)?.conflict).toEqual({
+        sourcePath: join(root, `${number}.${extension}`),
+        targetPath: await realpath(join(root, `JAV_output/fixed/${number}/${number}.${extension}`)),
+      });
       expect(terminal.items.find((item) => item.relativePath === `${number}.${extension}`)?.error).toBe(
         `Target directory already contains a movie with the same name\nPending: ${join(root, `${number}.${extension}`)}\nTarget path: ${await realpath(join(root, `JAV_output/fixed/${number}/${number}.${extension}`))}`,
       );

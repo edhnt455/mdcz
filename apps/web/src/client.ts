@@ -285,6 +285,8 @@ export const api: ServerApiContract = {
     start: (input) => trpcMutation("scans.start", input),
   },
   scrape: {
+    conflictPreview: (input) => trpcQuery("scrape.conflictPreview", input),
+    conflictResolve: (input) => trpcMutation("scrape.conflictResolve", input),
     liveRuns: () => trpcQuery("scrape.liveRuns"),
     snapshot: (input) => trpcQuery("scrape.snapshot", input),
     removeRecord: (input) => trpcMutation("scrape.removeRecord", input),

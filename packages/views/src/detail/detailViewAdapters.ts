@@ -147,6 +147,7 @@ export const toDetailViewItemFromScrapeResult = (result: ScrapeResult): DetailVi
   const fileRef: RootFileRef = result.output ?? { rootId: result.rootId, relativePath: result.relativePath };
   return {
     resultId: result.resultId,
+    ...(result.conflict && result.taskId ? { scrapeConflict: { taskId: result.taskId, itemId: result.fileId } } : {}),
     id: result.fileId,
     status: toDetailStatus(result.status),
     number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),
@@ -175,6 +176,7 @@ export const toDetailViewItemFromScrapeResultDto = (result: ScrapeResultDto): De
     : undefined;
   return {
     resultId: result.id,
+    ...(result.conflict ? { scrapeConflict: { taskId: result.taskId, itemId: result.id } } : {}),
     id: `${result.rootId}:${result.relativePath}`,
     status: toDetailStatus(result.status),
     number: result.crawlerData?.number ?? result.fileName.replace(/\.[^.]+$/u, ""),

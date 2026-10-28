@@ -30,6 +30,7 @@ const liveItemToDto = (manifest: ScrapeSnapshotManifest, item: ScrapeRunItemSnap
     fileName: path.posix.basename(item.relativePath),
     status: item.status,
     error: item.error,
+    ...(result?.conflict ? { conflict: result.conflict } : {}),
     crawlerData: result?.crawlerData ?? null,
     nfoRootId: result?.nfo?.rootId ?? null,
     nfoRelativePath: result?.nfo?.relativePath ?? null,

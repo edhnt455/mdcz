@@ -13,6 +13,23 @@ import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 import { mediaLibraryConfigSchema } from "./mediaLibrary";
 
 describe("configuration codec", () => {
+  it("defaults, validates, and round-trips the untranslated Japanese character threshold", () => {
+    expect(configurationSchema.parse({}).translate.untranslatedJapaneseRunLength).toBe(5);
+    for (const threshold of [1, 5, 12]) {
+      const configuration = configurationSchema.parse({ translate: { untranslatedJapaneseRunLength: threshold } });
+      for (const format of ["toml", "json"] as const) {
+        expect(
+          parseConfigurationContent(serializeConfiguration(configuration, format), format).translate
+            .untranslatedJapaneseRunLength,
+        ).toBe(threshold);
+      }
+    }
+    for (const threshold of [0, -1, 1.5, "5", null, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(configurationSchema.safeParse({ translate: { untranslatedJapaneseRunLength: threshold } }).success).toBe(
+        false,
+      );
+    }
+  });
   it("validates and round-trips the optional daily Emby photo check time", () => {
     expect(defaultConfiguration.emby.actorPhotoDailySyncTime).toBe("");
     for (const time of ["", "00:00", "03:00", "23:59"]) {

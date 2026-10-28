@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from "@mdcz/ui";
 import { Crop, FileText, GitCompareArrows, ImageIcon, MousePointerClick, Star, X } from "lucide-react";
-import { type Dispatch, type SetStateAction, useState } from "react";
+import { type Dispatch, type ReactNode, type SetStateAction, useState } from "react";
 import type { PosterCropEditSession } from "../adapters/ports";
 import { NaturalAspectImageFrame } from "../common";
 import { useT } from "../i18n";
@@ -48,6 +48,7 @@ export interface DetailPanelNfoState {
 }
 
 export interface DetailPanelViewProps {
+  conflictAction?: ReactNode;
   item?: DetailViewItem | null;
   emptyMessage?: string;
   compare?: DetailPanelCompareProps;
@@ -151,6 +152,7 @@ export function DetailPanelView({
   onTrailerError,
   resolveImageCandidates,
   posterEditor,
+  conflictAction,
 }: DetailPanelViewProps) {
   const t = useT();
   const [thumbPreviewOpen, setThumbPreviewOpen] = useState(false);
@@ -242,6 +244,7 @@ export function DetailPanelView({
       <div className="flex h-full min-h-0 flex-col overflow-hidden bg-gradient-to-b from-surface-canvas via-surface-canvas to-surface-low/30">
         <ScrollArea className="min-h-0 flex-1">
           <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-6 px-5 py-5 pb-24 md:px-6 md:py-6 md:pb-28 lg:px-8 xl:px-12">
+            {conflictAction}
             {item.minimalErrorView ? (
               <>
                 <div className="space-y-3">

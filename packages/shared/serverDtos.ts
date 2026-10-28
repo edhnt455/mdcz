@@ -10,6 +10,7 @@ import {
 } from "./llm";
 import { assetRefSchema, type RootFileRef, rootFileRefSchema } from "./mediaRef";
 import { normalizedCropRegionSchema } from "./posterCrop";
+import { scrapeTargetConflictSchema } from "./scrapeConflict";
 import { FAILURE_REASONS, siteHealthSchema } from "./siteResults";
 import type { MediaCandidate } from "./types";
 
@@ -372,6 +373,7 @@ export const taskEventListResponseSchema = z.object({
 export type TaskEventListResponse = z.infer<typeof taskEventListResponseSchema>;
 
 export const scrapeResultSchema = z.object({
+  conflict: scrapeTargetConflictSchema.optional(),
   id: z.string(),
   taskId: z.string(),
   rootId: z.string(),
@@ -413,6 +415,7 @@ export const scrapeRunStageSchema = z.enum([
 export type ScrapeRunStage = z.infer<typeof scrapeRunStageSchema>;
 
 export const scrapeLiveItemSchema = z.object({
+  conflict: scrapeTargetConflictSchema.optional(),
   id: z.string(),
   resultId: z.string().nullable(),
   rootId: z.string(),

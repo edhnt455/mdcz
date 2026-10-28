@@ -253,6 +253,7 @@ const translateSchema = z.object({
   llmMaxRetries: z.number().int().min(1).max(20).default(3),
   llmMaxRequestsPerSecond: z.number().int().min(1).max(100).default(1),
   targetLanguage: translationTargetSchema,
+  untranslatedJapaneseRunLength: z.number().int().min(1).default(5),
 });
 
 const downloadSchema = z.object({

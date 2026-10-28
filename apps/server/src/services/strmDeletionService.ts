@@ -310,7 +310,7 @@ export class StrmDeletionService {
     throw new Error("Unsupported STRM deletion step");
   }
 
-  private async removeSource(
+  async removeSource(
     eventId: string,
     library: EmbyDeletionLibraryBinding,
     snapshot: StrmCloudBinding,
@@ -354,7 +354,7 @@ export class StrmDeletionService {
     return true;
   }
 
-  private async assertSource(
+  async assertSource(
     library: EmbyDeletionLibraryBinding,
     snapshot: StrmCloudBinding,
     allowMissing: boolean,

@@ -266,47 +266,54 @@ describe("AI movie code fallback", () => {
     expect(aggregate).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    ["ABC-123", "ABC-123", true],
-    ["ABC-123", "abc00123", true],
-    ["FC2-1234567", "FC2 PPV 1234567", true],
-    ["XYZ-789", "ABC-123", false],
-    ["ABC-123", "invented evidence", false],
-    ["../../ABC-123", "ABC-123", false],
-    [null, null, true],
-  ])("accepts only source-grounded structured model output (%s / %s)", async (number, evidence, valid) => {
-    const generateText = vi.fn<LlmApiClient["generateText"]>(async () => JSON.stringify({ number, evidence }));
-    const requests = new LlmRequestService(logger, { generateText } as unknown as LlmApiClient);
-    const service = new NumberRecognitionService(requests);
-    const result = service.recognize(
-      `/private/absolute/path/ABC-123/${evidence === "invented evidence" ? "recording" : (evidence ?? "recording")}.mp4`,
-      "",
-      {
-        ...config,
-        translate: {
-          ...config.translate,
-          llmSystemPrompt: "Shared context",
-          llmNumberRecognitionPrompt: "Custom number extraction instructions",
+  it("accepts only source-grounded structured model output", async () => {
+    for (const [number, evidence, valid] of [
+      ["ABC-123", "ABC-123", true],
+      ["ABC-123", "abc00123", true],
+      ["MIDV-049", "1midv049", true],
+      ["MIDV-049", "1midv00049", true],
+      ["MIDV-049", "www.98T.la@1midv049.restored_prob4", true],
+      ["MIDV-049", "1midv048", false],
+      ["IPZZ-802", "IPZZ-802DIGITALCHANNELDC144", true],
+      ["FC2-1234567", "FC2 PPV 1234567", true],
+      ["XYZ-789", "ABC-123", false],
+      ["ABC-123", "invented evidence", false],
+      ["../../ABC-123", "ABC-123", false],
+      [null, null, true],
+    ] as const) {
+      const generateText = vi.fn<LlmApiClient["generateText"]>(async () => JSON.stringify({ number, evidence }));
+      const requests = new LlmRequestService(logger, { generateText } as unknown as LlmApiClient);
+      const service = new NumberRecognitionService(requests);
+      const result = service.recognize(
+        `/private/absolute/path/ABC-123/${evidence === "invented evidence" ? "recording" : (evidence ?? "recording")}.mp4`,
+        "",
+        {
+          ...config,
+          translate: {
+            ...config.translate,
+            llmSystemPrompt: "Shared context",
+            llmNumberRecognitionPrompt: "Custom number extraction instructions",
+          },
         },
-      },
-    );
-    await expect(result).resolves.toMatchObject({
-      status: valid ? (number === null ? "no_number" : "recognized") : "failed",
-      number: typeof number === "string" ? number.toUpperCase() : null,
-      evidence,
-      rawResponse: JSON.stringify({ number, evidence }),
-      previousNumber: null,
-      parentDirectory: "ABC-123",
-      systemPrompt: "Shared context",
-      error: valid ? null : expect.stringContaining("valid source evidence"),
-    });
-    const request = generateText.mock.calls[0]?.[0];
-    expect(request.systemPrompt).toBe("Shared context");
-    expect(request.model).toBe(config.translate.llmModelName);
-    expect(request.prompt).toContain("Custom number extraction instructions");
-    expect(request.prompt).toContain('"evidence"');
-    expect(request.prompt).not.toContain("/private/absolute/path");
-    expect(request.prompt).not.toContain(defaultConfiguration.translate.llmPrompt);
+      );
+      await expect(result).resolves.toMatchObject({
+        status: valid ? (number === null ? "no_number" : "recognized") : "failed",
+        number: typeof number === "string" ? number.toUpperCase() : null,
+        evidence,
+        rawResponse: JSON.stringify({ number, evidence }),
+        previousNumber: null,
+        parentDirectory: "ABC-123",
+        systemPrompt: "Shared context",
+        error: valid ? null : expect.stringContaining("valid source evidence"),
+      });
+      const request = generateText.mock.calls[0]?.[0];
+      expect(request.systemPrompt).toBe("Shared context");
+      expect(request.model).toBe(config.translate.llmModelName);
+      expect(request.prompt).toContain("Custom number extraction instructions");
+      expect(request.prompt).toContain('"evidence"');
+      expect(request.prompt).not.toContain("/private/absolute/path");
+      expect(request.prompt).not.toContain(defaultConfiguration.translate.llmPrompt);
+    }
   });
 
   it("records request and decoding failures while propagating cancellation", async () => {

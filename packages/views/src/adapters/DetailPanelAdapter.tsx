@@ -19,6 +19,7 @@ import {
   serializeEditableNfoData,
   validateEditableNfoData,
 } from "../nfo";
+import { ScrapeConflictDialog } from "../scrape/ScrapeConflictDialog";
 import type { DetailActionPort, PosterCropEditSession } from "./ports";
 
 const EMPTY_RESULTS: ReturnType<typeof selectScrapeResults> = [];
@@ -284,6 +285,15 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
 
   return (
     <DetailPanelView
+      conflictAction={
+        item?.scrapeConflict ? (
+          <ScrapeConflictDialog
+            key={`${item.scrapeConflict.taskId}:${item.scrapeConflict.itemId}`}
+            input={item.scrapeConflict}
+            port={port}
+          />
+        ) : undefined
+      }
       item={item}
       emptyMessage={emptyMessage ?? t.scrape.emptyMessage}
       compare={compare}

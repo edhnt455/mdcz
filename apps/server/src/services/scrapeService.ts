@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
+import { ScrapeConflictRepository } from "@mdcz/persistence";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { MediaLibraryService } from "@mdcz/runtime/library";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
@@ -44,8 +45,10 @@ import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 import { decorateTaskLog } from "./runtimeLogService";
 import { ServerNfoAdapter, ServerPosterCropAdapter, type ServerScrapeArtifactRecord } from "./scrapeAdapters";
+import { ScrapeConflictService } from "./scrapeConflictService";
 
 export interface ScrapeServiceResources {
+  isMaintenanceBusy?: () => boolean;
   libraries: Pick<MediaLibraryService, "get">;
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
@@ -57,6 +60,7 @@ export interface ScrapeServiceResources {
 }
 
 export class ScrapeService {
+  readonly conflicts: ScrapeConflictService;
   /** Set by the automation service so new pending entries reach the next notification. */
   onPending?: (count: number) => void;
   private readonly nfoAdapter: ServerNfoAdapter;
@@ -91,6 +95,15 @@ export class ScrapeService {
     this.mappingStore = resources.mappingStore;
     this.aggregationService = resources.aggregationService;
     this.prepareScrapeItem = resources.prepareScrapeItem;
+    this.conflicts = new ScrapeConflictService({
+      persistence,
+      config,
+      libraries: this.libraries,
+      snapshot: async (input) => this.snapshot({ taskId: input.taskId }),
+      retry: async (input) => this.retry({ taskId: input.taskId, itemIds: [input.itemId] }),
+      isBusy: () => this.closed || (resources.isMaintenanceBusy?.() ?? false),
+      invalidate: () => this.taskEvents.invalidate("library", "pending", "scrape-history"),
+    });
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, new NfoGenerator(), this.persistence);
     this.posterCropAdapter = new ServerPosterCropAdapter(
       this.mediaRoots,
@@ -254,10 +267,26 @@ export class ScrapeService {
   async snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto> {
     const snapshot = await (await this.runner()).getSnapshot(input.taskId);
     if (!snapshot) throw new Error(`Scrape task not found: ${input.taskId}`);
-    return snapshot;
+    return this.conflicts.restore(snapshot);
   }
 
   async result(id: string): Promise<ScrapeResultDetailResponse> {
+    const state = await this.persistence.getState();
+    const job = new ScrapeConflictRepository(state.database).get(id);
+    if (job) {
+      const snapshot = await this.snapshot({ taskId: job.taskId });
+      const item = snapshot.items.find((candidate) => candidate.id === id);
+      if (!item) throw new Error("Duplicate resolution item is unavailable");
+      return {
+        result: {
+          ...item,
+          taskId: snapshot.task.id,
+          rootDisplayName: snapshot.task.rootDisplayName,
+          createdAt: snapshot.task.createdAt,
+          updatedAt: snapshot.task.updatedAt,
+        },
+      };
+    }
     return await (await this.runner()).result(id);
   }
 

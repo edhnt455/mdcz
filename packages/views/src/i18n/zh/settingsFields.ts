@@ -395,6 +395,12 @@ export const settingsFields: Messages["settingsFields"] = {
     "translate.llmMaxRetries": { label: "LLM 最大重试次数" },
     "translate.llmMaxRequestsPerSecond": { label: "LLM 每秒最大请求数" },
     "translate.targetLanguage": { label: "目标语言", aliases: ["语言"] },
+    "translate.untranslatedJapaneseRunLength": {
+      label: "未翻译判定连续日文字符数",
+      description:
+        "批量 NFO「仅未翻译」扫描：标题或简介连续达到此数量的平假名、片假名才判定需翻译，默认 5，含半角假名和长音符。汉字、空格和标点会中断计数；有失败记录的字段始终可补译，纯英文或仅需简繁转换不命中。",
+      aliases: ["未翻译", "日文", "假名", "阈值", "批量翻译"],
+    },
     "personSync.personOverviewSources": { label: "人物简介来源顺序" },
     "personSync.personImageSources": { label: "人物头像来源顺序" },
     "jellyfin.url": { label: "Jellyfin 服务器地址" },

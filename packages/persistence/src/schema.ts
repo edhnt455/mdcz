@@ -321,7 +321,21 @@ export const strmCloudBindings = sqliteTable(
   (table) => [index("strm_cloud_bindings_source_idx").on(table.sourcePath)],
 );
 
+export const scrapeConflictResolutions = sqliteTable("scrape_conflict_resolutions", {
+  itemId: text("item_id").primaryKey(),
+  taskId: text("task_id").notNull(),
+  snapshotJson: text("snapshot_json").notNull(),
+  token: text("token").notNull(),
+  keep: text("keep").$type<"existing" | "incoming">(),
+  step: text("step")
+    .$type<"validating" | "deleting_cloud" | "verifying_cloud" | "cleaning_local" | "retrying" | "completed">()
+    .notNull()
+    .default("validating"),
+  retryRunId: text("retry_run_id"),
+});
+
 export const schema = {
+  scrapeConflictResolutions,
   strmCloudBindings,
   embyDeletionEvents,
   mediaRoots,

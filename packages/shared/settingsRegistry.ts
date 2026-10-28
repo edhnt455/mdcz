@@ -167,6 +167,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "translate.llmMaxRetries", anchor: "translate" },
   { key: "translate.llmMaxRequestsPerSecond", anchor: "translate" },
   { key: "translate.targetLanguage", anchor: "translate" },
+  { key: "translate.untranslatedJapaneseRunLength", anchor: "translate" },
   { key: "personSync.personOverviewSources", anchor: "mediaServer" },
   { key: "personSync.personImageSources", anchor: "mediaServer" },
   { key: "jellyfin.url", anchor: "mediaServer" },

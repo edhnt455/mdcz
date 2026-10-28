@@ -1,6 +1,23 @@
 import type { Messages } from "../en";
 
 export const scrape: Messages["scrape"] = {
+  conflict: {
+    open: "处理重复",
+    title: "选择要保留的版本",
+    description: "比较 115 源视频的实际大小后，选择要保留的版本。另一个版本将被删除。",
+    keepExisting: "保留已入库版本",
+    keepIncoming: "保留本次新版本",
+    cloud: "115 源视频",
+    loading: "正在核验双方的 115 源文件…",
+    deleting: "正在删除所选淘汰版本并核验结果…",
+    sameResource: "两个 STRM 指向同一个 115 视频，将保留云端视频，只清理多余的本地 STRM。",
+    willDelete: "将删除以下版本：",
+    deleteIncoming: "删除它对应的 Normal STRM，保留现有 Link STRM。",
+    deleteExisting: "删除它对应的 Normal 和 Link STRM，再重试本次新版本的刮削。",
+    deleteCloud: "同时删除此版本在 115 上的源视频。",
+    confirm: "删除另一版本并继续",
+    completed: "重复已处理。",
+  },
   stages: {
     discovering: "扫描视频文件",
     prepare: "抓取元数据",

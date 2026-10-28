@@ -181,6 +181,14 @@ test("settings categories preserve fields and search across sections", async () 
   await expect
     .poll(() => baseSettingsServices.saveConfig.mock.calls)
     .toContainEqual([{ emby: { actorPhotoDailySyncTime: "" } }]);
+  await search.fill("未翻译判定连续日文字符数");
+  const japaneseThreshold = screen.getByRole("spinbutton", { name: "未翻译判定连续日文字符数", exact: true });
+  await expect.element(japaneseThreshold).toHaveValue(5);
+  await japaneseThreshold.fill("7");
+  await search.click();
+  await expect
+    .poll(() => baseSettingsServices.saveConfig.mock.calls)
+    .toContainEqual([{ translate: { untranslatedJapaneseRunLength: 7 } }]);
   await search.fill("no-matching-mdcz-option");
   await expect.element(screen.getByText("没有匹配的设置")).toBeVisible();
   await screen.getByRole("button", { name: "清空搜索" }).click();

@@ -5,6 +5,11 @@ import type {
 } from "@mdcz/shared/maintenanceTasks";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
+import type {
+  ScrapeConflictInput,
+  ScrapeConflictPreview,
+  ScrapeConflictResolveInput,
+} from "@mdcz/shared/scrapeConflict";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
 import type { DetailViewItem } from "../detail";
@@ -15,6 +20,8 @@ export interface DetailNfoReadResponse {
 }
 
 export interface DetailActionPort {
+  previewConflict?(input: ScrapeConflictInput): Promise<ScrapeConflictPreview>;
+  resolveConflict?(input: ScrapeConflictResolveInput): Promise<void>;
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;

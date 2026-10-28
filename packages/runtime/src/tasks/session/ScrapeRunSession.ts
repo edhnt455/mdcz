@@ -490,7 +490,16 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
                 : [];
             const message = conflicts.length ? new ScrapeTargetConflictError(conflicts).message : toErrorMessage(error);
             this.error = [this.error, message].filter(Boolean).join("\n\n");
-            group.preparation = { status: "failed", result: createFailedResult(group.members[0], message) };
+            const conflict = conflicts.length === 1 && group.members.length === 1 ? conflicts[0] : undefined;
+            group.preparation = {
+              status: "failed",
+              result: {
+                ...createFailedResult(group.members[0], message),
+                ...(conflict?.existingMovie
+                  ? { conflict: { sourcePath: conflict.sourcePath, targetPath: conflict.targetPath } }
+                  : {}),
+              },
+            };
           } finally {
             releaseCheck();
           }

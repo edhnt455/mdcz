@@ -190,12 +190,9 @@ describe("BatchNfoTranslator", () => {
 
     expect(localScanService.scan).toHaveBeenCalledWith(scanRoot, config.paths.sceneImagesFolder);
     expect(untranslated).toEqual<BatchTranslateScanItem[]>([
-      expect.objectContaining({ number: "AAA-001", pendingFields: ["title", "plot"] }),
       expect.objectContaining({ number: "CCC-003", pendingFields: ["title", "genres"], reason: "task_failed" }),
     ]);
-    expect(untranslated[0]).toMatchObject({ reason: "content", title: "Same English Title", plot: "English plot" });
     expect(all.find((item) => item.number === "BBB-002")).toMatchObject({ title: "中文标题", plot: "中文简介" });
-    // A Chinese source needs no translation in either mode; a translated Japanese title is retranslated.
     expect(all).toEqual<BatchTranslateScanItem[]>([
       expect.objectContaining({ number: "AAA-001", pendingFields: ["title", "plot"] }),
       expect.objectContaining({ number: "BBB-002", pendingFields: ["title"] }),
@@ -204,6 +201,79 @@ describe("BatchNfoTranslator", () => {
     expect(restore).toEqual<BatchTranslateScanItem[]>([
       expect.objectContaining({ number: "BBB-002", pendingFields: ["title"] }),
     ]);
+  });
+
+  it("uses the configured consecutive kana threshold consistently when scanning and applying untranslated fields", async () => {
+    for (const { text, threshold = 5, expected, failed = false, field = "title" } of [
+      { text: "中文标题 アリス", expected: false },
+      { text: "あいうえ", expected: false },
+      { text: "あいうえお", expected: true },
+      { text: "中文あいうえおか中文", expected: true },
+      { text: "アいうエオ", expected: true },
+      { text: "ﾊﾋﾌﾍﾎ", expected: true },
+      { text: "中文ﾊﾋﾌﾍﾎ中文", expected: true },
+      { text: "ｶﾞｷﾞｸﾞｹﾞ", expected: false },
+      { text: "ｶﾞｷﾞｸﾞｹﾞｺﾞ", expected: true },
+      { text: "スーパーアイドル", expected: true },
+      { text: "あいう、えおか", expected: false },
+      { text: "あいう えおか", expected: false },
+      { text: "あいう\nえおか", expected: false },
+      { text: "あいう漢字えおか", expected: false },
+      { text: "あいうABCえおか", expected: false },
+      { text: "あいうえ😀おかきく", expected: false },
+      { text: "𛀁𛀁𛀁𛀁", expected: false },
+      { text: "𛀁𛀁𛀁𛀁𛀁", expected: true },
+      { text: "中文𛀁𛀁𛀁𛀁𛀁中文", expected: true },
+      { text: "純漢字原題", expected: false },
+      { text: "繁體標題", expected: false },
+      { text: "English title", expected: false },
+      { text: "", expected: false },
+      { text: "中文ア中文", threshold: 1, expected: true },
+      { text: "中文アリス", threshold: 3, expected: true },
+      { text: "あいうえお", threshold: 6, expected: false },
+      { text: "中文あいうえお", field: "plot", expected: true },
+      { text: "中文アリス", failed: true, expected: true },
+      { text: "English title", failed: true, expected: true },
+    ] satisfies { text: string; threshold?: number; expected: boolean; failed?: boolean; field?: "title" | "plot" }[]) {
+      const entry = createEntry({
+        crawlerData: {
+          title: field === "title" ? text : "中文标题",
+          title_zh: undefined,
+          plot: field === "plot" ? text : "中文简介",
+          plot_zh: undefined,
+          translation_failures: failed ? { [field]: "provider unavailable" } : undefined,
+        },
+      });
+      const { service, llmApiClient, writeNfo } = createService({
+        scan: async () => [entry],
+        scanVideo: async () => entry,
+        generateText: vi.fn().mockResolvedValue('{"translations":["翻译完成"]}'),
+      });
+      const config = createConfig();
+      config.translate.untranslatedJapaneseRunLength = threshold;
+      const scanned = await service.scan("/library", "untranslated", config);
+      expect(scanned, JSON.stringify({ text, threshold, failed })).toHaveLength(expected ? 1 : 0);
+      if (expected)
+        expect(scanned[0]).toMatchObject({ pendingFields: [field], reason: failed ? "task_failed" : "content" });
+      const [result] = await service.apply(
+        [
+          {
+            ...entry.fileInfo,
+            nfoPath: entry.nfoPath ?? "",
+            directory: entry.currentDir,
+            title: text,
+            plot: "",
+            pendingFields: [field],
+            reason: "content",
+          },
+        ],
+        config,
+        { mode: "untranslated" },
+      );
+      expect(result.success).toBe(expected);
+      expect(llmApiClient.generateText).toHaveBeenCalledTimes(expected ? 1 : 0);
+      expect(writeNfo).toHaveBeenCalledTimes(expected ? 1 : 0);
+    }
   });
 
   it("restores the source title and plot without calling the LLM", async () => {
@@ -382,7 +452,7 @@ describe("BatchNfoTranslator", () => {
       reason: "content",
     }));
     sleepMock.mockClear();
-    const results = await service.apply(items, config, { mode: "untranslated" });
+    const results = await service.apply(items, config, { mode: "all" });
 
     expect(localScanService.scanVideo).toHaveBeenCalledTimes(2);
     expect(generateText).toHaveBeenCalledTimes(2);
@@ -491,10 +561,10 @@ describe("BatchNfoTranslator", () => {
       nfoPath,
       currentDir: root,
       crawlerData: {
-        title: "Original title",
-        title_zh: "已翻译的标题 Alice",
-        plot: "Original plot",
-        plot_zh: "已经翻译的简介 アリス",
+        title: "あいうえおのタイトル",
+        title_zh: "已翻译的标题 アリスちゃん",
+        plot: "あいうえおのあらすじ",
+        plot_zh: "已经翻译的简介 アリスちゃん",
         genres: ["Drama"],
         translation_failures: { title: "source echoed", plot: "source echoed", genres: "source echoed" },
       },
@@ -543,9 +613,9 @@ describe("BatchNfoTranslator", () => {
     expect(generateText).not.toHaveBeenCalled();
     const accepted = await readEntry();
     expect(accepted.crawlerData).toMatchObject({
-      title: "Original title",
+      title: "あいうえおのタイトル",
       title_zh: entry.crawlerData.title_zh,
-      plot: "Original plot",
+      plot: "あいうえおのあらすじ",
       plot_zh: entry.crawlerData.plot_zh,
       genres: ["Drama"],
       translation_ignored: { title: expect.any(String), plot: expect.any(String), genres: expect.any(String) },
@@ -554,7 +624,7 @@ describe("BatchNfoTranslator", () => {
     expect(accepted.nfoLocalState).toMatchObject({ tags: ["保留标签"], lockedFields: ["Cast"] });
     expect(await service.scan(root, "untranslated", config)).toEqual([]);
     const acceptedXml = await readFile(nfoPath, "utf8");
-    await writeFile(nfoPath, acceptedXml.replace("已经翻译的简介 アリス", "Changed English plot"));
+    await writeFile(nfoPath, acceptedXml.replace("已经翻译的简介 アリスちゃん", "変更されたあらすじ"));
     expect((await service.scan(root, "untranslated", config))[0].pendingFields).toEqual(["plot"]);
     await writeFile(nfoPath, acceptedXml);
     const all = await service.scan(root, "all", config);
@@ -568,7 +638,10 @@ describe("BatchNfoTranslator", () => {
     await writeFile(nfoPath, acceptedXml);
     const restore = await service.scan(root, "restore", config);
     expect((await service.apply(restore, config, { mode: "restore" }))[0].success).toBe(true);
-    expect((await readEntry()).crawlerData).toMatchObject({ title: "Original title", plot: "Original plot" });
+    expect((await readEntry()).crawlerData).toMatchObject({
+      title: "あいうえおのタイトル",
+      plot: "あいうえおのあらすじ",
+    });
     expect((await service.scan(root, "untranslated", config))[0].pendingFields).toEqual(["title", "plot"]);
   });
 
@@ -603,7 +676,7 @@ describe("BatchNfoTranslator", () => {
     };
     const generateText = vi
       .fn()
-      .mockResolvedValueOnce('{"translations":["已完成的译名 アリス"]}')
+      .mockResolvedValueOnce('{"translations":["已完成的译名 アリスちゃん"]}')
       .mockRejectedValueOnce(new Error("provider unavailable"))
       .mockResolvedValueOnce('{"translations":["剧情"]}')
       .mockRejectedValueOnce(new Error("provider unavailable"));
@@ -625,12 +698,12 @@ describe("BatchNfoTranslator", () => {
       plot: expect.stringContaining("provider unavailable"),
       genres: expect.stringContaining("provider unavailable"),
     });
-    expect(first.title_zh).toBe("已完成的译名 アリス");
+    expect(first.title_zh).toBe("已完成的译名 アリスちゃん");
     expect(first.translation_ignored).toEqual({ title: expect.any(String) });
     expect(first.genres).toEqual(["剧情", "Travel"]);
     expect((await readEntry()).nfoLocalState).toMatchObject({ tags: ["保留标签"], lockedFields: ["Cast"] });
 
-    generateText.mockResolvedValue('{"translations":["补译成功 アリス"]}');
+    generateText.mockResolvedValue('{"translations":["补译成功 アリスちゃん"]}');
     const pending = await service.scan(root, "untranslated", config);
     expect(pending[0].pendingFields).toEqual(["plot", "genres"]);
     const [repaired] = await service.apply(pending, config, { mode: "untranslated", maxBatchItems: 1 });
@@ -644,7 +717,10 @@ describe("BatchNfoTranslator", () => {
     expect(await service.scan(root, "untranslated", config)).toEqual([]);
     const all = await service.scan(root, "all", config);
     expect(all[0].pendingFields).toEqual(["title", "plot"]);
-    await writeFile(nfoPath, (await readFile(nfoPath, "utf8")).replace("已完成的译名 アリス", "New English title"));
+    await writeFile(
+      nfoPath,
+      (await readFile(nfoPath, "utf8")).replace("已完成的译名 アリスちゃん", "あいうえおのタイトル変更"),
+    );
     expect((await service.scan(root, "untranslated", config))[0].pendingFields).toEqual(["title"]);
   });
 });

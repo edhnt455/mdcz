@@ -138,6 +138,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       libraries,
       networkClient,
       crawlerProvider,
+      isMaintenanceBusy: () => maintenance.isBusy,
       imageHostCooldownStore,
       mappingStore,
       onActorPhotosPublished: (configuration, data) => personSync.published(configuration, data),

@@ -11,5 +11,6 @@ export * from "./pendingRepository";
 export * from "./publicationJournalRepository";
 export * from "./scanTaskRepository";
 export { PENDING_KINDS, type PendingKind } from "./schema";
+export * from "./scrapeConflictRepository";
 export * from "./scrapeRunRepository";
 export * from "./siteResultRepository";

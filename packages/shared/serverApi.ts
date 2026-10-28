@@ -254,6 +254,12 @@ export interface ServerApiContract {
     start(input: ScanStartInput): Promise<ScanTaskDto>;
   };
   scrape: {
+    conflictPreview(
+      input: import("./scrapeConflict").ScrapeConflictInput,
+    ): Promise<import("./scrapeConflict").ScrapeConflictPreview>;
+    conflictResolve(
+      input: import("./scrapeConflict").ScrapeConflictResolveInput,
+    ): Promise<import("./scrapeConflict").ScrapeConflictResolution>;
     liveRuns(): Promise<ScrapeLiveRunsResponse>;
     snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto>;
     removeRecord(input: FileActionInput): Promise<FileActionResponse>;

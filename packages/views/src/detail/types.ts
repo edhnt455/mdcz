@@ -1,6 +1,7 @@
 export type DetailViewStatus = "success" | "failed" | "processing";
 
 export interface DetailViewItem {
+  scrapeConflict?: import("@mdcz/shared/scrapeConflict").ScrapeConflictInput;
   resultId?: string;
   id: string;
   status: DetailViewStatus;

@@ -1,6 +1,25 @@
 import type { ScrapeRunStage } from "@mdcz/shared/serverDtos";
 
 export const scrape = {
+  conflict: {
+    open: "Resolve duplicate",
+    title: "Choose the version to keep",
+    description:
+      "Compare the actual 115 video sizes, then select a version to keep. The other version will be deleted.",
+    keepExisting: "Keep library version",
+    keepIncoming: "Keep new version",
+    cloud: "115 source video",
+    loading: "Verifying both 115 source files…",
+    deleting: "Deleting the selected version and verifying the result…",
+    sameResource:
+      "Both STRMs point to the same 115 video. The cloud video will be kept; only redundant local STRMs will be removed.",
+    willDelete: "Version to delete:",
+    deleteIncoming: "Remove its Normal STRM. Keep the existing Link STRM.",
+    deleteExisting: "Remove its Normal and Link STRMs, then retry scraping the new version.",
+    deleteCloud: "Also delete this version's source video from 115.",
+    confirm: "Delete the other version and continue",
+    completed: "Duplicate resolved.",
+  },
   stages: {
     discovering: "Scanning video files",
     prepare: "Fetching metadata",

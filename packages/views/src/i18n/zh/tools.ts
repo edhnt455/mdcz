@@ -179,7 +179,7 @@ export const tools: Messages["tools"] = {
   ignoringTranslation: "正在标记完成...",
   ignoreTranslationHelp: "确认当前内容无需再翻译时，可忽略并标记为已完成；仅未翻译扫描将跳过这些内容。",
   batchTranslateModeHelp: {
-    untranslated: "优先补译任务中失败的字段；其余标题和简介根据内容判断是否需要翻译。",
+    untranslated: "优先补译任务中失败的字段；其余标题和简介按设置中的连续日文字符数阈值判断是否需要翻译。",
     all: "更换翻译服务或模型后使用，会覆盖已有译文。",
     restore: "清除译文，将标题和简介还原为日文原文。若后续开启翻译，刷新时将重新翻译。",
   },

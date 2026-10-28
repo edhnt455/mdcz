@@ -16,6 +16,7 @@ import {
   pendingRetryInputSchema,
 } from "@mdcz/shared/pending";
 import { watermarkPreviewInputSchema } from "@mdcz/shared/posterBadges";
+import { scrapeConflictInputSchema, scrapeConflictResolveSchema } from "@mdcz/shared/scrapeConflict";
 import type { HealthResponse } from "@mdcz/shared/serverDtos";
 import {
   activityListInputSchema,
@@ -406,6 +407,12 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.scans.start(input.rootId)),
   }),
   scrape: t.router({
+    conflictPreview: protectedProcedure
+      .input(scrapeConflictInputSchema)
+      .query(async ({ ctx, input }) => ctx.services.scrape.conflicts.preview(input)),
+    conflictResolve: protectedProcedure
+      .input(scrapeConflictResolveSchema)
+      .mutation(async ({ ctx, input }) => ctx.services.scrape.conflicts.resolve(input)),
     removeRecord: protectedProcedure
       .input(fileActionInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.scrape.removeRecord(input)),

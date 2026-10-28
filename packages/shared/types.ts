@@ -105,6 +105,8 @@ export interface DownloadedAssets {
 }
 
 export interface ScrapeResult {
+  taskId?: string;
+  conflict?: import("./scrapeConflict").ScrapeTargetConflict;
   size?: number;
   resultId?: string;
   fileId: FileId;

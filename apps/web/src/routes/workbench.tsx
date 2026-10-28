@@ -273,7 +273,7 @@ function WorkbenchPage() {
           <MaintenanceWorkbenchAdapter ports={ports} />
         )}
       </div>
-      <ScrapeStartErrorDialog error={startError} onClose={() => setStartError(null)} />
+      <ScrapeStartErrorDialog error={startError} onClose={() => setStartError(null)} port={ports.detail} />
     </div>
   );
 }
