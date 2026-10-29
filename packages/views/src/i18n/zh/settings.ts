@@ -164,6 +164,7 @@ export const settings: Messages["settings"] = {
     remove: "删除映射",
   },
   embyDeletion: {
+    openDeletionTasks: "在工作台查看联动删除任务",
     title: "Emby 删除联动",
     description:
       "移动库接收普通删除通知清理记录；复制 STRM 库通过神医 deep.delete 联动 MP 云端文件和 Normal 来源。先用观察模式验证。",
@@ -181,17 +182,6 @@ export const settings: Messages["settings"] = {
     noLibraries: "暂无使用“移动”或“复制”方式的媒体库。",
     scopeHint:
       "复制库须先配置 MP 并核验来源关联，仅 deep.delete 可触发云端和 Normal 清理；普通缺失核对不删除云端。保留任务历史、下载器去重和磁盘残留海报。",
-    retry: "重试未完成步骤",
-    sourcePreview: (sourcePath: string) => `Normal 来源：${sourcePath}`,
-    cloudPreview: (cloudPath: string, fileId: string) => `115 文件：${cloudPath} · fileid ${fileId}`,
-    steps: {
-      validating: "核验身份",
-      deleting_cloud: "删除云端文件",
-      verifying_cloud: "确认云端结果",
-      cleaning_source: "清理 Normal 来源",
-      cleaning_records: "清理业务记录",
-      completed: "已完成",
-    },
     moviePilot: {
       title: "MoviePilot · 115 STRM 联动",
       description:
@@ -214,13 +204,8 @@ export const settings: Messages["settings"] = {
     saved: "联动设置已保存",
     reconcile: "核对已登记文件",
     queued: (count: number) => `已提交 ${count} 个文件核对，按当前已保存的模式处理。`,
-    counts: (pending: number, review: number) => `待处理 ${pending} · 待检查 ${review}`,
-    noActions: "暂无待处理事项，通知及处理详情可在日志中查看。",
-    observation: "观察预览",
-    pending: "待处理",
-    review: "待检查",
-    noPath: "事件未提供文件路径",
     results: {
+      shared_resource_retained: "已清理当前影片记录，保留其他影片仍在使用的共享资源",
       sync_disabled: "删除联动已关闭",
       server_not_allowed: "Emby Server ID 不匹配",
       event_not_supported: "非删除事件",

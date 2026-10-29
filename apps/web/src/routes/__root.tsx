@@ -1,3 +1,4 @@
+import { isOpenDeletionJob } from "@mdcz/shared/deletions";
 import { TOOL_DEFINITIONS, type ToolId } from "@mdcz/shared/toolCatalog";
 import { useT } from "@mdcz/views/i18n";
 import { AppShell, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
@@ -8,6 +9,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../client";
 import { LoginPage } from "../components/auth/LoginPage";
+import { useDeletionJobs } from "../hooks/useDeletionJobs";
 import { useWebTaskSync } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ToolDetail } from "./tools/ToolDetail";
@@ -74,6 +76,7 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathname: string }) => {
   useWebTaskSync();
   const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list(), retry: false });
+  const deletionsQ = useDeletionJobs();
   const [hasVisitedTools, setHasVisitedTools] = useState(pathname === "/tools");
   const isToolsRoute = pathname === "/tools";
 
@@ -85,7 +88,13 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
 
   return (
     <ThemeProvider>
-      <AppShell currentPath={pathname} linkComponent={ShellLink} navBadges={{ pending: pendingQ.data?.items.length }}>
+      <AppShell
+        currentPath={pathname}
+        linkComponent={ShellLink}
+        navBadges={{
+          pending: (pendingQ.data?.items.length ?? 0) + (deletionsQ.data?.jobs.filter(isOpenDeletionJob).length ?? 0),
+        }}
+      >
         {children}
         {hasVisitedTools || isToolsRoute ? (
           <div className="h-full w-full" style={{ display: isToolsRoute ? "block" : "none" }}>

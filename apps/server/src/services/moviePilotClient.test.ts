@@ -15,6 +15,44 @@ const files: MoviePilotFile[] = Array.from({ length: 281 }, (_, i) => ({
 }));
 
 describe("MoviePilot storage contract", () => {
+  it("indexes independently available identities without hiding ambiguous pickcodes", async () => {
+    const root = { ...directory, path: "/AV/", name: "AV", parent_fileid: "0" };
+    const rows = [
+      { ...files[0], path: "/AV/video.mp4" },
+      { ...files[1], path: "/AV/incomplete.mp4", pickcode: null, size: null },
+      { ...files[2], path: "/AV/ambiguous.mp4", pickcode: files[0].pickcode, size: null },
+    ];
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as MoviePilotFile;
+      const data = body.fileid === "0" ? [root] : rows;
+      return Response.json(
+        { success: true, message: "", data },
+        {
+          headers: {
+            "X-Total-Count": String(data.length),
+            "X-Page": "1",
+            "X-Page-Size": "200",
+            "X-Result-Count": String(data.length),
+          },
+        },
+      );
+    });
+    const client = new MoviePilotClient(
+      { baseUrl: "https://mp.test", storage: "u115", rootPath: "/AV" },
+      "token",
+      fetcher,
+    );
+    const index = await client.index({
+      id: "connection",
+      baseUrl: "https://mp.test",
+      storage: "u115",
+      rootPath: "/AV",
+      root,
+    });
+    expect(index.size).toBe(1);
+    expect(index.get(files[0].pickcode ?? "")?.map((entry) => entry.target)).toEqual([rows[0], rows[2]]);
+  });
+
   it.each([
     "complete",
     "missing pagination",

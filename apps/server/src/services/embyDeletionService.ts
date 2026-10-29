@@ -45,6 +45,7 @@ export class EmbyDeletionService {
   private timer?: ReturnType<typeof setTimeout>;
   private inFlight?: Promise<void>;
   private closed = false;
+  processingId: string | null = null;
   private lastBindingAt = 0;
   private stored: EmbyDeletionConfig = embyDeletionConfigSchema.parse({});
   private readonly now: () => number;
@@ -86,25 +87,6 @@ export class EmbyDeletionService {
         .filter((library) => library.placement === "move" || library.placement === "copy")
         .map(({ id, name, outputPath }) => ({ id, name, outputPath })),
       counts: activity.counts,
-      recent: activity.recent.map(({ snapshotJson, ...event }) => {
-        const snapshot = snapshotJson ? (JSON.parse(snapshotJson) as StrmCloudBinding) : null;
-        return {
-          ...event,
-          preview: snapshot
-            ? {
-                sourcePaths: [
-                  ...new Set(
-                    repository
-                      .relatedBindings(snapshot.connectionId, snapshot.target.fileid)
-                      .map((row) => row.sourcePath),
-                  ),
-                ],
-                cloudPath: snapshot.target.path,
-                fileId: snapshot.target.fileid,
-              }
-            : null,
-        };
-      }),
     };
   }
 
@@ -204,7 +186,29 @@ export class EmbyDeletionService {
   }
 
   async retry(id: string): Promise<{ success: true }> {
-    (await this.repository()).retry(id);
+    if (this.processingId === id) throw new Error("Deletion job is already running");
+    const repository = await this.repository();
+    const event = repository.event(id);
+    if (event?.eventType === "deep.delete" && (!event.snapshotJson || event.result === "cloud_binding_unverified")) {
+      await this.load();
+      if (!event.fileId || this.deps.maintenance.isBusy)
+        throw new Error("Wait for media tasks before verifying this deletion source");
+      const file = event.path ? repository.findFile(event.path) : undefined;
+      if (!file || file.id !== event.fileId || file.updatedAt.getTime() !== event.fileUpdatedAt)
+        throw new Error("This movie's file record changed; review its deletion request");
+      if (
+        event.eventAt === null ||
+        event.eventAt > this.now() + 60_000 ||
+        event.eventAt < file.updatedAt.getTime() - 60_000
+      )
+        throw new Error("This movie's deletion notification date cannot be verified");
+      const result = await this.strm.bind(repository, file.id);
+      const binding = readStrmBinding(repository, file.id);
+      if (!result.verified || !binding) throw new Error("This movie's Normal source could not be verified");
+      repository.update(id, { snapshotJson: JSON.stringify(binding) });
+    }
+    repository.retry(id);
+    this.deps.taskEvents.invalidate("pending");
     return { success: true };
   }
 
@@ -223,6 +227,7 @@ export class EmbyDeletionService {
   }
 
   private logEvent(event: EmbyDeletionEventRow): void {
+    this.deps.taskEvents.invalidate("pending");
     const snapshot = event.snapshotJson ? (JSON.parse(event.snapshotJson) as StrmCloudBinding) : null;
     const details = {
       id: event.id,
@@ -318,7 +323,7 @@ export class EmbyDeletionService {
       fileId: file?.id,
       movieId: file?.itemId,
       fileUpdatedAt: file?.updatedAt.getTime(),
-      status: reason ? "ignored" : "pending",
+      status: reason === "cloud_binding_unverified" ? "needs_review" : reason ? "ignored" : "pending",
       nextAttemptAt: now + CONFIRMATION_MS,
       result: reason,
       completedAt: reason ? now : null,
@@ -415,6 +420,7 @@ export class EmbyDeletionService {
           ? (JSON.parse(event.snapshotJson) as import("@mdcz/shared/moviePilot").StrmCloudBinding)
           : undefined;
         release = mediaPathOwnership.acquireAll([event.path ?? "", ...(snapshot ? [snapshot.source.sourcePath] : [])]);
+        this.processingId = event.id;
         await this.process(repository, event);
         const updated = repository.event(event.id);
         if (
@@ -434,7 +440,9 @@ export class EmbyDeletionService {
             result: message,
           });
         this.deps.logger.warn(`Emby deletion ${event.id}: ${message}`);
+        this.deps.taskEvents.invalidate("pending");
       } finally {
+        this.processingId = null;
         release?.();
       }
     }
@@ -543,6 +551,8 @@ export class EmbyDeletionService {
       return;
     }
     if (repository.clean(event, this.now())) {
+      if (event.eventType === "deep.delete" && event.cloudDeletedAt === null)
+        repository.update(event.id, { result: "shared_resource_retained" });
       this.deps.invalidateAvailability();
       this.deps.taskEvents.invalidate("library", "pending");
     }

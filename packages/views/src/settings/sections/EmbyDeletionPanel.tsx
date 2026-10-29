@@ -1,5 +1,4 @@
 import type { EmbyDeletionSettings, EmbyDeletionStatus } from "@mdcz/shared/embyDeletion";
-import { strmReferenceErrors } from "@mdcz/shared/moviePilot";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
 import {
   Button,
@@ -16,8 +15,7 @@ import { useEffect, useId, useState } from "react";
 import { useT } from "../../i18n";
 
 export function EmbyDeletionPanel({ service }: { service: ServerApiContract["embyDeletion"] & { origin: string } }) {
-  const messages = useT();
-  const text = messages.settings.embyDeletion;
+  const text = useT().settings.embyDeletion;
   const id = useId();
   const [status, setStatus] = useState<EmbyDeletionStatus | null>(null);
   const [draft, setDraft] = useState<EmbyDeletionSettings>({ mode: "off", serverId: "", libraryIds: [] });
@@ -291,61 +289,9 @@ export function EmbyDeletionPanel({ service }: { service: ServerApiContract["emb
               {text.reconcile}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {text.counts(status.counts.pending, status.counts.needs_review)}
-          </p>
-          {!status.recent.length ? (
-            <p className="text-xs text-muted-foreground">{text.noActions}</p>
-          ) : (
-            <ul className="max-h-64 space-y-2 overflow-auto text-xs">
-              {status.recent.map((event) => (
-                <li key={event.id} className="space-y-1 rounded-lg bg-muted/40 p-2">
-                  <div>
-                    {event.status === "ignored"
-                      ? text.observation
-                      : event.status === "needs_review"
-                        ? text.review
-                        : text.pending}
-                  </div>
-                  <div>{text.steps[event.step]}</div>
-                  <div className="break-all">{event.path ?? text.noPath}</div>
-                  {event.preview ? (
-                    <div className="space-y-1 break-all text-muted-foreground">
-                      {event.preview.sourcePaths.map((sourcePath) => (
-                        <div key={sourcePath}>{text.sourcePreview(sourcePath)}</div>
-                      ))}
-                      <div>{text.cloudPreview(event.preview.cloudPath, event.preview.fileId)}</div>
-                    </div>
-                  ) : null}
-                  <div className="whitespace-pre-wrap break-all text-muted-foreground">
-                    {event.result?.startsWith(`${strmReferenceErrors.unverified}\n`)
-                      ? messages.scrape.conflict.referenceErrors.unverified(
-                          event.result.slice(strmReferenceErrors.unverified.length + 1),
-                        )
-                      : (text.results[event.result as keyof typeof text.results] ?? event.result)}
-                  </div>
-                  {event.status === "needs_review" ||
-                  (status.settings.mode === "delete" &&
-                    ["would_delete_strm_resource", "would_keep_shared_resource"].includes(event.result ?? "")) ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(async () => {
-                          await service.retry({ id: event.id });
-                          setStatus(await service.status());
-                        })
-                      }
-                    >
-                      {text.retry}
-                    </Button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
+          <a href="/workbench?intent=deletion" className="inline-flex text-sm text-primary underline">
+            {text.openDeletionTasks}
+          </a>
         </>
       )}
     </div>

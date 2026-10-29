@@ -27,6 +27,7 @@ export const notifyMediaServersOfPublish = async (
     servers.map(async (key) => {
       try {
         await networkClient.postText(buildMediaServerUrl(configuration, key, "/Library/Media/Updated"), body, {
+          useProxy: false,
           headers: buildMediaServerHeaders(configuration, key, { "content-type": "application/json" }),
         });
       } catch (error) {

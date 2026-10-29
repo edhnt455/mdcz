@@ -179,6 +179,7 @@ export const settings = {
     remove: "Remove mapping",
   },
   embyDeletion: {
+    openDeletionTasks: "View deletion tasks in the workbench",
     title: "Emby deletion sync",
     description:
       "Move libraries clean records on ordinary deletion. Copy STRM libraries use Strm Assistant deep.delete to remove the verified cloud file and Normal source. Validate in observation mode first.",
@@ -196,17 +197,6 @@ export const settings = {
     noLibraries: "No move or copy libraries configured.",
     scopeHint:
       "Copy libraries require MoviePilot and verified sources. Only deep.delete can remove cloud files and Normal sources; missing-file checks cannot. Task history, downloader deduplication and disk artwork are retained.",
-    retry: "Retry unfinished steps",
-    sourcePreview: (sourcePath: string) => `Normal source: ${sourcePath}`,
-    cloudPreview: (cloudPath: string, fileId: string) => `115 file: ${cloudPath} · fileid ${fileId}`,
-    steps: {
-      validating: "Validating identity",
-      deleting_cloud: "Deleting cloud file",
-      verifying_cloud: "Verifying cloud result",
-      cleaning_source: "Cleaning Normal source",
-      cleaning_records: "Cleaning records",
-      completed: "Completed",
-    },
     moviePilot: {
       title: "MoviePilot · 115 STRM sync",
       description:
@@ -228,13 +218,8 @@ export const settings = {
     saved: "Deletion sync settings saved",
     reconcile: "Check registered files",
     queued: (count: number) => `Queued ${count} file checks using the saved mode.`,
-    counts: (pending: number, review: number) => `Pending ${pending} · Needs review ${review}`,
-    noActions: "No pending actions. Notification and processing details are available in logs.",
-    observation: "Observation preview",
-    pending: "Pending",
-    review: "Needs review",
-    noPath: "No file path in event",
     results: {
+      shared_resource_retained: "Removed this file's record and kept resources used by other movies",
       sync_disabled: "Deletion sync is off",
       server_not_allowed: "Emby server ID does not match",
       event_not_supported: "Not a deletion event",

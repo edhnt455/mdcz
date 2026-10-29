@@ -19,7 +19,7 @@ import {
   checkJellyfinConnection as checkConnection,
   isJellyfinUuid as isUuid,
 } from "@mdcz/runtime/mediaserver/jellyfin";
-import type { NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient, RuntimeRequestInit } from "@mdcz/runtime/network";
 import { ActorImageService } from "@mdcz/runtime/scrape";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -61,7 +61,7 @@ class FakeNetworkClient {
   readonly getJson = vi.fn(async (_url: string, _init?: { headers?: HeadersInit }) => ({}));
   readonly getContent = vi.fn(async (_url: string) => new Uint8Array());
   readonly postContent = vi.fn(async (_url: string, _body: Uint8Array) => undefined);
-  readonly postText = vi.fn(async (_url: string, _body: string) => "");
+  readonly postText = vi.fn(async (_url: string, _body: string, _init?: RuntimeRequestInit) => "");
 }
 
 const createActorSourceProvider = (
@@ -549,5 +549,6 @@ describe("Jellyfin services", () => {
     expect(refreshUrl).toContain("/Items/person-1/Refresh");
     expect(firstBody).toBe(Buffer.from(await readFile(photoPath)).toString("base64"));
     expect(secondBody).toBe(firstBody);
+    for (const [, , init] of networkClient.postText.mock.calls) expect(init?.useProxy).toBe(false);
   });
 });

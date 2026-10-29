@@ -1,16 +1,15 @@
 import type { EmbyDeletionSettings, EmbyDeletionStatus } from "@mdcz/shared/embyDeletion";
-import { type MoviePilotSettings, strmReferenceErrors } from "@mdcz/shared/moviePilot";
+import type { MoviePilotSettings } from "@mdcz/shared/moviePilot";
 import { EmbyDeletionPanel } from "@mdcz/views/settings/sections/EmbyDeletionPanel";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
-const createService = (recent: EmbyDeletionStatus["recent"] = []) => {
+const createService = () => {
   const state: EmbyDeletionStatus = {
     settings: { mode: "off", serverId: "", libraryIds: [] },
     configured: false,
     libraries: [{ id: "av", name: "AV", outputPath: "/volume4/Media/AV/Link" }],
     counts: { pending: 0, needs_review: 0 },
-    recent,
     moviePilot: null,
     associations: { verified: 0, blocked: 0 },
   };
@@ -38,49 +37,16 @@ const createService = (recent: EmbyDeletionStatus["recent"] = []) => {
     }),
     testMoviePilot: vi.fn(async () => ({ storage: "u115" })),
     bindSources: vi.fn(async () => ({ verified: 1, unverified: 0 })),
-    retry: vi.fn(async () => ({ success: true as const })),
   };
 };
 
 test("configures observation with the exact output library and exposes a one-time webhook address", async () => {
-  const service = createService([
-    {
-      id: "unverified-reference",
-      serverId: "emby-server",
-      path: "/volume4/Media/AV/Link/ABC-123.strm",
-      status: "pending",
-      result: `${strmReferenceErrors.unverified}\n/volume4/Media/AV/Link/unrelated.strm`,
-      receivedAt: Date.now(),
-      completedAt: null,
-      attempts: 1,
-      step: "validating",
-      preview: null,
-    },
-    {
-      id: "preview",
-      serverId: "emby-server",
-      path: "/volume4/Media/AV/Link/review.strm",
-      status: "ignored",
-      result: "would_delete_strm_resource",
-      receivedAt: Date.now(),
-      completedAt: Date.now(),
-      attempts: 0,
-      step: "validating",
-      preview: {
-        sourcePaths: ["/volume4/Media/AV/Normal/review.strm"],
-        cloudPath: "/Media/AV/review.mp4",
-        fileId: "123",
-      },
-    },
-  ]);
+  const service = createService();
   const screen = await render(<EmbyDeletionPanel service={service} />);
-  await expect.element(screen.getByText("观察预览", { exact: true })).toBeVisible();
-  await expect.element(screen.getByText("Normal 来源：/volume4/Media/AV/Normal/review.strm")).toBeVisible();
   await expect
-    .element(screen.getByText(/无法读取或识别下列 STRM/))
-    .toHaveTextContent("/volume4/Media/AV/Link/unrelated.strm");
-  await expect.element(screen.getByText(/已清理|已忽略/)).not.toBeInTheDocument();
-  await expect.element(screen.getByText("Emby Server ID：emby-server")).not.toBeInTheDocument();
+    .element(screen.getByRole("link", { name: "在工作台查看联动删除任务" }))
+    .toHaveAttribute("href", "/workbench?intent=deletion");
+  await expect.element(screen.getByText("核验身份", { exact: true })).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "生成 Webhook 地址" }).click();
   await expect
     .element(screen.getByRole("textbox", { name: "Emby Webhook 地址" }))
@@ -123,7 +89,7 @@ test("shows configuration failures without discarding edits and recovers after a
   const service = createService();
   service.configure.mockRejectedValueOnce(new Error("Library mount is offline"));
   const screen = await render(<EmbyDeletionPanel service={service} />);
-  await expect.element(screen.getByText("暂无待处理事项，通知及处理详情可在日志中查看。")).toBeVisible();
+  await expect.element(screen.getByRole("link", { name: "在工作台查看联动删除任务" })).toBeVisible();
   await screen.getByRole("textbox", { name: "Emby Server ID" }).fill("emby-server");
   await screen.getByRole("button", { name: "保存联动设置" }).click();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("Library mount is offline");

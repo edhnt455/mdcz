@@ -13,7 +13,6 @@ import {
   moviePilotSettingsSchema,
   type StrmCloudBinding,
   type StrmSourceSnapshot,
-  strmReferenceErrors,
 } from "@mdcz/shared/moviePilot";
 import { MoviePilotClient } from "./moviePilotClient";
 
@@ -74,7 +73,10 @@ export class StrmDeletionService {
     return result;
   }
 
-  async bind(repository: EmbyDeletionRepository): Promise<{ verified: number; unverified: number }> {
+  async bind(
+    repository: EmbyDeletionRepository,
+    deletedFileId?: string,
+  ): Promise<{ verified: number; unverified: number }> {
     const settings = this.readSettings();
     const connection = settings.moviePilot;
     if (!connection) throw new Error("Configure MoviePilot first");
@@ -83,6 +85,7 @@ export class StrmDeletionService {
     let verified = 0;
     let unverified = 0;
     for (const entry of repository.knownFiles(settings.libraries.filter((binding) => binding.source))) {
+      if (deletedFileId && entry.file.id !== deletedFileId) continue;
       const library = settings.libraries.find((binding) => binding.id === entry.libraryId);
       if (!library?.source || path.extname(entry.path).toLowerCase() !== ".strm") continue;
       const existing = readStrmBinding(repository, entry.file.id);
@@ -105,19 +108,25 @@ export class StrmDeletionService {
       await this.assertMounts(library);
       try {
         const sourceStat = await lstat(source.sourcePath);
-        const linkStat = await lstat(entry.path);
+        const linkStat = await lstat(entry.path).catch((error: NodeJS.ErrnoException) => {
+          if (deletedFileId && source.sha256 && error.code === "ENOENT") return null;
+          throw error;
+        });
         if (
           !sourceStat.isFile() ||
-          !linkStat.isFile() ||
+          (linkStat && !linkStat.isFile()) ||
           sourceStat.size > 64 * 1024 ||
-          linkStat.size > 64 * 1024 ||
+          (linkStat && linkStat.size > 64 * 1024) ||
           !isPathInside(library.source.realPath, filesystemPathKey(await realpath(source.sourcePath))) ||
-          !isPathInside(library.realPath, filesystemPathKey(await realpath(entry.path)))
+          (linkStat && !isPathInside(library.realPath, filesystemPathKey(await realpath(entry.path))))
         )
           throw new Error("STRM file type or location changed");
         const sourceContent = await readFile(source.sourcePath);
         const sourceHash = hash(sourceContent);
-        if ((source.sha256 && source.sha256 !== sourceHash) || hash(await readFile(entry.path)) !== sourceHash) {
+        if (
+          (source.sha256 && source.sha256 !== sourceHash) ||
+          (linkStat && hash(await readFile(entry.path)) !== sourceHash)
+        ) {
           unverified++;
           continue;
         }
@@ -138,7 +147,7 @@ export class StrmDeletionService {
           continue;
         }
         const candidates = index.get(pickcodes[0]) ?? [];
-        if (candidates.length !== 1) {
+        if (candidates.length !== 1 || candidates[0].target.size == null) {
           unverified++;
           continue;
         }
@@ -193,54 +202,6 @@ export class StrmDeletionService {
     }
   }
 
-  async otherReference(
-    repository: EmbyDeletionRepository,
-    fileId: string | null,
-    snapshot: StrmCloudBinding,
-  ): Promise<string | undefined> {
-    const settings = this.readSettings();
-    const connection = settings.moviePilot;
-    if (!connection || connection.id !== snapshot.connectionId)
-      throw new Error("MoviePilot connection changed; review required");
-    const libraries = settings.libraries.filter((entry) => entry.source);
-    const other = repository.relatedBindings(connection.id, snapshot.target.fileid).find((binding) => {
-      if (binding.fileId === fileId) return false;
-      const file = repository.findFile(binding.linkPath);
-      return (
-        file?.id === binding.fileId &&
-        (!libraries.some((library) => library.id === binding.libraryId) ||
-          (JSON.parse(binding.snapshotJson) as StrmCloudBinding).fileUpdatedAt === file.updatedAt.getTime())
-      );
-    });
-    if (other) return other.linkPath;
-    for (const entry of repository.knownFiles(libraries)) {
-      if (entry.file.id === fileId || path.extname(entry.path).toLowerCase() !== ".strm") continue;
-      const binding = readStrmBinding(repository, entry.file.id);
-      if (binding?.connectionId === connection.id && binding.fileUpdatedAt === entry.file.updatedAt.getTime()) continue;
-      const library = libraries.find((library) => library.id === entry.libraryId);
-      let resource: string | undefined;
-      try {
-        if (!library) throw new Error("STRM library is unavailable");
-        await this.assertMounts({ ...library, source: undefined });
-        const stat = await lstat(entry.path);
-        if (
-          !stat.isFile() ||
-          stat.size > 64 * 1024 ||
-          !isPathInside(library.realPath, filesystemPathKey(await realpath(entry.path)))
-        )
-          throw new Error("STRM file type or location changed");
-        const playback = parseStrmTarget(await readFile(entry.path, "utf8"));
-        resource = playback ? moviePilotResourceIdentity(playback) : undefined;
-        if (!resource || new URL(resource).origin !== new URL(connection.baseUrl).origin)
-          throw new Error("STRM resource cannot be identified on this MoviePilot connection");
-      } catch (error) {
-        throw new Error(`${strmReferenceErrors.unverified}\n${entry.path}`, { cause: error });
-      }
-      if (new URL(resource).searchParams.get("pickcode") === snapshot.target.pickcode) return entry.path;
-    }
-    return undefined;
-  }
-
   async process(input: {
     repository: EmbyDeletionRepository;
     event: EmbyDeletionEventRow;
@@ -263,7 +224,14 @@ export class StrmDeletionService {
     await this.assertMounts(library);
     if (!active()) return false;
     if (event.step !== "validating" && this.readSettings().mode !== "delete") return false;
-    if (await this.otherReference(repository, event.fileId, snapshot)) {
+    if (
+      repository.otherReference(
+        event.fileId,
+        snapshot.connectionId,
+        snapshot.target.fileid,
+        snapshot.source.resourceIdentity,
+      )
+    ) {
       if (event.cloudDeletedAt !== null || event.step !== "validating")
         throw new Error("A new reference appeared during cloud deletion; review required");
       if (this.readSettings().mode === "observe") {

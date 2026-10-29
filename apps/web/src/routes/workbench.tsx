@@ -2,6 +2,7 @@ import type { DirectorySource } from "@mdcz/shared/directoryTasks";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { SUPPORTED_MEDIA_EXTENSIONS } from "@mdcz/shared/mediaExtensions";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
+import { Button } from "@mdcz/ui";
 import {
   activateNewScrapeTask,
   MaintenanceWorkbenchAdapter,
@@ -33,16 +34,54 @@ import { toast } from "sonner";
 import { useShallow } from "zustand/react/shallow";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api } from "../client";
+import { DeletionTasksPage } from "../deletionTasks";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ErrorBanner } from "../routeCommon";
 
 export const Route = createFileRoute("/workbench")({
-  validateSearch: (search): { intent?: "maintenance" } => ({
-    intent: search.intent === "maintenance" ? "maintenance" : undefined,
+  validateSearch: (search): { intent?: "maintenance" | "deletion"; jobId?: string } => ({
+    intent: search.intent === "maintenance" || search.intent === "deletion" ? search.intent : undefined,
+    jobId: typeof search.jobId === "string" ? search.jobId : undefined,
   }),
-  component: WorkbenchPage,
+  component: WorkbenchRoutePage,
 });
+
+function WorkbenchRoutePage() {
+  const t = useT();
+  const search = Route.useSearch();
+  const navigate = useNavigate();
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <nav aria-label={t.deletions.title} className="flex shrink-0 gap-2 border-b px-4 py-2">
+        <Button
+          size="sm"
+          variant={search.intent !== "deletion" ? "secondary" : "ghost"}
+          onClick={() => void navigate({ to: "/workbench", search: {} })}
+        >
+          {t.deletions.back}
+        </Button>
+        <Button
+          size="sm"
+          variant={search.intent === "deletion" ? "secondary" : "ghost"}
+          onClick={() => void navigate({ to: "/workbench", search: { intent: "deletion" } })}
+        >
+          {t.deletions.title}
+        </Button>
+      </nav>
+      <div className="min-h-0 flex-1">
+        {search.intent === "deletion" ? (
+          <DeletionTasksPage
+            selectedId={search.jobId}
+            onSelect={(jobId) => void navigate({ to: "/workbench", search: { intent: "deletion", jobId } })}
+          />
+        ) : (
+          <WorkbenchPage />
+        )}
+      </div>
+    </div>
+  );
+}
 
 const createWebSetupPort = (): WorkbenchSetupPort => ({
   suggestDirectory: async (path) => await api.serverPaths.suggest({ path, intent: "workbench-scan" }),
@@ -91,7 +130,10 @@ function WorkbenchPage() {
     })),
   );
 
-  const sessionSnapshot = useWorkbenchSessionSnapshot(workbenchMode, search.intent);
+  const sessionSnapshot = useWorkbenchSessionSnapshot(
+    workbenchMode,
+    search.intent === "maintenance" ? search.intent : undefined,
+  );
   const showSetup = sessionSnapshot.showSetup;
   const failedCount = useMemo(
     () => results.filter((result) => result.status === "failed" || result.status === "skipped").length,

@@ -134,7 +134,7 @@ export class MoviePilotClient {
         if (++scanned > MAX_ENTRIES) throw new Error("MoviePilot resource scan exceeds the limit");
         if (item.type === "dir") queue.push({ directory: item, ancestors: [...current.ancestors, item] });
         else {
-          if (!item.pickcode || item.size == null) throw new Error("MoviePilot file identity is incomplete");
+          if (!item.pickcode) continue;
           const matches = index.get(item.pickcode) ?? [];
           matches.push({ target: item, ancestors: current.ancestors });
           index.set(item.pickcode, matches);

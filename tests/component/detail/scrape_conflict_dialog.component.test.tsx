@@ -67,6 +67,7 @@ test.each(["existing", "incoming"] as const)("shows actual source sizes and expl
 test("keeps errors visible and permits resuming the same deletion", async () => {
   const resolveConflict = vi
     .fn()
+    .mockRejectedValueOnce(new Error(`${strmReferenceErrors.missingSource}\n/Link/deleted.strm`))
     .mockRejectedValueOnce(new Error(`${strmReferenceErrors.unverified}\n/Link/unverified.strm`))
     .mockRejectedValueOnce(new Error(`${strmReferenceErrors.shared}\n/Link/shared.strm`))
     .mockResolvedValueOnce(undefined);
@@ -81,6 +82,9 @@ test("keeps errors visible and permits resuming the same deletion", async () => 
     .toBeVisible();
   await screen.getByRole("radio", { name: "保留本次新版本" }).click();
   await screen.getByRole("button", { name: "删除另一版本并继续" }).click();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Link STRM 已不存在");
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("/Link/deleted.strm");
+  await screen.getByRole("button", { name: "删除另一版本并继续" }).click();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("无法读取或识别下列 STRM");
   await expect.element(screen.getByRole("alert")).toHaveTextContent("/Link/unverified.strm");
   await screen.getByRole("button", { name: "删除另一版本并继续" }).click();
@@ -88,5 +92,5 @@ test("keeps errors visible and permits resuming the same deletion", async () => 
   await expect.element(screen.getByRole("alert")).toHaveTextContent("/Link/shared.strm");
   await screen.getByRole("button", { name: "删除另一版本并继续" }).click();
   await expect.element(screen.getByText("重复已处理。")).toBeVisible();
-  expect(resolveConflict).toHaveBeenCalledTimes(3);
+  expect(resolveConflict).toHaveBeenCalledTimes(4);
 });

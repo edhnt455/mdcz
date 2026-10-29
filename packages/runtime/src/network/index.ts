@@ -5,6 +5,7 @@ import type { FailureReason } from "@mdcz/shared/siteResults";
 export type RuntimeHeaderInit = ConstructorParameters<typeof Headers>[0];
 
 export interface RuntimeRequestInit {
+  useProxy?: boolean;
   timeout?: number;
   headers?: RuntimeHeaderInit;
   signal?: AbortSignal;

@@ -1,6 +1,7 @@
 import { MediaDirectoryUnavailableError, MediaLibrarySettingsError, toMediaLibraryDto } from "@mdcz/runtime/library";
 import { containsStrmFiles } from "@mdcz/runtime/scrape/utils/strm";
 import { notificationsSchema } from "@mdcz/shared/config";
+import { deletionJobInputSchema } from "@mdcz/shared/deletions";
 import { embyDeletionSettingsSchema } from "@mdcz/shared/embyDeletion";
 import {
   mediaLibraryIdInputSchema,
@@ -8,7 +9,7 @@ import {
   mediaLibrarySourceInputSchema,
   mediaLibraryUpdateInputSchema,
 } from "@mdcz/shared/mediaLibrary";
-import { deletionRetrySchema, moviePilotSettingsSchema } from "@mdcz/shared/moviePilot";
+import { moviePilotSettingsSchema } from "@mdcz/shared/moviePilot";
 import {
   pendingBatchInputSchema,
   pendingConfirmUncensoredInputSchema,
@@ -200,6 +201,15 @@ export const appRouter = t.router({
       .input(activityListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.activity.list(input?.limit)),
   }),
+  deletions: t.router({
+    list: protectedProcedure.query(({ ctx }) => ctx.services.deletions.list()),
+    detail: protectedProcedure
+      .input(deletionJobInputSchema)
+      .query(({ ctx, input }) => ctx.services.deletions.detail(input.id)),
+    retry: protectedProcedure
+      .input(deletionJobInputSchema)
+      .mutation(({ ctx, input }) => ctx.services.deletions.retry(input.id)),
+  }),
   library: t.router({
     removeFile: protectedProcedure
       .input(libraryFileRemoveInputSchema)
@@ -338,9 +348,6 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.embyDeletion.configureMoviePilot(input)),
     testMoviePilot: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.testMoviePilot()),
     bindSources: protectedProcedure.mutation(async ({ ctx }) => await ctx.services.embyDeletion.bindSources()),
-    retry: protectedProcedure
-      .input(deletionRetrySchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.embyDeletion.retry(input.id)),
   }),
   mediaRoots: t.router({
     ensurePath: protectedProcedure

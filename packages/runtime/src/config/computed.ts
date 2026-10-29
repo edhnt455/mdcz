@@ -53,7 +53,7 @@ export const buildComputedConfiguration = (configuration: Configuration): Comput
   };
 };
 
-/** Requests outside any crawler (images, translation, actor sources) always follow the global proxy. */
+/** Default proxy selection; individual requests can explicitly opt out. */
 export const resolveSiteProxyUrl = (computed: ComputedConfiguration, site?: Website): string | undefined =>
   site && computed.directSites.has(site) ? undefined : computed.proxyUrl;
 

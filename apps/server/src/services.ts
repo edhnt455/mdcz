@@ -4,6 +4,7 @@ import type { AuthService } from "./services/authService";
 import type { AutomationService } from "./services/automationService";
 import type { BrowserService } from "./services/browserService";
 import type { ServerConfigService } from "./services/configService";
+import type { DeletionService } from "./services/deletionService";
 import type { EmbyDeletionService } from "./services/embyDeletionService";
 import type { LibraryService } from "./services/libraryService";
 import type { LibraryWatchService } from "./services/libraryWatchService";
@@ -22,6 +23,7 @@ import type { ToolsService } from "./services/toolsService";
 import type { TaskEventBus } from "./taskEvents";
 
 export interface ServerServices {
+  deletions: DeletionService;
   activity: ActivityService;
   automation: AutomationService;
   auth: AuthService;

@@ -2,6 +2,7 @@ import type { Messages } from "../en";
 import { about } from "./about";
 import { common } from "./common";
 import { configForm } from "./configForm";
+import { deletions } from "./deletions";
 import { detail } from "./detail";
 import { domain } from "./domain";
 import { libraries } from "./libraries";
@@ -23,6 +24,7 @@ import { web } from "./web";
 import { workbench } from "./workbench";
 
 export const zh: Messages = {
+  deletions,
   common,
   shell,
   domain,

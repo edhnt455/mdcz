@@ -1,4 +1,5 @@
 import type { Configuration } from "./config";
+import type { DeletionJob, DeletionJobInput, DeletionJobList, DeletionRetryResponse } from "./deletions";
 import type { EmbyDeletionSettings, EmbyDeletionStatus } from "./embyDeletion";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
@@ -113,6 +114,11 @@ import type {
 import type { NamingPreviewItem } from "./types";
 
 export interface ServerApiContract {
+  deletions: {
+    list(): Promise<DeletionJobList>;
+    detail(input: DeletionJobInput): Promise<DeletionJob>;
+    retry(input: DeletionJobInput): Promise<DeletionRetryResponse>;
+  };
   auth: {
     setup(): Promise<AuthSessionDto>;
     login(input: AuthLoginInput): Promise<AuthSessionDto>;
@@ -229,7 +235,6 @@ export interface ServerApiContract {
     configureMoviePilot(input: MoviePilotSettings): Promise<EmbyDeletionStatus>;
     testMoviePilot(): Promise<{ storage: string }>;
     bindSources(): Promise<{ verified: number; unverified: number }>;
-    retry(input: { id: string }): Promise<{ success: true }>;
   };
   mediaRoots: {
     ensurePath(input: MediaRootEnsurePathInput): Promise<MediaRootEnsurePathResponse>;

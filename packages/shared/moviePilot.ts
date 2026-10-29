@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const strmReferenceErrors = {
+  missingSource: "strm_missing_source_record",
   shared: "strm_shared_reference",
   unverified: "strm_unverified_reference",
 } as const;
@@ -37,7 +38,6 @@ export const moviePilotFileSchema = z.object({
 export const moviePilotEnvelopeSchema = z.object({ success: z.boolean(), message: z.string(), data: z.unknown() });
 export const moviePilotOptionsSchema = z.array(z.object({ type: z.string() }));
 export const moviePilotFilesSchema = z.array(moviePilotFileSchema);
-export const deletionRetrySchema = z.object({ id: z.uuid() });
 
 export type MoviePilotSettings = z.infer<typeof moviePilotSettingsSchema>;
 export type MoviePilotFile = z.infer<typeof moviePilotFileSchema>;

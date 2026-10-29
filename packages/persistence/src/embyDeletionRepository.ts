@@ -88,6 +88,34 @@ export class EmbyDeletionRepository {
       .all();
   }
 
+  otherReference(
+    fileId: string | null,
+    connectionId: string,
+    cloudFileId: string,
+    resource: string | undefined,
+  ): string | undefined {
+    const row = this.database.sqlite
+      .prepare<unknown[], { root: string; relative: string }>(`
+      SELECT coalesce(r.real_path, r.host_path) AS root, f.root_relative_path AS relative
+      FROM library_item_files f JOIN media_roots r ON r.id = f.root_id
+      LEFT JOIN strm_cloud_bindings b ON b.file_id = f.id
+      WHERE f.id != ? AND (
+        CASE WHEN json_valid(f.strm_source_json) THEN json_extract(f.strm_source_json, '$.resourceIdentity') END = ?
+        OR CASE WHEN json_valid(b.snapshot_json) THEN (
+          json_extract(b.snapshot_json, '$.connectionId') = ?
+          AND json_extract(b.snapshot_json, '$.target.fileid') = ?
+          AND json_extract(b.snapshot_json, '$.fileUpdatedAt') = f.updated_at
+        ) END
+      ) LIMIT 1
+    `)
+      .get(fileId ?? "", resource ?? null, connectionId, cloudFileId);
+    return row ? filesystemPathKey(path.resolve(row.root, row.relative)) : undefined;
+  }
+
+  jobs(): EmbyDeletionEventRow[] {
+    return this.database.db.select().from(embyDeletionEvents).orderBy(desc(embyDeletionEvents.receivedAt)).all();
+  }
+
   associationCounts(connectionId?: string) {
     const verified =
       this.database.db
@@ -112,13 +140,16 @@ export class EmbyDeletionRepository {
     if (
       !row ||
       !(
+        row.status === "pending" ||
         row.status === "needs_review" ||
         (row.status === "ignored" &&
-          ["would_delete_strm_resource", "would_keep_shared_resource"].includes(row.result ?? ""))
+          ["would_remove_records", "would_delete_strm_resource", "would_keep_shared_resource"].includes(
+            row.result ?? "",
+          ))
       )
     )
-      throw new Error("Only review jobs or observed deep deletions can be retried");
-    this.update(id, { status: "pending", attempts: 0, completedAt: null, nextAttemptAt: Date.now() });
+      throw new Error("Only unfinished jobs or observed deletions can be retried");
+    this.update(id, { status: "pending", attempts: 0, result: null, completedAt: null, nextAttemptAt: Date.now() });
   }
 
   findFile(absolutePath: string) {
@@ -272,30 +303,6 @@ export class EmbyDeletionRepository {
       .groupBy(embyDeletionEvents.status)
       .all())
       if (row.status === "pending" || row.status === "needs_review") counts[row.status] = row.count;
-    const recent = this.database.db
-      .select({
-        id: embyDeletionEvents.id,
-        serverId: embyDeletionEvents.serverId,
-        path: embyDeletionEvents.path,
-        status: embyDeletionEvents.status,
-        result: embyDeletionEvents.result,
-        receivedAt: embyDeletionEvents.receivedAt,
-        completedAt: embyDeletionEvents.completedAt,
-        attempts: embyDeletionEvents.attempts,
-        step: embyDeletionEvents.step,
-        snapshotJson: embyDeletionEvents.snapshotJson,
-      })
-      .from(embyDeletionEvents)
-      .where(
-        sql`${embyDeletionEvents.status} in ('pending', 'needs_review') or (${embyDeletionEvents.status} = 'ignored' and ${embyDeletionEvents.result} in ('would_remove_records', 'would_delete_strm_resource', 'would_keep_shared_resource'))`,
-      )
-      .orderBy(
-        sql`case ${embyDeletionEvents.status} when 'needs_review' then 0 when 'pending' then 1 else 2 end`,
-        desc(embyDeletionEvents.receivedAt),
-        desc(embyDeletionEvents.id),
-      )
-      .limit(20)
-      .all();
-    return { counts, recent };
+    return { counts };
   }
 }

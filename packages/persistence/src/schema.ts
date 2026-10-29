@@ -322,6 +322,8 @@ export const strmCloudBindings = sqliteTable(
 );
 
 export const scrapeConflictResolutions = sqliteTable("scrape_conflict_resolutions", {
+  error: text("error"),
+  updatedAt: integer("updated_at").notNull().default(0),
   itemId: text("item_id").primaryKey(),
   taskId: text("task_id").notNull(),
   snapshotJson: text("snapshot_json").notNull(),

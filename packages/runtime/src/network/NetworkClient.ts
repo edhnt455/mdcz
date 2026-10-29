@@ -26,6 +26,7 @@ const IMAGE_METADATA_PROBE_BYTES = 64 * 1024;
 const IMAGE_METADATA_PROBE_RETRY_BYTES = 256 * 1024;
 const ERROR_BODY_PREVIEW_BYTES = 64 * 1024;
 type HeaderInit = ConstructorParameters<typeof Headers>[0];
+type NetworkRequestInit = ImpitRequestInit & { useProxy?: boolean };
 export interface RawNetworkResponse {
   readonly status: number;
   readonly statusText: string;
@@ -54,11 +55,11 @@ export type RawNetworkDispatch = (
   dispatch: () => Promise<RawNetworkResponse>,
 ) => Promise<RawNetworkResponse>;
 type ProbeMethod = "HEAD" | "GET";
-type ProbeOptions = Omit<ImpitRequestInit, "method"> & {
+type ProbeOptions = Omit<NetworkRequestInit, "method"> & {
   method?: ProbeMethod;
   captureImageSize?: boolean;
 };
-type DownloadOptions = Omit<ImpitRequestInit, "method"> & {
+type DownloadOptions = Omit<NetworkRequestInit, "method"> & {
   readTimeoutMs?: number;
   totalTimeoutMs?: number;
 };
@@ -163,15 +164,15 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     this.rateLimiter.clearDomainLimit(domain);
   }
 
-  async getText(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<string> {
+  async getText(url: string, init: Omit<NetworkRequestInit, "method"> = {}): Promise<string> {
     return await this.requestText(url, { ...init, method: "GET" });
   }
 
-  async getJson<T>(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<T> {
+  async getJson<T>(url: string, init: Omit<NetworkRequestInit, "method"> = {}): Promise<T> {
     return this.parseJson<T>(url, await this.requestText(url, { ...init, method: "GET" }));
   }
 
-  async getContent(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<Uint8Array> {
+  async getContent(url: string, init: Omit<NetworkRequestInit, "method"> = {}): Promise<Uint8Array> {
     const response = await this.request(url, {
       ...init,
       method: "GET",
@@ -180,14 +181,14 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return response.bytes();
   }
 
-  async postText(url: string, body: string, init: Omit<ImpitRequestInit, "method" | "body"> = {}): Promise<string> {
+  async postText(url: string, body: string, init: Omit<NetworkRequestInit, "method" | "body"> = {}): Promise<string> {
     return await this.requestText(url, { ...init, method: "POST", body });
   }
 
   async postJson<TResponse>(
     url: string,
     payload: unknown,
-    init: Omit<ImpitRequestInit, "method" | "body"> = {},
+    init: Omit<NetworkRequestInit, "method" | "body"> = {},
   ): Promise<TResponse> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
@@ -198,7 +199,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init: Omit<ImpitRequestInit, "method" | "body"> = {},
+    init: Omit<NetworkRequestInit, "method" | "body"> = {},
   ): Promise<NetworkJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
@@ -229,7 +230,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   async postContent(
     url: string,
     body: Uint8Array,
-    init: Omit<ImpitRequestInit, "method" | "body"> = {},
+    init: Omit<NetworkRequestInit, "method" | "body"> = {},
   ): Promise<void> {
     await this.request(url, {
       ...init,
@@ -297,7 +298,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
   }
 
-  async head(url: string, init: Omit<ImpitRequestInit, "method"> = {}): Promise<{ status: number; ok: boolean }> {
+  async head(url: string, init: Omit<NetworkRequestInit, "method"> = {}): Promise<{ status: number; ok: boolean }> {
     const { status, ok } = await this.probe(url, init);
 
     return {
@@ -433,11 +434,11 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     );
   }
 
-  private async request(url: string, init: ImpitRequestInit): Promise<RawNetworkResponse> {
+  private async request(url: string, init: NetworkRequestInit): Promise<RawNetworkResponse> {
     return this.executeRequest(url, init);
   }
 
-  private async requestText(url: string, init: ImpitRequestInit): Promise<string> {
+  private async requestText(url: string, init: NetworkRequestInit): Promise<string> {
     return await this.executeRequest(url, init, undefined, {
       transformResponse: async (response) => {
         const text = await response.text();
@@ -458,7 +459,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
   }
 
-  private async requestForProbe(url: string, init: ImpitRequestInit): Promise<RawNetworkResponse> {
+  private async requestForProbe(url: string, init: NetworkRequestInit): Promise<RawNetworkResponse> {
     return this.executeRequest(url, init, undefined, {
       allowNonOkResponse: true,
       retryLogPrefix: `probe ${url}`,
@@ -467,7 +468,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
   private async executeRequest<TResult = RawNetworkResponse>(
     url: string,
-    init: ImpitRequestInit,
+    init: NetworkRequestInit,
     client?: Impit,
     behavior: RequestBehavior<TResult> = {},
   ): Promise<TResult> {
@@ -491,7 +492,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
 
   private async runRequest<TResult>(
     url: string,
-    init: ImpitRequestInit,
+    init: NetworkRequestInit,
     client: Impit | undefined,
     behavior: RequestBehavior<TResult>,
   ): Promise<TResult> {
@@ -582,17 +583,18 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     });
   }
 
-  private async fetchOnce(url: string, init: ImpitRequestInit, client?: Impit): Promise<RawNetworkResponse> {
+  private async fetchOnce(url: string, init: NetworkRequestInit, client?: Impit): Promise<RawNetworkResponse> {
     if (init.signal?.aborted) {
       throw createAbortError();
     }
 
-    const currentClient = client ?? this.getClient(getCrawlerExecutionSource()?.website);
+    const { useProxy, ...requestInit } = init;
+    const currentClient = client ?? this.getClient(getCrawlerExecutionSource()?.website, useProxy);
     const headers = new Headers(init.headers);
     this.applySiteRequestConfig(url, headers);
 
     const finalInit = {
-      ...init,
+      ...requestInit,
       timeout: init.timeout ?? this.resolveTimeoutMs(),
       headers,
     };
@@ -752,8 +754,8 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return Math.max(0, Math.trunc(value));
   }
 
-  private getClient(site?: Website): Impit {
-    const proxyUrl = this.options.getProxyUrl?.(site);
+  private getClient(site?: Website, useProxy = true): Impit {
+    const proxyUrl = useProxy ? this.options.getProxyUrl?.(site) : undefined;
     let client = this.clientsByProxy.get(proxyUrl ?? "");
     if (!client) {
       // Requests go either through the global proxy or direct, so any other cached proxy has been replaced.

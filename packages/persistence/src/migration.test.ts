@@ -13,6 +13,39 @@ const releasedMigrationChecksums = {
 const migrationFile = "0003_additive_roots_and_scan_tasks.sql";
 
 describe("Persistence migration baseline", () => {
+  it("preserves confirmed duplicate choices and restores unverified deep deletions to the review queue", async () => {
+    const database = createPersistenceDatabase({ path: ":memory:" });
+    try {
+      const files = (await readdir(defaultMigrationsFolder)).filter((entry) => /^\d{4}_.+\.sql$/u.test(entry)).sort();
+      for (const file of files.filter((file) => file < "0014"))
+        database.sqlite.exec(await readFile(join(defaultMigrationsFolder, file), "utf8"));
+      database.sqlite.exec(`
+        INSERT INTO scrape_conflict_resolutions (item_id, task_id, snapshot_json, token, keep, step)
+        VALUES ('incoming', 'scrape', '{"previewedAt":1}', 'confirmed', 'incoming', 'verifying_cloud');
+        INSERT INTO emby_deletion_events (id, dedup_key, server_id, item_id, received_at, status, next_attempt_at, event_type, result, completed_at)
+        VALUES ('unverified', 'deep', 'emby', 'movie', 1, 'ignored', 1, 'deep.delete', 'cloud_binding_unverified', 2),
+               ('ordinary', 'local', 'emby', 'other', 1, 'ignored', 1, 'library.deleted', 'file_still_exists', 2);
+      `);
+      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0014_deletion_job_progress.sql"), "utf8"));
+      expect(database.sqlite.prepare("SELECT * FROM scrape_conflict_resolutions").get()).toMatchObject({
+        item_id: "incoming",
+        token: "confirmed",
+        keep: "incoming",
+        step: "verifying_cloud",
+        error: null,
+        updated_at: 0,
+      });
+      expect(
+        database.sqlite.prepare("SELECT id, status, completed_at FROM emby_deletion_events ORDER BY id").all(),
+      ).toEqual([
+        { id: "ordinary", status: "ignored", completed_at: 2 },
+        { id: "unverified", status: "needs_review", completed_at: null },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
   it("keeps released migrations byte-for-byte intact", async () => {
     for (const [file, checksum] of Object.entries(releasedMigrationChecksums)) {
       const contents = await readFile(join(defaultMigrationsFolder, file));
@@ -45,6 +78,7 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 11, when: 1_793_059_200_000, tag: "0011_libraries_to_config" }),
       expect.objectContaining({ idx: 12, when: 1_793_145_600_000, tag: "0012_pending_number_recognition" }),
       expect.objectContaining({ idx: 13, when: 1_793_232_000_000, tag: "0013_scrape_conflict_resolutions" }),
+      expect.objectContaining({ idx: 14, when: 1_793_318_400_000, tag: "0014_deletion_job_progress" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });

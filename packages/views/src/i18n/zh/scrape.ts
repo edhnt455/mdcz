@@ -3,6 +3,8 @@ import type { Messages } from "../en";
 export const scrape: Messages["scrape"] = {
   conflict: {
     referenceErrors: {
+      missingSource: (path: string) =>
+        `下列 Link STRM 已不存在，且影片记录没有可核验的来源信息，无法确认它原来引用哪个 115 视频。请修复这条残留记录或来源关联：\n${path}`,
       shared: (path: string) => `另一个已入库 STRM 仍引用要删除的 115 视频，本次未执行删除。请先处理该引用：\n${path}`,
       unverified: (path: string) =>
         `无法读取或识别下列 STRM，尚不能排除它引用要删除的 115 视频。本次未执行删除，请检查该文件或修复来源关联：\n${path}`,

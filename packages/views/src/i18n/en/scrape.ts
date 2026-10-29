@@ -3,6 +3,8 @@ import type { ScrapeRunStage } from "@mdcz/shared/serverDtos";
 export const scrape = {
   conflict: {
     referenceErrors: {
+      missingSource: (path: string) =>
+        `This Link STRM is missing and its library record has no verifiable source information. Its original 115 video cannot be identified. Repair this stale record or source association:\n${path}`,
       shared: (path: string) =>
         `Another registered STRM still references the 115 video to delete. Nothing was deleted in this attempt. Resolve this reference first:\n${path}`,
       unverified: (path: string) =>

@@ -136,6 +136,11 @@ const trpcMutation = async <TOutput>(path: string, input?: unknown): Promise<TOu
   (await getTrpc().mutation(path, input)) as TOutput;
 
 export const api: ServerApiContract = {
+  deletions: {
+    list: () => trpcQuery("deletions.list"),
+    detail: (input) => trpcQuery("deletions.detail", input),
+    retry: (input) => trpcMutation("deletions.retry", input),
+  },
   auth: {
     setup: () => trpcQuery("auth.setup"),
     login: async (input) => {
@@ -260,7 +265,6 @@ export const api: ServerApiContract = {
     configureMoviePilot: (input) => trpcMutation("embyDeletion.configureMoviePilot", input),
     testMoviePilot: () => trpcMutation("embyDeletion.testMoviePilot"),
     bindSources: () => trpcMutation("embyDeletion.bindSources"),
-    retry: (input) => trpcMutation("embyDeletion.retry", input),
   },
   mediaRoots: {
     ensurePath: (input) => trpcMutation("mediaRoots.ensurePath", input),

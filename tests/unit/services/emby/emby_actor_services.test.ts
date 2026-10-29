@@ -10,7 +10,7 @@ import {
   EmbyActorPhotoService as EmbyActorPhoto,
   type MediaServerSignalService,
 } from "@mdcz/runtime/mediaserver";
-import type { NetworkClient } from "@mdcz/runtime/network";
+import type { NetworkClient, RuntimeRequestInit } from "@mdcz/runtime/network";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 
@@ -39,11 +39,11 @@ const embyUserId = "user-1";
 const ACTOR_PERSON_TYPES_QUERY = "Actor,GuestStar";
 
 class FakeNetworkClient {
-  readonly getJson = vi.fn(async (_url: string): Promise<unknown> => ({}));
+  readonly getJson = vi.fn(async (_url: string, _init?: RuntimeRequestInit): Promise<unknown> => ({}));
 
   readonly getContent = vi.fn(async (_url: string) => new Uint8Array());
 
-  readonly postText = vi.fn(async (_url: string, _body: string) => "");
+  readonly postText = vi.fn(async (_url: string, _body: string, _init?: RuntimeRequestInit) => "");
 }
 
 class FakeActorSourceProvider {
@@ -221,6 +221,7 @@ describe("Emby actor services", () => {
       { key: "peopleWrite", status: "ok" },
       { key: "adminKey", status: "skipped" },
     ]);
+    for (const [, init] of networkClient.getJson.mock.calls) expect(init?.useProxy).toBe(false);
   });
 
   it("reads people for diagnostics exactly as the sync does: resolved user id and actor filter", async () => {
@@ -426,6 +427,8 @@ describe("Emby actor services", () => {
     expect(networkClient.postText).toHaveBeenCalledTimes(2);
     expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1\/Images\/Primary$/u);
     expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
+    for (const [, init] of networkClient.getJson.mock.calls) expect(init?.useProxy).toBe(false);
+    for (const [, , init] of networkClient.postText.mock.calls) expect(init?.useProxy).toBe(false);
   });
 
   it("auto-resolves the Emby user id before actor photo sync reads /Persons", async () => {

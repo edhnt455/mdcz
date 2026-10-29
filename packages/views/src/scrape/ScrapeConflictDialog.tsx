@@ -70,6 +70,14 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
           {text.open}
         </Button>
       )}
+      {completed || preview?.keep ? (
+        <a
+          className="text-sm text-primary underline"
+          href={`/workbench?intent=deletion&jobId=${encodeURIComponent(`duplicate/${input.itemId}`)}`}
+        >
+          {t.deletions.openWorkbench}
+        </a>
+      ) : null}
       <Dialog
         open={open}
         onOpenChange={(value) => {
@@ -103,6 +111,14 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
               className="text-sm text-primary underline"
             >
               {text.openSettings}
+            </a>
+          ) : null}
+          {preview?.keep ? (
+            <a
+              className="text-sm text-primary underline"
+              href={`/workbench?intent=deletion&jobId=${encodeURIComponent(`duplicate/${input.itemId}`)}`}
+            >
+              {t.deletions.openWorkbench}
             </a>
           ) : null}
           {preview ? (

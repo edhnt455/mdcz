@@ -1,4 +1,8 @@
 export const queryKeys = {
+  deletions: {
+    all: ["pending", "deletions"] as const,
+    detail: (id: string) => ["pending", "deletions", id] as const,
+  },
   auth: {
     status: ["auth", "status"] as const,
   },

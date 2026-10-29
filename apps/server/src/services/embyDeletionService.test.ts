@@ -17,7 +17,7 @@ import { mergeRuntimeConfig } from "@mdcz/runtime/config";
 import type { MediaLibrary } from "@mdcz/runtime/library";
 import { type Configuration, configurationSchema, type DeepPartial, defaultConfiguration } from "@mdcz/shared/config";
 import type { EmbyDeletionNotification } from "@mdcz/shared/embyDeletion";
-import { type MoviePilotFile, moviePilotResourceIdentity, strmReferenceErrors } from "@mdcz/shared/moviePilot";
+import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTaskEventBus } from "../taskEvents";
 import { EmbyDeletionService } from "./embyDeletionService";
@@ -275,7 +275,13 @@ describe("Emby deletion sync", () => {
     expect(f.logger.info.mock.calls.filter(([message]) => message.includes(event.id))).toHaveLength(1);
     for (let i = 0; i < 25; i++)
       await f.service.accept(f.notification(`noise-${i}.mp4`, { Server: { Id: "other-server" } }));
-    expect((await f.service.status()).recent.map((entry) => entry.id)).toEqual([event.id]);
+    expect(
+      f
+        .repository()
+        .jobs()
+        .filter((entry) => entry.status === "pending")
+        .map((entry) => entry.id),
+    ).toEqual([event.id]);
     expect((await f.service.status()).counts).toEqual({ pending: 1, needs_review: 0 });
     await f.advance();
     expect(f.count("library_items")).toBe(1);
@@ -291,7 +297,12 @@ describe("Emby deletion sync", () => {
       resources: ["library", "pending"],
     });
     expect(f.repository().event(event.id)).toMatchObject({ status: "completed", result: "records_removed" });
-    expect((await f.service.status()).recent).toEqual([]);
+    expect(
+      f
+        .repository()
+        .jobs()
+        .filter((entry) => entry.status === "pending" || entry.status === "needs_review"),
+    ).toEqual([]);
     expect((await f.service.status()).counts).toEqual({ pending: 0, needs_review: 0 });
     expect(f.logger.info).toHaveBeenCalledWith(expect.stringContaining('"result":"records_removed"'));
   });
@@ -354,7 +365,12 @@ describe("Emby deletion sync", () => {
     await f.advance();
     expect(f.count("library_items")).toBe(1);
     expect(f.events()[0]?.result).toBe(reason);
-    expect((await f.service.status()).recent).toEqual([]);
+    expect(
+      f
+        .repository()
+        .jobs()
+        .filter((entry) => entry.status === "pending" || entry.status === "needs_review"),
+    ).toEqual([]);
     expect(f.logger.info).toHaveBeenCalledWith(expect.stringContaining(`"result":"${reason}"`));
   });
 
@@ -521,10 +537,48 @@ describe("copy STRM deep deletion", () => {
   it("persists cloud acknowledgement, confirms source cleanup and suppresses reimport across database reopen", async () => {
     const f = await strmFixture();
     const unrelated = path.join(f.output, "unrelated.strm");
-    await new LibraryRepository(f.database).upsertEntry({
+    const unrelatedSource = path.join(f.source, "unrelated.strm");
+    const unrelatedContent = "https://mp.test/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=unrelated\n";
+    const source = {
+      sourcePath: unrelatedSource,
+      sha256: createHash("sha256").update(unrelatedContent).digest("hex"),
+      resourceIdentity: moviePilotResourceIdentity(unrelatedContent.trim()),
+    };
+    const entry = await new LibraryRepository(f.database).upsertEntry({
       movie: { number: "OTHER" },
-      files: [{ fileId: "unrelated", rootId: f.root.id, rootRelativePath: "unrelated.strm" }],
+      files: [
+        {
+          fileId: "unrelated",
+          rootId: f.root.id,
+          rootRelativePath: "unrelated.strm",
+          strmSourceJson: JSON.stringify(source),
+        },
+      ],
     });
+    const original = readStrmBinding(f.repository(), "movie-0");
+    if (!original) throw new Error("Missing fixture source");
+    const badTarget = {
+      ...original.target,
+      fileid: "other-file",
+      pickcode: "unrelated",
+      path: "/Media/AV/unrelated.mp4",
+    };
+    f.remote.files.push(badTarget);
+    f.repository().bind({
+      fileId: "unrelated",
+      libraryId: f.mediaLibrary.id,
+      linkPath: unrelated,
+      sourcePath: unrelatedSource,
+      blocked: false,
+      snapshotJson: JSON.stringify({
+        ...original,
+        source,
+        target: badTarget,
+        fileUpdatedAt: entry.files[0].updatedAt.getTime(),
+      }),
+    });
+    await writeFile(unrelatedSource, "replaced-resource");
+    const broken = await f.service.accept(f.notification("unrelated.strm", { Event: "deep.delete" }));
     const accepted = await f.service.accept(f.event);
     expect(await f.service.accept({ ...f.event, Date: new Date(f.now + 1_000).toISOString() })).toMatchObject({
       id: accepted.id,
@@ -532,18 +586,14 @@ describe("copy STRM deep deletion", () => {
     });
     await f.advance();
     await f.advance();
-    expect(f.events().find((event) => event.id === accepted.id)?.result).toBe(
-      `${strmReferenceErrors.unverified}\n${unrelated}`,
-    );
-    expect(f.remote.deleteCalls).toBe(0);
-    await writeFile(unrelated, "https://mp.test/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=unrelated\n");
-    f.database.sqlite.prepare("UPDATE emby_deletion_events SET next_attempt_at = 0 WHERE id = ?").run(accepted.id);
-    await f.advance();
+    expect(f.repository().event(broken.id)?.attempts).toBeGreaterThan(0);
+    expect(f.repository().event(broken.id)?.result).toContain("replaced");
     expect(f.events().find((event) => event.id === accepted.id)?.result).toBe("confirming_source_cleanup");
     expect(f.remote.deleteCalls).toBe(1);
     expect(f.count("library_item_files")).toBe(2);
-    expect(f.events()[0]).toMatchObject({ step: "cleaning_records", status: "pending" });
+    expect(f.repository().event(accepted.id)).toMatchObject({ step: "cleaning_records", status: "pending" });
     await expect(readFile(path.join(f.source, "ABC-123.strm"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(unrelatedSource, "utf8")).toBe("replaced-resource");
     f.reopen();
     await f.advance(f.createService());
     expect(f.count("library_item_files")).toBe(1);
@@ -568,7 +618,9 @@ describe("copy STRM deep deletion", () => {
       ]),
     ).toThrow("suppressed");
     expect(f.count("library_item_files")).toBe(1);
-    expect(await readFile(unrelated, "utf8")).toContain("pickcode=unrelated");
+    await expect(readFile(unrelated)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(f.repository().event(accepted.id)?.status).toBe("completed");
+    expect(f.repository().event(broken.id)?.status).toBe("pending");
     expect(JSON.stringify(await f.createService().status())).not.toContain("test-mp-token");
     expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain("test-mp-token");
     expect(JSON.stringify(f.logger.info.mock.calls)).not.toContain("sample-pickcode");
@@ -577,6 +629,7 @@ describe("copy STRM deep deletion", () => {
   it("keeps shared cloud resources and sources until the final registered reference is deleted", async () => {
     const f = await strmFixture("delete", ["ABC-123.strm", "shared.strm"]);
     f.database.sqlite.prepare("DELETE FROM strm_cloud_bindings WHERE file_id = ?").run("movie-1");
+    await rm(path.join(f.output, "shared.strm"));
     await f.service.accept(f.event);
     await f.advance();
     await f.advance();
@@ -587,6 +640,7 @@ describe("copy STRM deep deletion", () => {
     expect(new LibraryRepository(f.database).knownMediaIdentities([path.join(f.source, "ABC-123.strm")])).toContain(
       path.join(f.source, "ABC-123.strm"),
     );
+    await writeFile(path.join(f.output, "shared.strm"), f.content);
     expect(await f.service.bindSources()).toEqual({ verified: 1, unverified: 0 });
     await rm(path.join(f.output, "shared.strm"));
     await f.service.accept(f.notification("shared.strm", { Event: "deep.delete" }));
@@ -604,7 +658,11 @@ describe("copy STRM deep deletion", () => {
     expect(await f.service.reconcile()).toEqual({ queued: 0 });
     expect(await f.service.accept({ ...f.event, Event: "library.deleted" })).toMatchObject({ status: "ignored" });
     expect(f.events()[0].result).toBe("deep_delete_required");
+    f.database.sqlite.prepare("DELETE FROM strm_cloud_bindings WHERE file_id = ?").run("movie-0");
     const event = await f.service.accept(f.event);
+    expect(event.status).toBe("needs_review");
+    await f.service.retry(event.id);
+    expect(f.repository().event(event.id)?.snapshotJson).toBeTruthy();
     await f.advance();
     await f.advance();
     expect(f.remote.deleteCalls).toBe(0);

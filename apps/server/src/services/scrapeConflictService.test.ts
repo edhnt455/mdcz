@@ -18,6 +18,7 @@ import { type MoviePilotFile, moviePilotResourceIdentity, strmReferenceErrors } 
 import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DeletionService } from "./deletionService";
 import type { ServerPersistenceService } from "./persistenceService";
 import { ScrapeConflictService } from "./scrapeConflictService";
 import { StrmDeletionService } from "./strmDeletionService";
@@ -90,12 +91,20 @@ async function fixture(shared = false) {
     parent_fileid: "root",
     size: (index + 1) * 1024 ** 3,
   }));
-  const remote = { files, reject: false, loseResponse: false, verificationFails: false, deletions: [] as string[] };
+  const remote = {
+    files,
+    reject: false,
+    loseResponse: false,
+    verificationFails: false,
+    deletions: [] as string[],
+    beforeDelete: undefined as (() => Promise<void>) | undefined,
+  };
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {
     const endpoint = new URL(String(url)).pathname;
     if (endpoint.endsWith("/options")) return Response.json({ success: true, message: "", data: [{ type: "u115" }] });
     const body = JSON.parse(String(init?.body)) as MoviePilotFile;
     if (endpoint.endsWith("/delete")) {
+      await remote.beforeDelete?.();
       if (remote.reject) return Response.json({ success: false, message: "denied", data: null });
       remote.deletions.push(body.fileid);
       remote.files = remote.files.filter((file) => file.fileid !== body.fileid);
@@ -165,6 +174,7 @@ async function fixture(shared = false) {
     moviePilotFetch: fetcher,
   };
   await new StrmDeletionService(() => configuration.embyDeletion, fetcher).bind(repository);
+  const service = new ScrapeConflictService(deps);
   return {
     directory,
     existingNormal,
@@ -177,7 +187,13 @@ async function fixture(shared = false) {
     configuration,
     run,
     jobs: new ScrapeConflictRepository(database),
-    service: new ScrapeConflictService(deps),
+    service,
+    deletions: new DeletionService({
+      persistence,
+      config: deps.config,
+      scrape: { conflicts: service },
+      emby: { processingId: null, retry: vi.fn() },
+    }),
     restart: () => new ScrapeConflictService(deps),
     retry,
     setBusy: (value: boolean) => {
@@ -187,6 +203,52 @@ async function fixture(shared = false) {
 }
 
 describe("STRM duplicate resolution", () => {
+  it("publishes the selected deletion's live steps and restores its completed result", async () => {
+    const f = await fixture();
+    const preview = await f.service.preview(input);
+    let enter!: () => void;
+    let finish!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    f.remote.beforeDelete = async () => {
+      enter();
+      await finished;
+    };
+    const resolving = f.service.resolve({ ...input, token: preview.token, keep: "incoming" });
+    try {
+      await entered;
+      expect(await f.deletions.detail(`duplicate/${input.itemId}`)).toMatchObject({
+        source: "duplicate",
+        status: "running",
+        step: "deleting_cloud",
+        canRetry: false,
+        cloudPath: "/AV/old.mp4",
+        cloudSize: 1024 ** 3,
+        cloudDeleted: false,
+        linkPath: f.linkPath,
+        sourcePaths: [f.existingNormal],
+        retryPlanned: true,
+      });
+      await expect(f.deletions.retry(`duplicate/${input.itemId}`)).rejects.toThrow("current state");
+    } finally {
+      finish();
+      await resolving;
+    }
+    expect(await f.deletions.detail(`duplicate/${input.itemId}`)).toMatchObject({
+      status: "completed",
+      step: "completed",
+      retryRunId: "retry",
+      cloudDeleted: true,
+      error: null,
+    });
+    expect((await f.deletions.list()).jobs).toHaveLength(1);
+    expect((await f.restart().preview(input)).step).toBe("completed");
+  });
+
   it.each(["existing", "incoming"] as const)("keeps %s and deletes only the other resource", async (keep) => {
     const f = await fixture();
     const connection = f.configuration.embyDeletion.moviePilot;
@@ -248,6 +310,12 @@ describe("STRM duplicate resolution", () => {
     expect(await readFile(path.join(path.dirname(f.linkPath), "ABC-123.nfo"), "utf8")).toBe("retained metadata");
     expect(await readFile(unrelatedPath, "utf8")).toBe(content("unrelated"));
     expect(f.jobs.get(input.itemId)?.step).toBe("completed");
+    expect(await f.deletions.detail(`duplicate/${input.itemId}`)).toMatchObject({
+      status: "completed",
+      step: "completed",
+      canRetry: false,
+      cloudDeleted: true,
+    });
     await f.restart().resolve({ ...input, token: preview.token, keep });
     expect(f.remote.deletions).toHaveLength(1);
     expect(f.retry).toHaveBeenCalledTimes(keep === "existing" ? 0 : 1);
@@ -304,7 +372,14 @@ describe("STRM duplicate resolution", () => {
       await f.library
         .upsertEntry({
           movie: { number: "OTHER" },
-          files: [{ fileId: "other", rootId: f.entry.files[0].rootId, rootRelativePath: "other.strm" }],
+          files: [
+            {
+              fileId: "other",
+              rootId: f.entry.files[0].rootId,
+              rootRelativePath: "other.strm",
+              strmSourceJson: JSON.stringify({ resourceIdentity: moviePilotResourceIdentity(content("old").trim()) }),
+            },
+          ],
         })
         .then((entry) => {
           const binding = f.repository.binding("existing");
@@ -341,22 +416,38 @@ describe("STRM duplicate resolution", () => {
       const otherPath = path.join(path.dirname(f.linkPath), "other.strm");
       await writeFile(otherPath, "unrecognized resource");
       await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
-        `${strmReferenceErrors.unverified}\n${otherPath}`,
+        `${strmReferenceErrors.shared}\n${otherPath}`,
       );
       await rm(otherPath);
       await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
-        `${strmReferenceErrors.unverified}\n${otherPath}`,
+        `${strmReferenceErrors.shared}\n${otherPath}`,
       );
       expect(f.remote.deletions).toEqual([]);
-      await writeFile(otherPath, content("unrelated"));
+      await f.library.upsertEntry({
+        movie: { number: "OTHER" },
+        files: [
+          {
+            fileId: "other",
+            rootId: f.entry.files[0].rootId,
+            rootRelativePath: "other.strm",
+            strmSourceJson: JSON.stringify({
+              resourceIdentity: moviePilotResourceIdentity(content("unrelated").trim()),
+            }),
+          },
+        ],
+      });
       await f.service.resolve({ ...input, keep: "incoming", token: preview.token });
       expect(f.remote.deletions).toEqual(["old"]);
-      expect(await readFile(otherPath, "utf8")).toBe(content("unrelated"));
+      await expect(readFile(otherPath)).rejects.toMatchObject({ code: "ENOENT" });
     }
     if (scenario === "rejected" || scenario === "failed verification") {
       f.remote.reject = false;
       f.remote.verificationFails = false;
-      await f.restart().resolve({ ...input, keep: "incoming", token: preview.token });
+      expect(await f.deletions.detail(`duplicate/${input.itemId}`)).toMatchObject({
+        status: "needs_review",
+        canRetry: true,
+      });
+      await f.deletions.retry(`duplicate/${input.itemId}`);
       expect(f.remote.deletions).toEqual(["old"]);
       expect(f.retry).toHaveBeenCalledOnce();
     }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type EmbyDeletionStep, type MoviePilotConnection, moviePilotFileSchema } from "./moviePilot";
+import { type MoviePilotConnection, moviePilotFileSchema } from "./moviePilot";
 
 export const embyDeletionSettingsSchema = z
   .object({
@@ -73,16 +73,4 @@ export interface EmbyDeletionStatus {
   configured: boolean;
   libraries: { id: string; name: string; outputPath: string }[];
   counts: Record<"pending" | "needs_review", number>;
-  recent: {
-    id: string;
-    serverId: string;
-    path: string | null;
-    status: EmbyDeletionState;
-    result: string | null;
-    receivedAt: number;
-    completedAt: number | null;
-    attempts: number;
-    step: EmbyDeletionStep;
-    preview: { sourcePaths: string[]; cloudPath: string; fileId: string } | null;
-  }[];
 }

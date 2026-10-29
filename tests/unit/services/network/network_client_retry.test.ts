@@ -20,6 +20,7 @@ import { CrawlerProvider } from "@mdcz/runtime/crawler/CrawlerProvider";
 import { FetchGateway } from "@mdcz/runtime/crawler/FetchGateway";
 import { NetworkClient, runWithCrawlerSource } from "@mdcz/runtime/network";
 import { Website } from "@mdcz/shared/enums";
+import { Impit } from "../../impitMock";
 
 const createProbeResponse = (
   body: Uint8Array,
@@ -324,7 +325,8 @@ describe("NetworkClient retry policy", () => {
     }
   });
 
-  it("reuses a shared Impit client until proxy settings change, and keeps direct sites off the proxy", async () => {
+  it("reuses clients across proxy changes, direct sites, and explicit direct requests", async () => {
+    const dispatchSpy = vi.spyOn(Impit.prototype, "fetch");
     let proxyUrl = "http://proxy-a";
     fetchMock.mockImplementation(async () => new Response("ok", { status: 200 }));
     const client = new NetworkClient({
@@ -350,6 +352,33 @@ describe("NetworkClient retry policy", () => {
     await runWithCrawlerSource(Website.DMM, () => client.getText("https://example.com/direct"));
     expect(impitConstructorMock).toHaveBeenCalledTimes(3);
     expect(impitConstructorMock.mock.calls[2]?.[0].proxyUrl).toBeUndefined();
+    const directClient = dispatchSpy.mock.contexts[3];
+
+    for (const url of [
+      "http://192.168.50.4:8096/Items/person/Images/Primary",
+      "http://emby:8096/Items/person/Images/Primary",
+      "https://media.example.com/Items/person/Images/Primary",
+    ]) {
+      await expect(client.postText(url, "base64-photo", { useProxy: false })).resolves.toBe("ok");
+      expect(dispatchSpy.mock.contexts.at(-1)).toBe(directClient);
+      expect(fetchMock.mock.lastCall?.[1]).not.toHaveProperty("useProxy");
+    }
+    expect(impitConstructorMock).toHaveBeenCalledTimes(3);
+
+    await expect(client.getText("https://example.com/actor.jpg")).resolves.toBe("ok");
+    expect(dispatchSpy.mock.contexts.at(-1)).toBe(dispatchSpy.mock.contexts[2]);
+    expect(impitConstructorMock).toHaveBeenCalledTimes(3);
+
+    proxyUrl = "http://proxy-c";
+    await expect(
+      client.postText("http://emby:8096/Items/person/Images/Primary", "base64-photo", { useProxy: false }),
+    ).resolves.toBe("ok");
+    expect(dispatchSpy.mock.contexts.at(-1)).toBe(directClient);
+    expect(impitConstructorMock).toHaveBeenCalledTimes(3);
+    await expect(client.getText("https://example.com/actor.jpg")).resolves.toBe("ok");
+    expect(impitConstructorMock).toHaveBeenCalledTimes(4);
+    expect(impitConstructorMock.mock.calls[3]?.[0]).toMatchObject({ proxyUrl: "http://proxy-c" });
+    dispatchSpy.mockRestore();
   });
 
   it("applies crawler-registered site request defaults without overriding explicit headers", async () => {

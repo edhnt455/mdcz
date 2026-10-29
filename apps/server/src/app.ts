@@ -37,6 +37,7 @@ import { AuthenticationError, AuthService } from "./services/authService";
 import { AutomationService } from "./services/automationService";
 import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
+import { DeletionService } from "./services/deletionService";
 import { EmbyDeletionService } from "./services/embyDeletionService";
 import { LibraryService } from "./services/libraryService";
 import { LibraryWatchService } from "./services/libraryWatchService";
@@ -232,22 +233,24 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       ),
       onChanged: () => taskEvents.invalidate("pending", "scrape-history"),
     });
+  const embyDeletion =
+    options.services?.embyDeletion ??
+    new EmbyDeletionService({
+      persistence,
+      libraries,
+      maintenance,
+      taskEvents,
+      invalidateAvailability: () => library.invalidateAvailability(),
+      logger: runtimeLogs.getLogger("EmbyDeletion"),
+      config,
+    });
   const services: ServerServices = {
+    deletions: options.services?.deletions ?? new DeletionService({ persistence, config, emby: embyDeletion, scrape }),
     activity,
     automation,
     auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
-    embyDeletion:
-      options.services?.embyDeletion ??
-      new EmbyDeletionService({
-        persistence,
-        libraries,
-        maintenance,
-        taskEvents,
-        invalidateAvailability: () => library.invalidateAvailability(),
-        logger: runtimeLogs.getLogger("EmbyDeletion"),
-        config,
-      }),
+    embyDeletion,
     config,
     libraries,
     libraryWatch,

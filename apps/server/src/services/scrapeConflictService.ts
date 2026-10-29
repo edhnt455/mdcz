@@ -30,7 +30,7 @@ type Version = {
   fileUpdatedAt: number | null;
   linkHash: string | null;
 };
-interface Snapshot {
+export interface ScrapeConflictSnapshot {
   library: LibraryBinding;
   existingLinkPath: string;
   incoming: Version;
@@ -42,6 +42,10 @@ const hash = (value: string | Uint8Array) => createHash("sha256").update(value).
 
 export class ScrapeConflictService {
   private readonly running = new Set<string>();
+
+  isRunning(itemId: string): boolean {
+    return this.running.has(itemId);
+  }
 
   constructor(
     private readonly deps: {
@@ -62,7 +66,7 @@ export class ScrapeConflictService {
     const items = [...snapshot.items];
     for (const row of rows) {
       if (items.some((item) => item.id === row.itemId)) continue;
-      const saved = JSON.parse(row.snapshotJson) as Snapshot;
+      const saved = JSON.parse(row.snapshotJson) as ScrapeConflictSnapshot;
       items.push({
         id: row.itemId,
         resultId: null,
@@ -90,7 +94,12 @@ export class ScrapeConflictService {
     const saved = jobs.get(input.itemId);
     if (saved && saved.taskId !== input.taskId) throw new Error("Duplicate resolution belongs to another task");
     if (saved?.keep)
-      return this.toPreview(JSON.parse(saved.snapshotJson) as Snapshot, saved.token, saved.keep, saved.step);
+      return this.toPreview(
+        JSON.parse(saved.snapshotJson) as ScrapeConflictSnapshot,
+        saved.token,
+        saved.keep,
+        saved.step,
+      );
     const run = await this.deps.snapshot(input);
     const item = run.items.find((candidate) => candidate.id === input.itemId);
     if (run.task.continuity === "live" || item?.status !== "failed" || !item.conflict || !run.task.libraryId)
@@ -148,6 +157,7 @@ export class ScrapeConflictService {
       const pickcode = new URL(resourceIdentity).searchParams.get("pickcode") ?? "";
       const candidates = index.get(pickcode) ?? [];
       if (candidates.length !== 1) throw new Error("115 source could not be uniquely verified");
+      if (candidates[0].target.size == null) throw new Error("115 source size is unavailable");
       versions.push({
         cloud: {
           connectionId: connection.id,
@@ -175,7 +185,7 @@ export class ScrapeConflictService {
       throw new Error("Normal and Link refer to different resources");
     existing.fileId = existingFile.id;
     existing.fileUpdatedAt = existingFile.updatedAt.getTime();
-    const snapshot: Snapshot = {
+    const snapshot: ScrapeConflictSnapshot = {
       library,
       existing,
       incoming,
@@ -189,7 +199,7 @@ export class ScrapeConflictService {
   }
 
   private toPreview(
-    snapshot: Snapshot,
+    snapshot: ScrapeConflictSnapshot,
     token: string,
     keep: ScrapeConflictPreview["keep"],
     step: string | null,
@@ -226,7 +236,8 @@ export class ScrapeConflictService {
         throw new Error("Refresh the duplicate preview before deleting");
       if (job.keep && job.keep !== input.keep) throw new Error("Continue the previously selected resolution");
       if (job.step === "completed") return { runId: job.retryRunId };
-      const snapshot = JSON.parse(job.snapshotJson) as Snapshot;
+      jobs.update(input.itemId, { keep: input.keep, error: null });
+      const snapshot = JSON.parse(job.snapshotJson) as ScrapeConflictSnapshot;
       if (job.step === "retrying") {
         const retry = (await state.repositories.scrapeRuns.list()).find(
           (run) =>
@@ -283,7 +294,12 @@ export class ScrapeConflictService {
         await strm.assertSource(snapshot.library, selected.cloud, false);
         await this.assertLink(strm, snapshot, false);
         if (!shared) {
-          const other = await strm.otherReference(repository, selected.fileId, selected.cloud);
+          const other = repository.otherReference(
+            selected.fileId,
+            connection.id,
+            selected.cloud.target.fileid,
+            selected.cloud.source.resourceIdentity,
+          );
           if (other) throw new Error(`${strmReferenceErrors.shared}\n${other}`);
         }
         const target = shared ? undefined : await client.verify(connection, selected.cloud);
@@ -379,13 +395,31 @@ export class ScrapeConflictService {
         return { runId: run.task.id };
       }
       return { runId: null };
+    } catch (error) {
+      const state = await this.deps.persistence.getState();
+      const jobs = new ScrapeConflictRepository(state.database);
+      const job = jobs.get(input.itemId);
+      if (
+        job?.taskId === input.taskId &&
+        job.token === input.token &&
+        (!job.keep || job.keep === input.keep) &&
+        job.step !== "completed"
+      ) {
+        jobs.update(input.itemId, { error: error instanceof Error ? error.message : String(error) });
+        this.deps.invalidate();
+      }
+      throw error;
     } finally {
       release?.();
       this.running.delete(input.itemId);
     }
   }
 
-  private async assertLink(strm: StrmDeletionService, snapshot: Snapshot, allowMissing: boolean): Promise<void> {
+  private async assertLink(
+    strm: StrmDeletionService,
+    snapshot: ScrapeConflictSnapshot,
+    allowMissing: boolean,
+  ): Promise<void> {
     await strm.assertSource(
       {
         ...snapshot.library,
