@@ -13,6 +13,7 @@ import {
   moviePilotSettingsSchema,
   type StrmCloudBinding,
   type StrmSourceSnapshot,
+  strmReferenceErrors,
 } from "@mdcz/shared/moviePilot";
 import { MoviePilotClient } from "./moviePilotClient";
 
@@ -192,6 +193,54 @@ export class StrmDeletionService {
     }
   }
 
+  async otherReference(
+    repository: EmbyDeletionRepository,
+    fileId: string | null,
+    snapshot: StrmCloudBinding,
+  ): Promise<string | undefined> {
+    const settings = this.readSettings();
+    const connection = settings.moviePilot;
+    if (!connection || connection.id !== snapshot.connectionId)
+      throw new Error("MoviePilot connection changed; review required");
+    const libraries = settings.libraries.filter((entry) => entry.source);
+    const other = repository.relatedBindings(connection.id, snapshot.target.fileid).find((binding) => {
+      if (binding.fileId === fileId) return false;
+      const file = repository.findFile(binding.linkPath);
+      return (
+        file?.id === binding.fileId &&
+        (!libraries.some((library) => library.id === binding.libraryId) ||
+          (JSON.parse(binding.snapshotJson) as StrmCloudBinding).fileUpdatedAt === file.updatedAt.getTime())
+      );
+    });
+    if (other) return other.linkPath;
+    for (const entry of repository.knownFiles(libraries)) {
+      if (entry.file.id === fileId || path.extname(entry.path).toLowerCase() !== ".strm") continue;
+      const binding = readStrmBinding(repository, entry.file.id);
+      if (binding?.connectionId === connection.id && binding.fileUpdatedAt === entry.file.updatedAt.getTime()) continue;
+      const library = libraries.find((library) => library.id === entry.libraryId);
+      let resource: string | undefined;
+      try {
+        if (!library) throw new Error("STRM library is unavailable");
+        await this.assertMounts({ ...library, source: undefined });
+        const stat = await lstat(entry.path);
+        if (
+          !stat.isFile() ||
+          stat.size > 64 * 1024 ||
+          !isPathInside(library.realPath, filesystemPathKey(await realpath(entry.path)))
+        )
+          throw new Error("STRM file type or location changed");
+        const playback = parseStrmTarget(await readFile(entry.path, "utf8"));
+        resource = playback ? moviePilotResourceIdentity(playback) : undefined;
+        if (!resource || new URL(resource).origin !== new URL(connection.baseUrl).origin)
+          throw new Error("STRM resource cannot be identified on this MoviePilot connection");
+      } catch (error) {
+        throw new Error(`${strmReferenceErrors.unverified}\n${entry.path}`, { cause: error });
+      }
+      if (new URL(resource).searchParams.get("pickcode") === snapshot.target.pickcode) return entry.path;
+    }
+    return undefined;
+  }
+
   async process(input: {
     repository: EmbyDeletionRepository;
     event: EmbyDeletionEventRow;
@@ -214,7 +263,7 @@ export class StrmDeletionService {
     await this.assertMounts(library);
     if (!active()) return false;
     if (event.step !== "validating" && this.readSettings().mode !== "delete") return false;
-    if (repository.otherReferences(event.fileId, snapshot.connectionId, snapshot.target.fileid)) {
+    if (await this.otherReference(repository, event.fileId, snapshot)) {
       if (event.cloudDeletedAt !== null || event.step !== "validating")
         throw new Error("A new reference appeared during cloud deletion; review required");
       if (this.readSettings().mode === "observe") {
@@ -223,14 +272,6 @@ export class StrmDeletionService {
       }
       return true;
     }
-    const unbound = repository
-      .knownFiles(this.readSettings().libraries.filter((binding) => binding.source))
-      .some(
-        ({ file, path: filePath }) =>
-          path.extname(filePath).toLowerCase() === ".strm" &&
-          readStrmBinding(repository, file.id)?.fileUpdatedAt !== file.updatedAt.getTime(),
-      );
-    if (unbound) throw new Error("Unverified STRM references remain; bind all registered STRM files first");
     const sources = new Map<string, { library: EmbyDeletionLibraryBinding; snapshot: StrmCloudBinding }>();
     const relatedBindings = repository.relatedBindings(snapshot.connectionId, snapshot.target.fileid);
     for (const row of relatedBindings) {

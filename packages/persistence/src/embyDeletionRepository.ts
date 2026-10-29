@@ -88,20 +88,6 @@ export class EmbyDeletionRepository {
       .all();
   }
 
-  otherReferences(fileId: string, connectionId: string, cloudFileId: string): boolean {
-    return Boolean(
-      this.database.db
-        .select({ id: libraryItemFiles.id })
-        .from(strmCloudBindings)
-        .innerJoin(libraryItemFiles, eq(libraryItemFiles.id, strmCloudBindings.fileId))
-        .where(
-          sql`${strmCloudBindings.fileId} != ${fileId} and json_extract(${strmCloudBindings.snapshotJson}, '$.connectionId') = ${connectionId} and json_extract(${strmCloudBindings.snapshotJson}, '$.target.fileid') = ${cloudFileId}`,
-        )
-        .limit(1)
-        .get(),
-    );
-  }
-
   associationCounts(connectionId?: string) {
     const verified =
       this.database.db

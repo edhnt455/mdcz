@@ -1,5 +1,5 @@
 import type { EmbyDeletionSettings, EmbyDeletionStatus } from "@mdcz/shared/embyDeletion";
-import type { MoviePilotSettings } from "@mdcz/shared/moviePilot";
+import { type MoviePilotSettings, strmReferenceErrors } from "@mdcz/shared/moviePilot";
 import { EmbyDeletionPanel } from "@mdcz/views/settings/sections/EmbyDeletionPanel";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -45,6 +45,18 @@ const createService = (recent: EmbyDeletionStatus["recent"] = []) => {
 test("configures observation with the exact output library and exposes a one-time webhook address", async () => {
   const service = createService([
     {
+      id: "unverified-reference",
+      serverId: "emby-server",
+      path: "/volume4/Media/AV/Link/ABC-123.strm",
+      status: "pending",
+      result: `${strmReferenceErrors.unverified}\n/volume4/Media/AV/Link/unrelated.strm`,
+      receivedAt: Date.now(),
+      completedAt: null,
+      attempts: 1,
+      step: "validating",
+      preview: null,
+    },
+    {
       id: "preview",
       serverId: "emby-server",
       path: "/volume4/Media/AV/Link/review.strm",
@@ -64,6 +76,9 @@ test("configures observation with the exact output library and exposes a one-tim
   const screen = await render(<EmbyDeletionPanel service={service} />);
   await expect.element(screen.getByText("观察预览", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("Normal 来源：/volume4/Media/AV/Normal/review.strm")).toBeVisible();
+  await expect
+    .element(screen.getByText(/无法读取或识别下列 STRM/))
+    .toHaveTextContent("/volume4/Media/AV/Link/unrelated.strm");
   await expect.element(screen.getByText(/已清理|已忽略/)).not.toBeInTheDocument();
   await expect.element(screen.getByText("Emby Server ID：emby-server")).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "生成 Webhook 地址" }).click();

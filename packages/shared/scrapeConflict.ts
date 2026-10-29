@@ -7,11 +7,6 @@ export const scrapeConflictSetupErrors = {
   libraryPathsChanged: "scrape_conflict_library_paths_changed",
 } as const;
 
-export const scrapeConflictReferenceErrors = {
-  shared: "scrape_conflict_shared_reference",
-  unverified: "scrape_conflict_unverified_reference",
-} as const;
-
 export const scrapeTargetConflictSchema = z.object({
   sourcePath: z.string().min(1),
   targetPath: z.string().min(1),

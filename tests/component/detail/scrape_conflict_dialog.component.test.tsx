@@ -1,8 +1,5 @@
-import {
-  type ScrapeConflictPreview,
-  scrapeConflictReferenceErrors,
-  scrapeConflictSetupErrors,
-} from "@mdcz/shared/scrapeConflict";
+import { strmReferenceErrors } from "@mdcz/shared/moviePilot";
+import { type ScrapeConflictPreview, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { DetailActionPort } from "@mdcz/views/adapters/ports";
 import { ScrapeConflictDialog } from "@mdcz/views/scrape/ScrapeConflictDialog";
 import { expect, test, vi } from "vitest";
@@ -70,8 +67,8 @@ test.each(["existing", "incoming"] as const)("shows actual source sizes and expl
 test("keeps errors visible and permits resuming the same deletion", async () => {
   const resolveConflict = vi
     .fn()
-    .mockRejectedValueOnce(new Error(`${scrapeConflictReferenceErrors.unverified}\n/Link/unverified.strm`))
-    .mockRejectedValueOnce(new Error(`${scrapeConflictReferenceErrors.shared}\n/Link/shared.strm`))
+    .mockRejectedValueOnce(new Error(`${strmReferenceErrors.unverified}\n/Link/unverified.strm`))
+    .mockRejectedValueOnce(new Error(`${strmReferenceErrors.shared}\n/Link/shared.strm`))
     .mockResolvedValueOnce(undefined);
   const port = {
     previewConflict: vi.fn(async () => ({ ...preview, sameResource: true })),

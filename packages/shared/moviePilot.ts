@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+export const strmReferenceErrors = {
+  shared: "strm_shared_reference",
+  unverified: "strm_unverified_reference",
+} as const;
+
 export const moviePilotSettingsSchema = z.object({
   baseUrl: z.url().refine((value) => {
     const url = new URL(value);

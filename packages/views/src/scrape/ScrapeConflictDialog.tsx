@@ -1,7 +1,8 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
+import { strmReferenceErrors } from "@mdcz/shared/moviePilot";
 import type { ScrapeConflictInput, ScrapeConflictPreview } from "@mdcz/shared/scrapeConflict";
-import { scrapeConflictReferenceErrors, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
+import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@mdcz/ui";
 import { useState } from "react";
 import type { DetailActionPort } from "../adapters/ports";
@@ -19,9 +20,9 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
   const setupError = (Object.keys(scrapeConflictSetupErrors) as (keyof typeof scrapeConflictSetupErrors)[]).find(
     (key) => scrapeConflictSetupErrors[key] === error,
   );
-  const referenceError = (
-    Object.keys(scrapeConflictReferenceErrors) as (keyof typeof scrapeConflictReferenceErrors)[]
-  ).find((key) => error.startsWith(`${scrapeConflictReferenceErrors[key]}\n`));
+  const referenceError = (Object.keys(strmReferenceErrors) as (keyof typeof strmReferenceErrors)[]).find((key) =>
+    error.startsWith(`${strmReferenceErrors[key]}\n`),
+  );
 
   const load = async () => {
     if (!port.previewConflict || busy) return;

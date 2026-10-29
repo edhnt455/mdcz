@@ -1,4 +1,5 @@
 import type { EmbyDeletionSettings, EmbyDeletionStatus } from "@mdcz/shared/embyDeletion";
+import { strmReferenceErrors } from "@mdcz/shared/moviePilot";
 import type { ServerApiContract } from "@mdcz/shared/serverApi";
 import {
   Button,
@@ -15,7 +16,8 @@ import { useEffect, useId, useState } from "react";
 import { useT } from "../../i18n";
 
 export function EmbyDeletionPanel({ service }: { service: ServerApiContract["embyDeletion"] & { origin: string } }) {
-  const text = useT().settings.embyDeletion;
+  const messages = useT();
+  const text = messages.settings.embyDeletion;
   const id = useId();
   const [status, setStatus] = useState<EmbyDeletionStatus | null>(null);
   const [draft, setDraft] = useState<EmbyDeletionSettings>({ mode: "off", serverId: "", libraryIds: [] });
@@ -315,8 +317,12 @@ export function EmbyDeletionPanel({ service }: { service: ServerApiContract["emb
                       <div>{text.cloudPreview(event.preview.cloudPath, event.preview.fileId)}</div>
                     </div>
                   ) : null}
-                  <div className="text-muted-foreground">
-                    {text.results[event.result as keyof typeof text.results] ?? event.result}
+                  <div className="whitespace-pre-wrap break-all text-muted-foreground">
+                    {event.result?.startsWith(`${strmReferenceErrors.unverified}\n`)
+                      ? messages.scrape.conflict.referenceErrors.unverified(
+                          event.result.slice(strmReferenceErrors.unverified.length + 1),
+                        )
+                      : (text.results[event.result as keyof typeof text.results] ?? event.result)}
                   </div>
                   {event.status === "needs_review" ||
                   (status.settings.mode === "delete" &&

@@ -14,8 +14,8 @@ import {
 } from "@mdcz/persistence";
 import type { MediaLibrary } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
-import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
-import { scrapeConflictReferenceErrors, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
+import { type MoviePilotFile, moviePilotResourceIdentity, strmReferenceErrors } from "@mdcz/shared/moviePilot";
+import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -320,7 +320,7 @@ describe("STRM duplicate resolution", () => {
           });
         });
       await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
-        `${scrapeConflictReferenceErrors.shared}\n${path.join(path.dirname(f.linkPath), "other.strm")}`,
+        `${strmReferenceErrors.shared}\n${path.join(path.dirname(f.linkPath), "other.strm")}`,
       );
       const binding = f.repository.binding("other");
       if (!binding) throw new Error("Missing fixture binding");
@@ -341,11 +341,11 @@ describe("STRM duplicate resolution", () => {
       const otherPath = path.join(path.dirname(f.linkPath), "other.strm");
       await writeFile(otherPath, "unrecognized resource");
       await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
-        `${scrapeConflictReferenceErrors.unverified}\n${otherPath}`,
+        `${strmReferenceErrors.unverified}\n${otherPath}`,
       );
       await rm(otherPath);
       await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
-        `${scrapeConflictReferenceErrors.unverified}\n${otherPath}`,
+        `${strmReferenceErrors.unverified}\n${otherPath}`,
       );
       expect(f.remote.deletions).toEqual([]);
       await writeFile(otherPath, content("unrelated"));
