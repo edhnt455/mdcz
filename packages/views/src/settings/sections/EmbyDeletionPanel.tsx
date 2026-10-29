@@ -143,7 +143,7 @@ export function EmbyDeletionPanel({ service }: { service: ServerApiContract["emb
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={busy || !status.moviePilot || status.settings.mode === "off"}
+                disabled={busy || !status.moviePilot || !status.settings.libraryIds.length}
                 onClick={() =>
                   void run(async () => {
                     const result = await service.bindSources();

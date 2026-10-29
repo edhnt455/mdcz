@@ -28,7 +28,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => {
+const fixture = async (mode: "off" | "delete" | "observe" = "delete", cloud = false) => {
   const directory = await mkdtemp(path.join(tmpdir(), "mdcz-emby-delete-"));
   const output = path.join(directory, "Link");
   const source = path.join(directory, "Normal");
@@ -150,7 +150,7 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
   };
   const createService = () => new EmbyDeletionService(dependencies);
   const service = createService();
-  const { token } = await service.rotateSecret();
+  const token = mode === "off" ? "" : (await service.rotateSecret()).token;
   if (cloud)
     await service.configureMoviePilot({
       baseUrl: "https://mp.test",
@@ -158,7 +158,7 @@ const fixture = async (mode: "delete" | "observe" = "delete", cloud = false) => 
       storage: "u115",
       token: "test-mp-token",
     });
-  await service.configure({ mode, serverId: "emby-server", libraryIds: [mediaLibrary.id] });
+  await service.configure({ mode, serverId: mode === "off" ? "" : "emby-server", libraryIds: [mediaLibrary.id] });
   const addMovie = async (name = "ABC-123", movieId = "movie", files = [`${name}.mp4`]) =>
     await new LibraryRepository(database).upsertEntry({
       movie: {
@@ -441,6 +441,19 @@ describe("Emby deletion sync", () => {
   });
 
   it("cancels old jobs when changing modes and reconciles only registered output files", async () => {
+    const manual = await fixture("off", true);
+    expect((await manual.createService().status()).settings).toEqual({
+      mode: "off",
+      serverId: "",
+      libraryIds: [manual.mediaLibrary.id],
+    });
+    expect((await manual.service.status()).configured).toBe(false);
+    expect(await readFile(path.join(manual.source, ".mdcz-library-id"), "utf8")).toMatch(/^mdcz:/u);
+    expect(await manual.service.bindSources()).toEqual({ verified: 0, unverified: 0 });
+    expect(manual.remote.deleteCalls).toBe(0);
+    await expect(
+      manual.service.configure({ mode: "observe", serverId: "emby-server", libraryIds: [manual.mediaLibrary.id] }),
+    ).rejects.toThrow("webhook");
     const f = await fixture("observe");
     await f.addMovie();
     await writeFile(path.join(f.output, "unregistered.mp4"), "video");
@@ -454,6 +467,11 @@ describe("Emby deletion sync", () => {
     await f.advance();
     expect(f.count("library_items")).toBe(0);
     expect(await readFile(path.join(f.output, "unregistered.mp4"), "utf8")).toBe("video");
+    expect((await f.service.configure({ mode: "off", serverId: "", libraryIds: [] })).settings).toEqual({
+      mode: "off",
+      serverId: "",
+      libraryIds: [],
+    });
   });
 
   it("rolls back every business record and completion state when cleanup fails", async () => {

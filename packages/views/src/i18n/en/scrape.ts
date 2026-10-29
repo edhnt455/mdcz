@@ -2,6 +2,16 @@ import type { ScrapeRunStage } from "@mdcz/shared/serverDtos";
 
 export const scrape = {
   conflict: {
+    setupErrors: {
+      moviePilotRequired:
+        "Save and verify the MoviePilot address, API token and allowed 115 root under Settings → Media servers → Emby → MoviePilot · 115 STRM sync.",
+      copyLibraryRequired: "This action requires a copy library. Select Copy as this library's placement first.",
+      libraryBindingRequired:
+        "Select this copy library under Settings → Media servers → Emby, save sync settings, then verify STRM source associations. Automatic sync can remain Off; no Emby Server ID or webhook is required for manual duplicate resolution.",
+      libraryPathsChanged:
+        "This library's source or output directory has changed. Save its STRM sync settings again and verify source associations.",
+    },
+    openSettings: "Open STRM sync settings in a new tab",
     open: "Resolve duplicate",
     title: "Choose the version to keep",
     description:

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
@@ -17,6 +17,7 @@ import type {
   ScrapeConflictResolveInput,
   ScrapeConflictVersion,
 } from "@mdcz/shared/scrapeConflict";
+import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { MoviePilotClient } from "./moviePilotClient";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -98,13 +99,14 @@ export class ScrapeConflictService {
     const connection = configuration.embyDeletion.moviePilot;
     const library = configuration.embyDeletion.libraries.find((candidate) => candidate.id === run.task.libraryId);
     const configuredLibrary = await this.deps.libraries.get(run.task.libraryId);
-    if (!connection || !library?.source || configuredLibrary.placement !== "copy")
-      throw new Error("Configure MoviePilot and save this copy library in STRM sync settings first");
+    if (configuredLibrary.placement !== "copy") throw new Error(scrapeConflictSetupErrors.copyLibraryRequired);
+    if (!connection) throw new Error(scrapeConflictSetupErrors.moviePilotRequired);
+    if (!library?.source) throw new Error(scrapeConflictSetupErrors.libraryBindingRequired);
     if (
       filesystemPathKey(configuredLibrary.sourcePath) !== library.source.path ||
       filesystemPathKey(configuredLibrary.outputPath) !== library.outputPath
     )
-      throw new Error("STRM library paths changed; save its sync settings again");
+      throw new Error(scrapeConflictSetupErrors.libraryPathsChanged);
     const repository = new EmbyDeletionRepository(state.database);
     const root = await state.repositories.mediaRoots.get(item.rootId);
     const sourcePath = filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, item.relativePath));
@@ -181,7 +183,7 @@ export class ScrapeConflictService {
       sourceRef: { rootId: item.rootId, relativePath: item.relativePath },
       previewedAt: Date.now(),
     };
-    const token = hash(JSON.stringify(snapshot));
+    const token = randomUUID();
     jobs.preview({ itemId: input.itemId, taskId: input.taskId, snapshotJson: JSON.stringify(snapshot), token });
     return this.toPreview(snapshot, token, null, null);
   }

@@ -95,11 +95,11 @@ test("saves MP credentials without echoing them and verifies sources after savin
   await expect.element(screen.getByLabelText("MP API_TOKEN")).toHaveValue("");
   await screen.getByRole("button", { name: "测试已保存连接" }).click();
   await expect.poll(() => service.testMoviePilot.mock.calls.length).toBe(1);
-  await screen.getByRole("textbox", { name: "Emby Server ID" }).fill("emby-server");
-  await screen.getByRole("combobox", { name: "处理模式" }).click();
-  await screen.getByRole("option", { name: "观察（只记录）" }).click();
+  await expect.element(screen.getByRole("button", { name: "核验 STRM 来源关联" })).toBeDisabled();
   await screen.getByRole("checkbox", { name: /AV.*Link/ }).click();
   await screen.getByRole("button", { name: "保存联动设置" }).click();
+  expect(service.configure).toHaveBeenCalledExactlyOnceWith({ mode: "off", serverId: "", libraryIds: ["av"] });
+  expect(service.rotateSecret).not.toHaveBeenCalled();
   await screen.getByRole("button", { name: "核验 STRM 来源关联" }).click();
   await expect.poll(() => service.bindSources.mock.calls.length).toBe(1);
 });

@@ -112,12 +112,18 @@ export class EmbyDeletionService {
     const parsed = embyDeletionSettingsSchema.parse(input);
     const repository = await this.repository();
     const previous = await this.load();
-    if (parsed.mode === "off") {
+    if (parsed.mode === "off" && previous.mode !== "off") {
       await this.commit({ ...previous, mode: "off", serverId: parsed.serverId });
       repository.ignorePendingLibraryDeletions();
-      return await this.status();
+      const selected = new Set(parsed.libraryIds);
+      if (
+        selected.size === previous.libraries.length &&
+        previous.libraries.every((binding) => selected.has(binding.id))
+      )
+        return await this.status();
     }
-    if (!previous.secretHash) throw new Error("Generate the Emby webhook address before enabling deletion sync");
+    if (parsed.mode !== "off" && !previous.secretHash)
+      throw new Error("Generate the Emby webhook address before enabling deletion sync");
     const libraries = await this.deps.libraries.list();
     const bindings: EmbyDeletionLibraryBinding[] = [];
     for (const id of new Set(parsed.libraryIds)) {

@@ -210,7 +210,7 @@ export const settings = {
     moviePilot: {
       title: "MoviePilot · 115 STRM sync",
       description:
-        "Uses verified u115 storage. Save the MP connection, select and save copy libraries, then verify source associations.",
+        "Uses verified u115 storage. Save the MP connection, select and save copy libraries, then verify source associations. Manual duplicate resolution works with sync Off and needs no Emby Server ID or webhook.",
       baseUrl: "MP address",
       rootPath: "115 allowed root",
       token: "MP API_TOKEN",

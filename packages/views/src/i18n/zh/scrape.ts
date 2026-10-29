@@ -2,6 +2,15 @@ import type { Messages } from "../en";
 
 export const scrape: Messages["scrape"] = {
   conflict: {
+    setupErrors: {
+      moviePilotRequired:
+        "尚未配置 MoviePilot。请到「设置 → 媒体服务器 → Emby → MoviePilot · 115 STRM 联动」填写 MP 地址、API_TOKEN 和 115 允许根目录，点击「保存并验证 MP」。",
+      copyLibraryRequired: "此操作需要复制媒体库，请先在媒体库设置中将视频放置方式设为「复制」。",
+      libraryBindingRequired:
+        "尚未保存当前复制媒体库的 STRM 联动范围。请到「设置 → 媒体服务器 → Emby」勾选当前媒体库，点击「保存联动设置」，再点击「核验 STRM 来源关联」。手动处理重复可保持处理模式「关闭」，无需填写 Emby Server ID 或生成 Webhook。",
+      libraryPathsChanged: "当前媒体库的来源或输出目录已变更，请重新保存 STRM 联动设置并核验来源关联。",
+    },
+    openSettings: "在新标签页打开 STRM 联动设置",
     open: "处理重复",
     title: "选择要保留的版本",
     description: "比较 115 源视频的实际大小后，选择要保留的版本。另一个版本将被删除。",

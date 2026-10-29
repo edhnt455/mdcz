@@ -1,6 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
 import type { ScrapeConflictInput, ScrapeConflictPreview } from "@mdcz/shared/scrapeConflict";
+import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@mdcz/ui";
 import { useState } from "react";
 import type { DetailActionPort } from "../adapters/ports";
@@ -15,6 +16,9 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState(false);
+  const setupError = (Object.keys(scrapeConflictSetupErrors) as (keyof typeof scrapeConflictSetupErrors)[]).find(
+    (key) => scrapeConflictSetupErrors[key] === error,
+  );
 
   const load = async () => {
     if (!port.previewConflict || busy) return;
@@ -80,8 +84,18 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
           ) : null}
           {error ? (
             <p role="alert" className="whitespace-pre-wrap break-all text-sm text-destructive">
-              {error}
+              {setupError ? text.setupErrors[setupError] : error}
             </p>
+          ) : null}
+          {setupError ? (
+            <a
+              href="/settings?section=mediaServer"
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-primary underline"
+            >
+              {text.openSettings}
+            </a>
           ) : null}
           {preview ? (
             <>

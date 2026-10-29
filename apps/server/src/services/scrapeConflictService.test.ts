@@ -15,6 +15,7 @@ import {
 import type { MediaLibrary } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
+import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -188,6 +189,14 @@ async function fixture(shared = false) {
 describe("STRM duplicate resolution", () => {
   it.each(["existing", "incoming"] as const)("keeps %s and deletes only the other resource", async (keep) => {
     const f = await fixture();
+    const connection = f.configuration.embyDeletion.moviePilot;
+    f.configuration.embyDeletion.moviePilot = null;
+    await expect(f.service.preview(input)).rejects.toThrow(scrapeConflictSetupErrors.moviePilotRequired);
+    f.configuration.embyDeletion.moviePilot = connection;
+    const bindings = f.configuration.embyDeletion.libraries;
+    f.configuration.embyDeletion.libraries = [];
+    await expect(f.service.preview(input)).rejects.toThrow(scrapeConflictSetupErrors.libraryBindingRequired);
+    f.configuration.embyDeletion.libraries = bindings;
     const preview = await f.service.preview(input);
     expect(preview.existing).toMatchObject({ name: "old.mp4", size: 1024 ** 3, linkPath: f.linkPath });
     expect(preview.incoming).toMatchObject({ name: "new.mp4", size: 2 * 1024 ** 3, linkPath: null });
@@ -259,7 +268,17 @@ describe("STRM duplicate resolution", () => {
   ])("preserves local files on %s and resumes only acknowledged deletions", async (scenario) => {
     const f = await fixture();
     const preview = await f.service.preview(input);
-    if (scenario === "stale preview") await f.service.preview(input);
+    if (scenario === "stale preview") {
+      const saved = f.jobs.get(input.itemId);
+      if (!saved) throw new Error("Missing fixture preview");
+      const timestamp = (JSON.parse(saved.snapshotJson) as { previewedAt: number }).previewedAt;
+      const now = vi.spyOn(Date, "now").mockReturnValue(timestamp);
+      try {
+        expect((await f.service.preview(input)).token).not.toBe(preview.token);
+      } finally {
+        now.mockRestore();
+      }
+    }
     if (scenario === "changed source") await writeFile(f.existingNormal, content("replacement"));
     if (scenario === "changed link") await writeFile(f.linkPath, content("replacement"));
     if (scenario === "changed cloud") f.remote.files[0] = { ...f.remote.files[0], size: 123 };

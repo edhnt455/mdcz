@@ -194,7 +194,8 @@ export const settings: Messages["settings"] = {
     },
     moviePilot: {
       title: "MoviePilot · 115 STRM 联动",
-      description: "使用已验证的 u115 存储。先保存 MP 连接，再选择复制媒体库并保存联动设置，最后核验来源关联。",
+      description:
+        "使用已验证的 u115 存储。先保存 MP 连接，再选择复制媒体库并保存联动设置，最后核验来源关联。手动处理重复可保持模式「关闭」，无需 Emby Server ID 或 Webhook。",
       baseUrl: "MP 地址",
       rootPath: "115 允许根目录",
       token: "MP API_TOKEN",

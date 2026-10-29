@@ -1,4 +1,4 @@
-import type { ScrapeConflictPreview } from "@mdcz/shared/scrapeConflict";
+import { type ScrapeConflictPreview, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { DetailActionPort } from "@mdcz/views/adapters/ports";
 import { ScrapeConflictDialog } from "@mdcz/views/scrape/ScrapeConflictDialog";
 import { expect, test, vi } from "vitest";
@@ -27,11 +27,22 @@ const preview: ScrapeConflictPreview = {
 const input = { taskId: "task", itemId: "item" };
 
 test.each(["existing", "incoming"] as const)("shows actual source sizes and explicitly keeps %s", async (keep) => {
-  const previewConflict = vi.fn(async () => preview);
+  const previewConflict = vi
+    .fn()
+    .mockRejectedValueOnce(new Error(scrapeConflictSetupErrors.moviePilotRequired))
+    .mockResolvedValue(preview);
   const resolveConflict = vi.fn(async () => undefined);
   const port = { previewConflict, resolveConflict } as unknown as DetailActionPort;
   const screen = await render(<ScrapeConflictDialog input={input} port={port} />);
   await screen.getByRole("button", { name: "处理重复" }).click();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("尚未配置 MoviePilot");
+  await expect
+    .element(screen.getByRole("link", { name: "在新标签页打开 STRM 联动设置" }))
+    .toHaveAttribute("href", "/settings?section=mediaServer");
+  await expect
+    .element(screen.getByRole("link", { name: "在新标签页打开 STRM 联动设置" }))
+    .toHaveAttribute("target", "_blank");
+  await screen.getByRole("button", { name: "重试" }).click();
   await expect.element(screen.getByText("1.00 GB", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("2.00 GB", { exact: true })).toBeVisible();
   const confirm = screen.getByRole("button", { name: "删除另一版本并继续" });

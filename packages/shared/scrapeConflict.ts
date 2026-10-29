@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+export const scrapeConflictSetupErrors = {
+  moviePilotRequired: "scrape_conflict_moviepilot_required",
+  copyLibraryRequired: "scrape_conflict_copy_library_required",
+  libraryBindingRequired: "scrape_conflict_library_binding_required",
+  libraryPathsChanged: "scrape_conflict_library_paths_changed",
+} as const;
+
 export const scrapeTargetConflictSchema = z.object({
   sourcePath: z.string().min(1),
   targetPath: z.string().min(1),
