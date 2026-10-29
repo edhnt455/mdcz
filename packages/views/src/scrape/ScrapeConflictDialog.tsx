@@ -1,7 +1,7 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
 import type { ScrapeConflictInput, ScrapeConflictPreview } from "@mdcz/shared/scrapeConflict";
-import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
+import { scrapeConflictReferenceErrors, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@mdcz/ui";
 import { useState } from "react";
 import type { DetailActionPort } from "../adapters/ports";
@@ -19,6 +19,9 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
   const setupError = (Object.keys(scrapeConflictSetupErrors) as (keyof typeof scrapeConflictSetupErrors)[]).find(
     (key) => scrapeConflictSetupErrors[key] === error,
   );
+  const referenceError = (
+    Object.keys(scrapeConflictReferenceErrors) as (keyof typeof scrapeConflictReferenceErrors)[]
+  ).find((key) => error.startsWith(`${scrapeConflictReferenceErrors[key]}\n`));
 
   const load = async () => {
     if (!port.previewConflict || busy) return;
@@ -33,7 +36,7 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
       setKeep(result.keep);
       if (result.step === "completed") setCompleted(true);
     } catch (error) {
-      setError(toErrorMessage(error));
+      setError(error instanceof Error ? error.message : toErrorMessage(error));
     } finally {
       setBusy(false);
     }
@@ -47,7 +50,7 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
       setCompleted(true);
       setOpen(false);
     } catch (error) {
-      setError(toErrorMessage(error));
+      setError(error instanceof Error ? error.message : toErrorMessage(error));
       setPreview({ ...preview, keep });
     } finally {
       setBusy(false);
@@ -84,7 +87,11 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
           ) : null}
           {error ? (
             <p role="alert" className="whitespace-pre-wrap break-all text-sm text-destructive">
-              {setupError ? text.setupErrors[setupError] : error}
+              {setupError
+                ? text.setupErrors[setupError]
+                : referenceError
+                  ? text.referenceErrors[referenceError](error.slice(error.indexOf("\n") + 1))
+                  : error}
             </p>
           ) : null}
           {setupError ? (

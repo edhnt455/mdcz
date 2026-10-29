@@ -2,6 +2,11 @@ import type { Messages } from "../en";
 
 export const scrape: Messages["scrape"] = {
   conflict: {
+    referenceErrors: {
+      shared: (path: string) => `另一个已入库 STRM 仍引用要删除的 115 视频，本次未执行删除。请先处理该引用：\n${path}`,
+      unverified: (path: string) =>
+        `无法读取或识别下列 STRM，尚不能排除它引用要删除的 115 视频。本次未执行删除，请检查该文件或修复来源关联：\n${path}`,
+    },
     setupErrors: {
       moviePilotRequired:
         "尚未配置 MoviePilot。请到「设置 → 媒体服务器 → Emby → MoviePilot · 115 STRM 联动」填写 MP 地址、API_TOKEN 和 115 允许根目录，点击「保存并验证 MP」。",

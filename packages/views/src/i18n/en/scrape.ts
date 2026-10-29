@@ -2,6 +2,12 @@ import type { ScrapeRunStage } from "@mdcz/shared/serverDtos";
 
 export const scrape = {
   conflict: {
+    referenceErrors: {
+      shared: (path: string) =>
+        `Another registered STRM still references the 115 video to delete. Nothing was deleted in this attempt. Resolve this reference first:\n${path}`,
+      unverified: (path: string) =>
+        `This STRM could not be read or identified, so it may reference the 115 video to delete. Nothing was deleted in this attempt. Check the file or repair its source association:\n${path}`,
+    },
     setupErrors: {
       moviePilotRequired:
         "Save and verify the MoviePilot address, API token and allowed 115 root under Settings → Media servers → Emby → MoviePilot · 115 STRM sync.",

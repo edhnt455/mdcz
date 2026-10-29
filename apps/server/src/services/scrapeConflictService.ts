@@ -17,7 +17,7 @@ import type {
   ScrapeConflictResolveInput,
   ScrapeConflictVersion,
 } from "@mdcz/shared/scrapeConflict";
-import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
+import { scrapeConflictReferenceErrors, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { MoviePilotClient } from "./moviePilotClient";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -283,19 +283,44 @@ export class ScrapeConflictService {
         await strm.assertSource(snapshot.library, selected.cloud, false);
         await this.assertLink(strm, snapshot, false);
         if (!shared) {
-          if (repository.otherReferences(selected.fileId ?? "", connection.id, selected.cloud.target.fileid))
-            throw new Error("Other library files reference this 115 video; deletion requires review");
-          if (
-            repository
-              .knownFiles(configuration.embyDeletion.libraries.filter((entry) => entry.source))
-              .some(
-                ({ file, path: filePath }) =>
-                  path.extname(filePath).toLowerCase() === ".strm" &&
-                  (readStrmBinding(repository, file.id)?.connectionId !== connection.id ||
-                    readStrmBinding(repository, file.id)?.fileUpdatedAt !== file.updatedAt.getTime()),
+          const libraries = configuration.embyDeletion.libraries.filter((entry) => entry.source);
+          const other = repository.relatedBindings(connection.id, selected.cloud.target.fileid).find((binding) => {
+            if (binding.fileId === selected.fileId) return false;
+            const file = repository.findFile(binding.linkPath);
+            return (
+              file?.id === binding.fileId &&
+              (!libraries.some((library) => library.id === binding.libraryId) ||
+                (JSON.parse(binding.snapshotJson) as StrmCloudBinding).fileUpdatedAt === file.updatedAt.getTime())
+            );
+          });
+          if (other) throw new Error(`${scrapeConflictReferenceErrors.shared}\n${other.linkPath}`);
+          for (const entry of repository.knownFiles(libraries)) {
+            if (entry.file.id === selected.fileId || path.extname(entry.path).toLowerCase() !== ".strm") continue;
+            const binding = readStrmBinding(repository, entry.file.id);
+            if (binding?.connectionId === connection.id && binding.fileUpdatedAt === entry.file.updatedAt.getTime())
+              continue;
+            const library = libraries.find((library) => library.id === entry.libraryId);
+            let resource: string | undefined;
+            try {
+              if (!library) throw new Error("STRM library is unavailable");
+              await strm.assertMounts({ ...library, source: undefined });
+              const stat = await lstat(entry.path);
+              if (
+                !stat.isFile() ||
+                stat.size > 64 * 1024 ||
+                !isPathInside(library.realPath, filesystemPathKey(await realpath(entry.path)))
               )
-          )
-            throw new Error("Verify registered STRM associations in settings before deleting a 115 resource");
+                throw new Error("STRM file type or location changed");
+              const playback = parseStrmTarget(await readFile(entry.path, "utf8"));
+              resource = playback ? moviePilotResourceIdentity(playback) : undefined;
+              if (!resource || new URL(resource).origin !== new URL(connection.baseUrl).origin)
+                throw new Error("STRM resource cannot be identified on this MoviePilot connection");
+            } catch (error) {
+              throw new Error(`${scrapeConflictReferenceErrors.unverified}\n${entry.path}`, { cause: error });
+            }
+            if (new URL(resource).searchParams.get("pickcode") === selected.cloud.target.pickcode)
+              throw new Error(`${scrapeConflictReferenceErrors.shared}\n${entry.path}`);
+          }
         }
         const target = shared ? undefined : await client.verify(connection, selected.cloud);
         if (!shared && !target)

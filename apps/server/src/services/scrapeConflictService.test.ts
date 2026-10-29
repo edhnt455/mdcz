@@ -15,7 +15,7 @@ import {
 import type { MediaLibrary } from "@mdcz/runtime/library";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
-import { scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
+import { scrapeConflictReferenceErrors, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -197,6 +197,22 @@ describe("STRM duplicate resolution", () => {
     f.configuration.embyDeletion.libraries = [];
     await expect(f.service.preview(input)).rejects.toThrow(scrapeConflictSetupErrors.libraryBindingRequired);
     f.configuration.embyDeletion.libraries = bindings;
+    const unrelatedPath = path.join(path.dirname(f.linkPath), "unrelated.strm");
+    await writeFile(unrelatedPath, content("unrelated"));
+    await f.library.upsertEntry({
+      movie: { number: "OTHER" },
+      files: [{ fileId: "unrelated", rootId: f.entry.files[0].rootId, rootRelativePath: "unrelated.strm" }],
+    });
+    if (keep === "incoming") {
+      const binding = f.repository.binding("existing");
+      if (!binding) throw new Error("Missing fixture binding");
+      f.repository.bind({
+        ...binding,
+        fileId: "unrelated",
+        linkPath: unrelatedPath,
+        snapshotJson: JSON.stringify({ ...JSON.parse(binding.snapshotJson), fileUpdatedAt: -1 }),
+      });
+    }
     const preview = await f.service.preview(input);
     expect(preview.existing).toMatchObject({ name: "old.mp4", size: 1024 ** 3, linkPath: f.linkPath });
     expect(preview.incoming).toMatchObject({ name: "new.mp4", size: 2 * 1024 ** 3, linkPath: null });
@@ -230,6 +246,7 @@ describe("STRM duplicate resolution", () => {
       ).not.toThrow();
     }
     expect(await readFile(path.join(path.dirname(f.linkPath), "ABC-123.nfo"), "utf8")).toBe("retained metadata");
+    expect(await readFile(unrelatedPath, "utf8")).toBe(content("unrelated"));
     expect(f.jobs.get(input.itemId)?.step).toBe("completed");
     await f.restart().resolve({ ...input, token: preview.token, keep });
     expect(f.remote.deletions).toHaveLength(1);
@@ -283,21 +300,36 @@ describe("STRM duplicate resolution", () => {
     if (scenario === "changed link") await writeFile(f.linkPath, content("replacement"));
     if (scenario === "changed cloud") f.remote.files[0] = { ...f.remote.files[0], size: 123 };
     if (scenario === "busy") f.setBusy(true);
-    if (scenario === "shared reference")
+    if (scenario === "shared reference") {
       await f.library
         .upsertEntry({
           movie: { number: "OTHER" },
           files: [{ fileId: "other", rootId: f.entry.files[0].rootId, rootRelativePath: "other.strm" }],
         })
-        .then(() => {
+        .then((entry) => {
           const binding = f.repository.binding("existing");
           if (!binding) throw new Error("Missing fixture binding");
           f.repository.bind({
             ...binding,
             fileId: "other",
             linkPath: path.join(path.dirname(f.linkPath), "other.strm"),
+            snapshotJson: JSON.stringify({
+              ...JSON.parse(binding.snapshotJson),
+              fileUpdatedAt: entry.files[0].updatedAt.getTime(),
+            }),
           });
         });
+      await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
+        `${scrapeConflictReferenceErrors.shared}\n${path.join(path.dirname(f.linkPath), "other.strm")}`,
+      );
+      const binding = f.repository.binding("other");
+      if (!binding) throw new Error("Missing fixture binding");
+      f.repository.bind({
+        ...binding,
+        snapshotJson: JSON.stringify({ ...JSON.parse(binding.snapshotJson), connectionId: "old-connection" }),
+      });
+      await writeFile(path.join(path.dirname(f.linkPath), "other.strm"), content("old"));
+    }
     f.remote.reject = scenario === "rejected";
     f.remote.loseResponse = scenario === "lost response";
     f.remote.verificationFails = scenario === "failed verification";
@@ -305,6 +337,22 @@ describe("STRM duplicate resolution", () => {
     for (const file of [f.existingNormal, f.incomingNormal, f.linkPath])
       expect((await lstat(file)).isFile()).toBe(true);
     expect(f.retry).not.toHaveBeenCalled();
+    if (scenario === "shared reference") {
+      const otherPath = path.join(path.dirname(f.linkPath), "other.strm");
+      await writeFile(otherPath, "unrecognized resource");
+      await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
+        `${scrapeConflictReferenceErrors.unverified}\n${otherPath}`,
+      );
+      await rm(otherPath);
+      await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
+        `${scrapeConflictReferenceErrors.unverified}\n${otherPath}`,
+      );
+      expect(f.remote.deletions).toEqual([]);
+      await writeFile(otherPath, content("unrelated"));
+      await f.service.resolve({ ...input, keep: "incoming", token: preview.token });
+      expect(f.remote.deletions).toEqual(["old"]);
+      expect(await readFile(otherPath, "utf8")).toBe(content("unrelated"));
+    }
     if (scenario === "rejected" || scenario === "failed verification") {
       f.remote.reject = false;
       f.remote.verificationFails = false;

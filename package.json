@@ -1,6 +1,6 @@
 {
   "name": "mdcz",
-  "version": "0.20.4",
+  "version": "0.20.5",
   "description": "MDCz - Docker-hosted media metadata scraper and WebUI",
   "private": true,
   "type": "module",

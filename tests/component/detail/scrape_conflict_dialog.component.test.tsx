@@ -1,4 +1,8 @@
-import { type ScrapeConflictPreview, scrapeConflictSetupErrors } from "@mdcz/shared/scrapeConflict";
+import {
+  type ScrapeConflictPreview,
+  scrapeConflictReferenceErrors,
+  scrapeConflictSetupErrors,
+} from "@mdcz/shared/scrapeConflict";
 import type { DetailActionPort } from "@mdcz/views/adapters/ports";
 import { ScrapeConflictDialog } from "@mdcz/views/scrape/ScrapeConflictDialog";
 import { expect, test, vi } from "vitest";
@@ -64,7 +68,11 @@ test.each(["existing", "incoming"] as const)("shows actual source sizes and expl
 });
 
 test("keeps errors visible and permits resuming the same deletion", async () => {
-  const resolveConflict = vi.fn().mockRejectedValueOnce(new Error("115 unavailable")).mockResolvedValueOnce(undefined);
+  const resolveConflict = vi
+    .fn()
+    .mockRejectedValueOnce(new Error(`${scrapeConflictReferenceErrors.unverified}\n/Link/unverified.strm`))
+    .mockRejectedValueOnce(new Error(`${scrapeConflictReferenceErrors.shared}\n/Link/shared.strm`))
+    .mockResolvedValueOnce(undefined);
   const port = {
     previewConflict: vi.fn(async () => ({ ...preview, sameResource: true })),
     resolveConflict,
@@ -76,8 +84,12 @@ test("keeps errors visible and permits resuming the same deletion", async () => 
     .toBeVisible();
   await screen.getByRole("radio", { name: "保留本次新版本" }).click();
   await screen.getByRole("button", { name: "删除另一版本并继续" }).click();
-  await expect.element(screen.getByRole("alert")).toHaveTextContent("115 unavailable");
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("无法读取或识别下列 STRM");
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("/Link/unverified.strm");
+  await screen.getByRole("button", { name: "删除另一版本并继续" }).click();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("另一个已入库 STRM 仍引用要删除的 115 视频");
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("/Link/shared.strm");
   await screen.getByRole("button", { name: "删除另一版本并继续" }).click();
   await expect.element(screen.getByText("重复已处理。")).toBeVisible();
-  expect(resolveConflict).toHaveBeenCalledTimes(2);
+  expect(resolveConflict).toHaveBeenCalledTimes(3);
 });
