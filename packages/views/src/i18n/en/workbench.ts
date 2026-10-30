@@ -35,6 +35,8 @@ export const workbench = {
   previewFiles: "Preview files",
   startScrape: "Start Scraping",
   startMaintenance: "Start Maintenance",
+  maintenanceBlocksScrape: "A maintenance task is active. Stop it before starting a scrape.",
+  scrapeBlocksMaintenance: "A scrape task is active. Stop it before starting maintenance.",
   stepsNavAriaLabel: "Workbench steps",
   step01: "01 Configure Directories",
   step02: "02 Preview Files",

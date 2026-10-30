@@ -25,7 +25,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     state.snapshot?.directoryScope ? state.snapshot.id : null,
   );
   const totalUnknown = useMaintenanceStore((state) => state.snapshot?.totalEntries === null);
-  const isScraping = useScrapeStore(selectIsScraping);
+  const isScraping = useScrapeStore((state) => selectIsScraping(state) || state.pending);
   const { entries, selectedIds, presetId, currentPath, setCurrentPath } = useMaintenanceStore(
     useShallow((state) => ({
       entries: selectMaintenanceEntries(state),
@@ -212,10 +212,13 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
   return (
     <MaintenanceBatchBarView
       activeExecution={activeExecution}
+      blockedReason={isScraping ? t.maintenance.scrapeRunningCannotMaintain : undefined}
       canPauseMaintenance={canPauseMaintenance}
       canReturnToSetup={canReturnToSetup}
       canRunPrimaryAction={!isScraping && !scanning && !previewPending && entriesCount > 0 && selectedCount > 0}
-      canRunReplacement={!scanning && !previewPending && hasPreviewResults && previewSummary.readyCount > 0}
+      canRunReplacement={
+        !isScraping && !scanning && !previewPending && hasPreviewResults && previewSummary.readyCount > 0
+      }
       entriesCount={entriesCount}
       executeDialogOpen={executeDialogOpen}
       groupedSelectedEntries={groupedSelectedEntries}

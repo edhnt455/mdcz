@@ -48,12 +48,9 @@ interface MediaServerInfoSyncOptions<TPerson, TDetail> {
   logger: MediaServerInfoSyncLogger;
   fetchPersons: () => Promise<ReadonlyArray<TPerson>>;
   getPersonName: (person: TPerson) => string;
-  getPersonId: (person: TPerson) => string;
   fetchPersonDetail: (person: TPerson) => Promise<TDetail>;
   buildExistingState: (person: TPerson, detail: TDetail) => ExistingPersonSyncState;
   updatePersonInfo: (person: TPerson, detail: TDetail, synced: PlannedPersonSyncState) => Promise<void>;
-  shouldRefreshPerson: boolean;
-  refreshPerson: (personId: string) => Promise<void>;
   actorLookupQuery?: (person: TPerson) => string | { name: string };
   buildCompletionMessage?: (result: PersonSyncResult, total: number) => string;
 }
@@ -86,15 +83,6 @@ export const runMediaServerInfoSync = async <TPerson, TDetail>(
       }
 
       await options.updatePersonInfo(person, detail, synced);
-      if (options.shouldRefreshPerson) {
-        try {
-          await options.refreshPerson(options.getPersonId(person));
-        } catch (error) {
-          options.logger.warn(
-            `Failed to refresh ${options.serviceName} actor ${personName} after info sync: ${formatPersonSyncError(error)}`,
-          );
-        }
-      }
 
       options.signalService.showLogText(`Updated ${options.serviceName} actor info: ${personName}`);
       return "processed";

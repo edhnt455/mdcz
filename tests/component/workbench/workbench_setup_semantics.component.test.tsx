@@ -221,6 +221,7 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
       supportedExtensions={[".mp4"]}
       presetId="import_local"
       primaryDisabled
+      blockedReason="维护任务正在进行或已暂停，请先停止维护任务再开始刮削。"
       formatBytes={() => "0 B"}
       onRefreshScan={() => undefined}
       onPresetChange={() => undefined}
@@ -233,6 +234,8 @@ test("server workbench setup hides browse buttons and keeps path autocomplete", 
   );
 
   await expect.element(screen.getByRole("button", { name: "浏览" })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("status")).toHaveTextContent("请先停止维护任务");
+  await expect.element(screen.getByRole("button", { name: "开始刮削" })).toBeDisabled();
   expect(screen.container.querySelector("datalist")).toBeNull();
   expect(screen.container.querySelectorAll('input[aria-autocomplete="list"]').length).toBe(1);
 });

@@ -1487,6 +1487,13 @@ describe("buildServer scrape integration", () => {
     // Pause while the first file is still inside its aggregation call, so the second file has
     // not been dequeued yet and stays pending.
     await gated.firstCallStarted;
+    const blockedMaintenance = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { rootId, libraryId, presetId: "import_local", refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+    });
+    expect(blockedMaintenance.statusCode).toBe(409);
     const pausedResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.pause",
@@ -1496,6 +1503,13 @@ describe("buildServer scrape integration", () => {
     expect(pausedResponse.statusCode).toBe(200);
     expect(pausedResponse.json().result.data).toEqual({ runId: taskId });
     await waitForScrapeRunStatus(fastify, token, taskId, "paused");
+    const pausedMaintenance = await fastify.inject({
+      method: "POST",
+      url: "/trpc/maintenance.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { rootId, libraryId, presetId: "import_local", refs: [{ rootId, relativePath: "ABC-123.mp4" }] },
+    });
+    expect(pausedMaintenance.statusCode).toBe(409);
     gated.releaseFirstCall();
     expect(gated.aggregatedNumbers).toEqual(["ABC-123"]);
 

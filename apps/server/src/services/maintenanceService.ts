@@ -6,6 +6,7 @@ import {
   resolveMaintenanceTarget,
 } from "@mdcz/runtime/maintenance";
 import { createDirectoryScope, discoverDirectoryFiles } from "@mdcz/runtime/scrape";
+import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { MaintenanceActiveSessionSnapshot, MaintenanceApplySelection } from "@mdcz/shared/maintenanceTasks";
 import type {
   MaintenanceApplyInput,
@@ -33,6 +34,7 @@ export class MaintenanceService {
     private readonly taskEvents: TaskEventBus,
     runtime: MaintenanceRuntime,
     private readonly libraries: Pick<MediaLibraryService, "get">,
+    taskGate: LibraryTaskGate,
   ) {
     this.runtime = runtime;
     this.coordinator = new MaintenanceSessionCoordinator({
@@ -42,6 +44,7 @@ export class MaintenanceService {
         list: async () => await this.mediaRoots.listRoots(),
       },
       runtime: this.runtime,
+      taskGate,
       discoverDirectory: async (scope, configuration, signal, onProgress, inventory) => {
         return (
           await discoverDirectoryFiles({

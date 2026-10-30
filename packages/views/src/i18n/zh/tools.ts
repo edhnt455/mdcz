@@ -70,7 +70,7 @@ export const tools: Messages["tools"] = {
   autoPhotoSync: {
     title: "Emby 自动头像同步",
     description:
-      "影片整理入库后检查一次演员头像，也可设置每日定时补查或手动补全。Emby 独立保存头像，已有头像不会覆盖。",
+      "影片整理入库后补全演员头像，尚未建立的人物最多等待 5 分钟。也可设置每日定时补查或手动补全；已有头像不会覆盖。",
     status: {
       disabled: "已关闭",
       unconfigured: "请先配置 Emby",

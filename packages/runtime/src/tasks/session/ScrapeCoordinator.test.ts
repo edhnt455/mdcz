@@ -1,6 +1,7 @@
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { PublicationConflictError } from "../../publication/conflicts";
+import { LibraryTaskGate } from "../LibraryTaskGate";
 import { ScrapeCoordinator, type ScrapeHostPort, type ScrapeRunStore } from "./ScrapeCoordinator";
 import type { ScrapeRunItem } from "./ScrapeRunSession";
 
@@ -346,9 +347,20 @@ describe("ScrapeCoordinator", () => {
     });
     const coordinator = new ScrapeCoordinator(store, host);
 
-    const snapshot = await coordinator.retry("run-1");
+    const registration = deferred<Run>();
+    if (!host.retry) throw new Error("Retry is unavailable");
+    vi.mocked(host.retry).mockReturnValueOnce(registration.promise);
+    const pending = coordinator.retry("run-1");
+    expect(coordinator.busy).toBe(true);
+    const taskGate = new LibraryTaskGate();
+    taskGate.track("scrape", () => coordinator.busy);
+    expect(() => taskGate.assertAvailable("maintenance")).toThrow("A scrape task is running");
+    registration.resolve(run);
+    const snapshot = await pending;
     await started.promise;
     await coordinator.waitForIdle();
+    expect(coordinator.busy).toBe(false);
+    expect(() => taskGate.assertAvailable("maintenance")).not.toThrow();
 
     expect(host.retry).toHaveBeenCalledWith("run-1", undefined);
     expect(host.create).not.toHaveBeenCalled();

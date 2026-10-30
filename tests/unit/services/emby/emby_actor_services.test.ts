@@ -3,7 +3,10 @@ const validPhoto = Buffer.from(
   "base64",
 );
 
-import type { ActorLookupResult, ActorSourceProvider } from "@mdcz/runtime/actorSource";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { type ActorLookupResult, ActorSourceProvider, ActorSourceRegistry } from "@mdcz/runtime/actorSource";
 import {
   checkEmbyConnection as checkConnection,
   EmbyActorInfoService as EmbyActorInfo,
@@ -76,7 +79,10 @@ const createInfoService = (networkClient: FakeNetworkClient, actorSourceProvider
     logger: { debug() {}, info() {}, warn() {}, error() {} },
   });
 
-const createPhotoService = (networkClient: FakeNetworkClient, actorSourceProvider: FakeActorSourceProvider) =>
+const createPhotoService = (
+  networkClient: FakeNetworkClient,
+  actorSourceProvider: Pick<ActorSourceProvider, "lookup">,
+) =>
   new EmbyActorPhoto({
     signalService,
     networkClient: networkClient as unknown as NetworkClient,
@@ -287,9 +293,8 @@ describe("Emby actor services", () => {
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
     expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), "神木麗");
-    expect(networkClient.postText).toHaveBeenCalledTimes(2);
+    expect(networkClient.postText).toHaveBeenCalledTimes(1);
     expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1$/u);
-    expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
     expectStructuredActorPayload(
       readPostedPayload(networkClient),
       "基本资料\n血型：A型\n身高：169cm\n三围：B95 W60 H85\n罩杯：G杯\n\n官方简介\n\n别名：神木れい / かみきれい",
@@ -375,60 +380,105 @@ describe("Emby actor services", () => {
     });
   });
 
-  it("uploads actor photos from the shared actor source provider", async () => {
-    const networkClient = new FakeNetworkClient();
-    networkClient.getJson.mockImplementation(
-      createMockGetJson({
-        persons: [{ Id: "person-1", Name: "神木麗", ImageTags: {} }],
-      }),
-    );
-    networkClient.getContent.mockResolvedValue(validPhoto);
+  it("logs the ordered photo source outcomes, stops on a match, and uploads only resolved photos", async ({
+    onTestFinished,
+  }) => {
+    const directory = await mkdtemp(path.join(tmpdir(), "mdcz-actor-photo-"));
+    onTestFinished(() => rm(directory, { recursive: true, force: true }));
+    const localPhotoPath = path.join(directory, "神木麗.png");
+    await writeFile(localPhotoPath, validPhoto);
+    for (const matchedSource of ["local", "gfriends", "official", "avbase", undefined] as const) {
+      const photoUrl =
+        matchedSource === "local"
+          ? localPhotoPath
+          : "https://static.mgstage.com/mgs/img/common/actress/%E7%A5%9E%E6%9C%A8%E9%BA%97.jpg";
+      vi.mocked(signalService.showLogText).mockClear();
+      const networkClient = new FakeNetworkClient();
+      networkClient.getJson.mockImplementation(
+        createMockGetJson({
+          persons: [{ Id: "person-1", Name: "神木麗", ImageTags: {} }],
+        }),
+      );
+      networkClient.getContent.mockResolvedValue(validPhoto);
 
-    const actorSourceProvider = new FakeActorSourceProvider();
-    actorSourceProvider.lookup.mockResolvedValue({
-      profile: {
+      const calls: string[] = [];
+      const sourceOrder = ["local", "gfriends", "official", "avbase"] as const;
+      const actorSourceProvider = new ActorSourceProvider({
+        registry: new ActorSourceRegistry(
+          sourceOrder.map((source) => ({
+            name: source,
+            lookup: async () => {
+              calls.push(source);
+              const failed = source === "avbase" && !matchedSource;
+              return {
+                source,
+                success: !failed,
+                profile: source === matchedSource ? { name: "神木麗", photo_url: photoUrl } : undefined,
+                warnings: failed ? ["Failed to load AVBase actor data: HTTP 403 Forbidden"] : [],
+              };
+            },
+          })),
+        ),
+      });
+      const lookup = vi.spyOn(actorSourceProvider, "lookup");
+
+      const service = createPhotoService(networkClient, actorSourceProvider);
+
+      const result = await service.run(
+        createEmbyConfig({
+          emby: {
+            userId: embyUserId,
+          },
+        }),
+        "all",
+      );
+
+      expect(lookup).toHaveBeenCalledWith(expect.any(Object), {
         name: "神木麗",
-        photo_url: "https://static.mgstage.com/mgs/img/common/actress/%E7%A5%9E%E6%9C%A8%E9%BA%97.jpg",
-      },
-      profileSources: {
-        photo_url: "official",
-      },
-      sourceResults: [],
-      warnings: [],
-    });
-
-    const service = createPhotoService(networkClient, actorSourceProvider);
-
-    const result = await service.run(
-      createEmbyConfig({
-        emby: {
-          userId: embyUserId,
-        },
-        personSync: {
-          personImageSources: ["official"],
-        },
-      }),
-      "all",
-    );
-
-    expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
-    expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), {
-      name: "神木麗",
-      requiredField: "photo_url",
-    });
-    expect(networkClient.getContent).toHaveBeenCalledWith(
-      "https://static.mgstage.com/mgs/img/common/actress/%E7%A5%9E%E6%9C%A8%E9%BA%97.jpg",
-      {
-        headers: {
-          accept: "image/*",
-        },
-      },
-    );
-    expect(networkClient.postText).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1\/Images\/Primary$/u);
-    expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
-    for (const [, init] of networkClient.getJson.mock.calls) expect(init?.useProxy).toBe(false);
-    for (const [, , init] of networkClient.postText.mock.calls) expect(init?.useProxy).toBe(false);
+        requiredField: "photo_url",
+      });
+      const attemptedSources = matchedSource
+        ? sourceOrder.slice(0, sourceOrder.indexOf(matchedSource) + 1)
+        : [...sourceOrder];
+      expect(calls).toEqual(attemptedSources);
+      const trace = attemptedSources
+        .map((source) =>
+          source === matchedSource
+            ? `${source}: photo found`
+            : source === "avbase"
+              ? "avbase: lookup failed (Failed to load AVBase actor data: HTTP 403 Forbidden)"
+              : `${source}: no photo found`,
+        )
+        .join(" → ");
+      expect(signalService.showLogText).toHaveBeenCalledWith(
+        `Emby actor photo lookup for 神木麗: ${trace}`,
+        matchedSource ? "info" : "warn",
+      );
+      if (!matchedSource) {
+        expect(result).toEqual({ processedCount: 0, failedCount: 0, skippedCount: 1 });
+        expect(networkClient.getContent).not.toHaveBeenCalled();
+        expect(networkClient.postText).not.toHaveBeenCalled();
+        continue;
+      }
+      expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
+      if (matchedSource === "local") {
+        expect(signalService.showLogText).toHaveBeenCalledWith(
+          `Using local Emby actor photo for 神木麗: ${localPhotoPath}`,
+        );
+        expect(networkClient.getContent).not.toHaveBeenCalled();
+      } else {
+        expect(networkClient.getContent).toHaveBeenCalledWith(photoUrl, {
+          headers: {
+            accept: "image/*",
+          },
+        });
+      }
+      expect(signalService.showLogText).toHaveBeenCalledWith("Updated Emby actor photo: 神木麗");
+      expect(networkClient.postText).toHaveBeenCalledTimes(1);
+      expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1\/Images\/Primary$/u);
+      for (const [, init] of networkClient.getJson.mock.calls) expect(init?.useProxy).toBe(false);
+      for (const [, , init] of networkClient.postText.mock.calls) expect(init?.useProxy).toBe(false);
+    }
   });
 
   it("auto-resolves the Emby user id before actor photo sync reads /Persons", async () => {
@@ -530,7 +580,7 @@ describe("Emby actor services", () => {
 
     expect(result).toEqual({ processedCount: 2, failedCount: 0, skippedCount: 0 });
     expect(actorSourceProvider.lookup).toHaveBeenCalledTimes(2);
-    expect(networkClient.postText).toHaveBeenCalledTimes(4);
+    expect(networkClient.postText).toHaveBeenCalledTimes(2);
   });
 
   it("reads only the filtered actor list before syncing actor info", async () => {
@@ -614,7 +664,7 @@ describe("Emby actor services", () => {
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
     expect(actorSourceProvider.lookup).toHaveBeenCalledTimes(1);
     expect(actorSourceProvider.lookup).toHaveBeenCalledWith(expect.any(Object), "神木麗");
-    expect(networkClient.postText).toHaveBeenCalledTimes(2);
+    expect(networkClient.postText).toHaveBeenCalledTimes(1);
   });
 
   it("treats an empty filtered actor list as no actors without fallback lookups", async () => {
@@ -701,6 +751,6 @@ describe("Emby actor services", () => {
       name: "神木麗",
       requiredField: "photo_url",
     });
-    expect(networkClient.postText).toHaveBeenCalledTimes(2);
+    expect(networkClient.postText).toHaveBeenCalledTimes(1);
   });
 });

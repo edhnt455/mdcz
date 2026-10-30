@@ -5,6 +5,7 @@ import { resolveSiteProxyUrl, siteNetworkKey } from "@mdcz/runtime/config";
 import { PersistentCooldownStore } from "@mdcz/runtime/cooldown";
 import { CrawlerProvider, FetchGateway } from "@mdcz/runtime/crawler";
 import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
+import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
@@ -12,6 +13,7 @@ import { NumberRecognitionService } from "@mdcz/runtime/scrape/NumberRecognition
 import { LlmApiClient } from "@mdcz/runtime/scrape/translate/engines/LlmApiClient";
 import { LlmRequestService } from "@mdcz/runtime/scrape/translate/engines/LlmRequestService";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
 import { embyDeletionNotificationSchema } from "@mdcz/shared/embyDeletion";
 import {
@@ -66,6 +68,7 @@ export interface ServerResourceOverrides {
   mappingStore?: FileTranslationMappingStore;
   aggregationService?: ScrapeServiceResources["aggregationService"];
   prepareScrapeItem?: PrepareScrapeItem;
+  maintenanceRuntime?: MaintenanceRuntime;
 }
 
 export interface BuildServerOptions {
@@ -133,10 +136,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const personSync =
     options.services?.personSync ?? new PersonSyncService(config, taskEvents, { networkClient, actorSourceProvider });
   const unsubscribePersonConfig = config.onChange((event) => personSync.configurationChanged(event.configuration));
+  const taskGate = new LibraryTaskGate();
   const scrape =
     options.services?.scrape ??
     new ScrapeService(persistence, mediaRoots, config, taskEvents, {
       libraries,
+      taskGate,
       networkClient,
       crawlerProvider,
       isMaintenanceBusy: () => maintenance.isBusy,
@@ -148,29 +153,31 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     });
   const library =
     options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries, () => config.get());
-  const maintenanceRuntime = createServerMaintenanceRuntime({
-    config,
-    prepareScrapeItem: options.resources?.prepareScrapeItem,
-    networkClient,
-    crawlerProvider,
-    imageHostCooldownStore,
-    mappingStore,
-    onPublished: (directories, configuration, data) => {
-      personSync.published(configuration, data);
-      void notifyMediaServersOfPublish(
-        networkClient,
-        configuration,
-        directories,
-        runtimeLoggerService.getLogger("MediaServerNotify"),
-      );
-    },
-    recordSiteResults: async (number, results) =>
-      (await persistence.getState()).repositories.siteResults.record(number, results),
-    loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
-  });
+  const maintenanceRuntime =
+    options.resources?.maintenanceRuntime ??
+    createServerMaintenanceRuntime({
+      config,
+      prepareScrapeItem: options.resources?.prepareScrapeItem,
+      networkClient,
+      crawlerProvider,
+      imageHostCooldownStore,
+      mappingStore,
+      onPublished: (directories, configuration, data) => {
+        personSync.published(configuration, data);
+        void notifyMediaServersOfPublish(
+          networkClient,
+          configuration,
+          directories,
+          runtimeLoggerService.getLogger("MediaServerNotify"),
+        );
+      },
+      recordSiteResults: async (number, results) =>
+        (await persistence.getState()).repositories.siteResults.record(number, results),
+      loadSiteResults: async (number) => (await persistence.getState()).repositories.siteResults.list(number),
+    });
   const maintenance =
     options.services?.maintenance ??
-    new MaintenanceService(persistence, mediaRoots, taskEvents, maintenanceRuntime, libraries);
+    new MaintenanceService(persistence, mediaRoots, taskEvents, maintenanceRuntime, libraries, taskGate);
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents, config);
   const system = options.services?.system ?? new SystemService();
   const notePending = (count: number) => {

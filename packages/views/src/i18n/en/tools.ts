@@ -76,7 +76,7 @@ export const tools = {
   autoPhotoSync: {
     title: "Automatic Emby photo sync",
     description:
-      "Check actor photos once after publication, optionally once daily at a configured time, or manually. Emby stores the photos independently; existing photos are preserved.",
+      "Fill actor photos after publication, waiting up to 5 minutes for actors to appear. Optionally check daily at a configured time or manually; existing photos are preserved.",
     status: {
       disabled: "Disabled",
       unconfigured: "Configure Emby first",

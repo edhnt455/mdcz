@@ -36,6 +36,8 @@ export const workbench: Messages["workbench"] = {
   previewFiles: "预览文件",
   startScrape: "开始刮削",
   startMaintenance: "开始维护",
+  maintenanceBlocksScrape: "维护任务正在进行或已暂停，请先停止维护任务再开始刮削。",
+  scrapeBlocksMaintenance: "刮削任务正在进行或已暂停，请先停止刮削任务再开始维护。",
   stepsNavAriaLabel: "工作台步骤",
   step01: "01 配置目录",
   step02: "02 预览文件",

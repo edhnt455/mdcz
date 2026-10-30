@@ -14,7 +14,6 @@ import { createTempDirectory, type TempDirectoryHarness } from "../../../tests/h
 import { buildServer, type ServerApp } from "./app";
 import { AuthService } from "./services/authService";
 import { ServerConfigService } from "./services/configService";
-import { MaintenanceService } from "./services/maintenanceService";
 import { MediaRootService } from "./services/mediaRootService";
 import { ServerPersistenceService } from "./services/persistenceService";
 import type { RuntimeActionService } from "./services/runtimeActionService";
@@ -102,6 +101,7 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       actorSourceProvider: new ActorSourceProvider({ registry: new ActorSourceRegistry() }),
       aggregationService: options.scrapeAggregation,
       prepareScrapeItem: options.prepareScrapeItem,
+      maintenanceRuntime: options.createMaintenanceRuntime?.(config),
     },
     services: {
       auth:
@@ -114,15 +114,6 @@ export const createTestServer = async (options: TestServerOptions = {}): Promise
       persistence,
       runtimeActions: options.runtimeActions,
       taskEvents,
-      maintenance: options.createMaintenanceRuntime
-        ? new MaintenanceService(
-            persistence,
-            mediaRoots,
-            taskEvents,
-            options.createMaintenanceRuntime(config),
-            libraries,
-          )
-        : undefined,
     },
   });
 

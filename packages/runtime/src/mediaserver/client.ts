@@ -238,33 +238,6 @@ export const fetchMediaServerMetadataEditorInfo = async <TError extends MediaSer
   }
 };
 
-export const refreshMediaServerPerson = async <TError extends MediaServerServiceError>(
-  options: MediaServerRequestOptions<TError>,
-  errorMappings: MediaServerRequestErrorMappings,
-): Promise<void> => {
-  const url = buildMediaServerUrl(
-    options.configuration,
-    options.serverKey,
-    `/Items/${encodeURIComponent(options.personId)}/Refresh`,
-    {
-      Recursive: "false",
-      MetadataRefreshMode: "FullRefresh",
-      ImageRefreshMode: "FullRefresh",
-      ReplaceAllMetadata: "false",
-      ReplaceAllImages: "false",
-    },
-  );
-
-  try {
-    await options.networkClient.postText(url, "", {
-      useProxy: false,
-      headers: buildMediaServerHeaders(options.configuration, options.serverKey),
-    });
-  } catch (error) {
-    throw options.toServiceError(error, errorMappings.statusMappings, errorMappings.fallback);
-  }
-};
-
 export const updateMediaServerItem = async <TError extends MediaServerServiceError>(
   options: MediaServerRequestOptions<TError> & {
     payload: Record<string, unknown>;

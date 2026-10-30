@@ -514,10 +514,6 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Jellyfin user ID",
     description: "Must be a UUID. Used to read the person list; leave empty to use the server default.",
   },
-  "jellyfin.refreshPersonAfterSync": {
-    label: "Refresh people after sync",
-    description: "After syncing overviews or photos, also ask Jellyfin to refresh person metadata and images.",
-  },
   "jellyfin.lockOverviewAfterSync": {
     label: "Lock person overview after sync",
     description:
@@ -529,14 +525,10 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Emby user ID",
     description: "Used to read the person list; leave empty to use the server default.",
   },
-  "emby.refreshPersonAfterSync": {
-    label: "Refresh people after sync",
-    description: "After syncing overviews or photos, also ask Emby to refresh person metadata and images.",
-  },
   "emby.autoSyncActorPhotos": {
     label: "Automatically sync actor photos",
     description:
-      "After publication, notify Emby to scan and check the published movie's actor photos once. Existing photos are preserved; no automatic polling follows.",
+      "After publication, notify Emby to scan and fill missing actor photos. Check for actors not yet created every 5 seconds for up to 5 minutes. Existing photos are preserved.",
   },
   "emby.actorPhotoDailySyncTime": {
     label: "Daily actor photo check time",

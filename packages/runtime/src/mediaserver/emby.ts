@@ -15,7 +15,6 @@ import {
   normalizeMediaServerBaseUrl,
   normalizeMediaServerPersons,
   parseMediaServerMode,
-  refreshMediaServerPerson,
   updateMediaServerItem,
   uploadMediaServerPrimaryImage,
 } from "./client";
@@ -304,34 +303,6 @@ export const fetchEmbyMetadataEditorInfo = async (
     },
   );
 
-export const refreshEmbyPerson = async (
-  networkClient: RuntimeNetworkClient,
-  configuration: Configuration,
-  personId: string,
-): Promise<void> => {
-  await refreshMediaServerPerson(
-    {
-      networkClient,
-      configuration,
-      serverKey: "emby",
-      personId,
-      toServiceError: toEmbyServiceError,
-    },
-    {
-      statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby rejected person refresh request" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby credentials are invalid; cannot refresh person" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person refresh permissions" },
-        404: { code: "EMBY_NOT_FOUND", message: "Emby cannot refresh specified person" },
-      },
-      fallback: {
-        code: "EMBY_REFRESH_FAILED",
-        message: "Failed to refresh Emby person",
-      },
-    },
-  );
-};
-
 export const updateEmbyPersonInfo = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
@@ -480,7 +451,6 @@ export class EmbyActorInfoService {
           userId: resolvedUserId,
         }),
       getPersonName: (person) => person.Name,
-      getPersonId: (person) => person.Id,
       fetchPersonDetail: async (person) =>
         await fetchEmbyPersonDetail(this.networkClient, configuration, person, resolvedUserId),
       buildExistingState: (person, detail) => ({
@@ -493,10 +463,6 @@ export class EmbyActorInfoService {
       }),
       updatePersonInfo: async (person, detail, synced) => {
         await updateEmbyPersonInfo(this.networkClient, configuration, person, detail, synced);
-      },
-      shouldRefreshPerson: configuration.emby.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshEmbyPerson(this.networkClient, configuration, personId);
       },
       buildCompletionMessage: (result, total) =>
         `Emby actor info sync completed. Total: ${total}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
@@ -538,10 +504,6 @@ export class EmbyActorPhotoService {
       },
       uploadPrimaryImage: async (personId, bytes, contentType) => {
         await uploadEmbyPrimaryImage(this.networkClient, configuration, personId, bytes, contentType);
-      },
-      shouldRefreshPerson: configuration.emby.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshEmbyPerson(this.networkClient, configuration, personId);
       },
       buildCompletionMessage: (result, total) =>
         `Emby actor photo sync completed. Total: ${total}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,

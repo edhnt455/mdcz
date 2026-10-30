@@ -16,6 +16,7 @@ import {
   ScrapeRunner,
 } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
+import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { TranslationMappingStore } from "@mdcz/runtime/translate";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
@@ -49,6 +50,7 @@ import { ScrapeConflictService } from "./scrapeConflictService";
 
 export interface ScrapeServiceResources {
   isMaintenanceBusy?: () => boolean;
+  taskGate: LibraryTaskGate;
   libraries: Pick<MediaLibraryService, "get">;
   networkClient: NetworkClient;
   crawlerProvider: CrawlerProvider;
@@ -73,6 +75,7 @@ export class ScrapeService {
   private readonly aggregationService?: ScrapeServiceResources["aggregationService"];
   private readonly prepareScrapeItem?: PrepareScrapeItem;
   private readonly libraries: Pick<MediaLibraryService, "get">;
+  private readonly taskGate: LibraryTaskGate;
   private imageWatermarkService: ImageWatermarkService | null = null;
   private runnerInstance: ScrapeRunner | null = null;
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
@@ -88,6 +91,7 @@ export class ScrapeService {
     resources: ScrapeServiceResources,
   ) {
     this.libraries = resources.libraries;
+    this.taskGate = resources.taskGate;
     this.networkClient = resources.networkClient;
     this.crawlerProvider = resources.crawlerProvider;
     this.imageHostCooldownStore = resources.imageHostCooldownStore;
@@ -125,6 +129,7 @@ export class ScrapeService {
       });
       const imageWatermarkService = this.imageWatermarkService;
       this.runnerInstance = new ScrapeRunner({
+        taskGate: this.taskGate,
         libraries: this.libraries,
         persistence: {
           scrapeRuns: state.repositories.scrapeRuns,

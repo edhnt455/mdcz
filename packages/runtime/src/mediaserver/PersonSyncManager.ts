@@ -20,6 +20,15 @@ import { JellyfinActorInfoService, JellyfinActorPhotoService, type MediaServerSi
 import { formatPersonSyncError } from "./personSync";
 import type { PhotoSyncOptions } from "./photoSync";
 
+const PUBLICATION_CHECK_INTERVAL_MS = 5_000;
+const PUBLICATION_WAIT_MS = 5 * 60_000;
+
+interface PendingActorPhoto {
+  name: string;
+  sourceHints: ActorSourceHint[];
+  expiresAt: number;
+}
+
 /** Owns all person writes; background synchronization never depends on a mounted page. */
 export class PersonSyncManager {
   #job: PersonSyncJobDto | null = null;
@@ -38,7 +47,7 @@ export class PersonSyncManager {
   #revision = 0;
   #configuration: Configuration | undefined;
   #configurationKey = "";
-  #pending = new Map<string, ActorSourceHint[]>();
+  #pending = new Map<string, PendingActorPhoto>();
   #publicationAt: number | null = null;
   #dailyAt: number | null = null;
   #fullScanPending = false;
@@ -106,15 +115,17 @@ export class PersonSyncManager {
       return;
     for (const name of data.actors) {
       const key = this.#actorKey(configuration, name);
-      this.#pending.set(
-        key,
-        mergeActorSourceHints(this.#pending.get(key), [
+      if (!key) continue;
+      this.#pending.set(key, {
+        name,
+        sourceHints: mergeActorSourceHints(this.#pending.get(key)?.sourceHints, [
           { website: data.website, studio: data.studio, publisher: data.publisher },
         ]),
-      );
+        expiresAt: Date.now() + PUBLICATION_WAIT_MS,
+      });
     }
     if (!this.#pending.size) return;
-    this.#publicationAt = Date.now() + 5_000;
+    this.#publicationAt = Date.now() + PUBLICATION_CHECK_INTERVAL_MS;
     this.#schedule();
   }
 
@@ -205,11 +216,12 @@ export class PersonSyncManager {
     else if (this.#automatic.status === "blocked") status = "blocked";
     else if (this.#running) status = "running";
     else {
-      const next = Math.min(
+      let next = Math.min(
         this.#fullScanPending ? Date.now() : Number.POSITIVE_INFINITY,
         this.#pending.size ? (this.#publicationAt ?? Date.now()) : Number.POSITIVE_INFINITY,
         this.#dailyAt ?? Number.POSITIVE_INFINITY,
       );
+      for (const actor of this.#pending.values()) next = Math.min(next, actor.expiresAt);
       if (Number.isFinite(next)) {
         nextRunAt = next;
         status = this.#pending.size ? "waiting" : "scheduled";
@@ -265,7 +277,8 @@ export class PersonSyncManager {
     if (!configuration) return;
     const revision = this.#revision;
     const canContinue = () => !this.#closed && revision === this.#revision;
-    const hints = new Map(this.#pending);
+    const pending = new Map(this.#pending);
+    const unseen = new Set(pending.keys());
     const fullScan = this.#fullScanPending;
     this.#pending.clear();
     this.#publicationAt = null;
@@ -275,10 +288,35 @@ export class PersonSyncManager {
     this.#createJob(input, "automatic");
     await this.#execute(input, configuration, {
       canContinue,
-      shouldProcess: (_id, name) => fullScan || hints.has(this.#actorKey(configuration, name)),
-      sourceHints: (name) => hints.get(this.#actorKey(configuration, name)) ?? [],
+      shouldProcess: (_id, name) => {
+        const key = this.#actorKey(configuration, name);
+        unseen.delete(key);
+        return fullScan || pending.has(key);
+      },
+      sourceHints: (name) => pending.get(this.#actorKey(configuration, name))?.sourceHints ?? [],
     });
     if (!canContinue()) return;
+    // Only absent Emby records wait for the scan; source misses and failed uploads are not retried here.
+    for (const [key, actor] of pending) {
+      if (!unseen.has(key)) continue;
+      if (actor.expiresAt <= Date.now()) {
+        this.deps.logger.warn(
+          `Emby did not create actor ${actor.name} within the publication wait; photo sync skipped`,
+        );
+        continue;
+      }
+      const incoming = this.#pending.get(key);
+      this.#pending.set(key, {
+        ...actor,
+        sourceHints: mergeActorSourceHints(actor.sourceHints, incoming?.sourceHints),
+        expiresAt: Math.max(actor.expiresAt, incoming?.expiresAt ?? 0),
+      });
+    }
+    if (this.#pending.size)
+      this.#publicationAt = Math.min(
+        this.#publicationAt ?? Number.POSITIVE_INFINITY,
+        Date.now() + PUBLICATION_CHECK_INTERVAL_MS,
+      );
     this.#automatic = { ...this.#automatic, lastRunAt: new Date().toISOString(), error: null };
   }
 

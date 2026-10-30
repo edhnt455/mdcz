@@ -1,6 +1,6 @@
 import type { Configuration } from "@mdcz/shared/config";
 import type { PersonSyncFailure, PersonSyncResult } from "@mdcz/shared/toolTypes";
-import type { ActorSourceHint } from "../actorSource/types";
+import type { ActorLookupResult, ActorSourceHint } from "../actorSource/types";
 import type { RuntimeNetworkClient } from "../network";
 import type { MediaServerMode } from ".";
 import { getHttpStatus, MediaServerServiceError } from "./errors";
@@ -21,19 +21,9 @@ export interface RuntimePhotoActorSourceProvider {
     query: string | { name: string; requiredField?: "photo_url"; sourceHints?: ActorSourceHint[] },
   ): Promise<{
     profile: { photo_url?: string };
-    warnings?: string[];
+    sourceResults: ActorLookupResult["sourceResults"];
   }>;
 }
-
-const logActorSourceWarnings = (
-  logger: MediaServerPhotoSyncLogger,
-  actorName: string,
-  warnings: string[] | undefined,
-): void => {
-  for (const warning of warnings ?? []) {
-    logger.warn(`Actor source warning for ${actorName}: ${warning}`);
-  }
-};
 
 interface ProgressSignalService {
   resetProgress(): void;
@@ -61,8 +51,6 @@ interface MediaServerPhotoSyncOptions<TPerson> extends PhotoSyncOptions {
   hasPrimaryImage: (person: TPerson) => boolean;
   hasPrimaryImageNow?: (person: TPerson) => Promise<boolean>;
   uploadPrimaryImage: (personId: string, bytes: Uint8Array, contentType: string) => Promise<void>;
-  shouldRefreshPerson: boolean;
-  refreshPerson: (personId: string) => Promise<void>;
   buildCompletionMessage?: (result: PersonSyncResult, total: number) => string;
 }
 
@@ -74,7 +62,8 @@ export const runMediaServerPhotoSync = async <TPerson>(
       !options.shouldProcess || options.shouldProcess(options.getPersonId(person), options.getPersonName(person)),
   );
   if (persons.length === 0) {
-    options.signalService.showLogText(`${options.serviceName} returned no actors to sync`, "warn");
+    if (!options.shouldProcess)
+      options.signalService.showLogText(`${options.serviceName} returned no actors to sync`, "warn");
     return createEmptyPersonSyncResult();
   }
 
@@ -100,7 +89,19 @@ export const runMediaServerPhotoSync = async <TPerson>(
         requiredField: "photo_url",
         ...(options.sourceHints ? { sourceHints: options.sourceHints(actorName) } : {}),
       });
-      logActorSourceWarnings(options.logger, actorName, actorSource.warnings);
+      const sourceTrace = actorSource.sourceResults.map((result) => {
+        const outcome = !result.success
+          ? "lookup failed"
+          : result.profile?.photo_url?.trim()
+            ? "photo found"
+            : "no photo found";
+        const warnings = result.warnings.length ? ` (${result.warnings.join("; ")})` : "";
+        return `${result.source}: ${outcome}${warnings}`;
+      });
+      options.signalService.showLogText(
+        `${options.serviceName} actor photo lookup for ${actorName}: ${sourceTrace.join(" → ") || "no photo sources queried"}`,
+        actorSource.sourceResults.some((result) => !result.success || result.warnings.length) ? "warn" : "info",
+      );
       const source = actorSource.profile.photo_url;
       stage = source && /^https?:\/\//iu.test(source) ? "download photo" : "read local photo";
       if (source && stage === "read local photo") {
@@ -126,15 +127,6 @@ export const runMediaServerPhotoSync = async <TPerson>(
       if (options.canContinue && !options.canContinue()) return "skipped";
       stage = "upload photo";
       await options.uploadPrimaryImage(options.getPersonId(person), image.content, image.contentType);
-      if (options.shouldRefreshPerson) {
-        try {
-          await options.refreshPerson(options.getPersonId(person));
-        } catch (error) {
-          options.logger.warn(
-            `Failed to refresh ${options.serviceName} actor ${actorName} after photo sync: ${formatPersonSyncError(error)}`,
-          );
-        }
-      }
 
       options.signalService.showLogText(`Updated ${options.serviceName} actor photo: ${actorName}`);
       return "processed";

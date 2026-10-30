@@ -17,6 +17,7 @@ export interface ScrapeWorkbenchFrameProps {
   /** What the finished run did; shown beside the follow-up actions. */
   runSummary?: string;
   failedCount: number;
+  blockedReason?: string;
   onPauseScrape: () => void;
   onResumeScrape: () => void;
   onStopScrape: () => void;
@@ -36,6 +37,7 @@ export function ScrapeWorkbenchFrame({
   showCompletedActions,
   runSummary,
   failedCount,
+  blockedReason,
   onPauseScrape,
   onResumeScrape,
   onStopScrape,
@@ -125,13 +127,18 @@ export function ScrapeWorkbenchFrame({
 
           {showCompletedActions ? (
             <>
+              {blockedReason ? (
+                <span role="status" className="text-xs text-muted-foreground">
+                  {blockedReason}
+                </span>
+              ) : null}
               {runSummary ? <span className="px-1 text-xs text-muted-foreground">{runSummary}</span> : null}
               <ReturnToWorkbenchSetupButton
                 dialogDescription={t.workbench.scrapeReturnDescription}
                 onConfirm={onReturnToSetup}
               />
               {onRerunDirectory ? (
-                <Button variant="ghost" onClick={onRerunDirectory}>
+                <Button variant="ghost" onClick={onRerunDirectory} disabled={Boolean(blockedReason)}>
                   {t.workbench.rescrapeDirectory}
                 </Button>
               ) : null}
@@ -141,6 +148,7 @@ export function ScrapeWorkbenchFrame({
                   variant="ghost"
                   className="rounded-quiet-capsule text-destructive hover:text-destructive"
                   onClick={onRetryFailed}
+                  disabled={Boolean(blockedReason)}
                 >
                   <RotateCcw className="h-4 w-4" />
                   {t.workbench.retryFailed}

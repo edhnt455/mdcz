@@ -23,7 +23,6 @@ export function MediaServerSection() {
         <UrlField name="jellyfin.url" />
         <CookieFieldWrapper name="jellyfin.apiKey" />
         <TextField name="jellyfin.userId" />
-        <BoolField name="jellyfin.refreshPersonAfterSync" />
         <BoolField name="jellyfin.lockOverviewAfterSync" />
         <BoolField name="jellyfin.notifyAfterPublish" />
       </Subsection>
@@ -31,7 +30,6 @@ export function MediaServerSection() {
         <UrlField name="emby.url" />
         <CookieFieldWrapper name="emby.apiKey" />
         <TextField name="emby.userId" />
-        <BoolField name="emby.refreshPersonAfterSync" />
         <BoolField name="emby.notifyAfterPublish" />
         <BoolField name="emby.autoSyncActorPhotos" />
         <TextField name="emby.actorPhotoDailySyncTime" />

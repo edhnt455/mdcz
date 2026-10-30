@@ -260,7 +260,7 @@ describe("Jellyfin services", () => {
     });
   });
 
-  it("uses local actor overview sources, can lock Overview, and refreshes the person after a successful update", async () => {
+  it("uses local actor overview sources and locks Overview without refreshing the person", async () => {
     const networkClient = new FakeNetworkClient();
     networkClient.getJson.mockImplementation(async (url: string) => {
       const parsed = new URL(url);
@@ -293,7 +293,6 @@ describe("Jellyfin services", () => {
           url: "http://127.0.0.1:8096",
           apiKey: "token",
           userId: jellyfinUserId,
-          refreshPersonAfterSync: true,
           lockOverviewAfterSync: true,
         },
       }),
@@ -301,7 +300,7 @@ describe("Jellyfin services", () => {
     );
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
-    expect(networkClient.postText).toHaveBeenCalledTimes(2);
+    expect(networkClient.postText).toHaveBeenCalledTimes(1);
     expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1$/u);
     expectManagedActorPayload(
       readPostedPayload(networkClient),
@@ -311,7 +310,6 @@ describe("Jellyfin services", () => {
       LockedFields: ["Overview"],
       LockData: true,
     });
-    expect(networkClient.postText.mock.calls[1]?.[0]).toContain("/Items/person-1/Refresh");
   });
 
   it("uses the user-scoped item detail endpoint for Jellyfin actor info sync", async () => {
@@ -349,7 +347,6 @@ describe("Jellyfin services", () => {
           ...defaultConfiguration.jellyfin,
           url: "http://127.0.0.1:8096",
           apiKey: "token",
-          refreshPersonAfterSync: false,
         },
       }),
       "all",
@@ -415,7 +412,6 @@ describe("Jellyfin services", () => {
           ...defaultConfiguration.jellyfin,
           url: "http://127.0.0.1:8096",
           apiKey: "token",
-          refreshPersonAfterSync: false,
         },
       }),
       "all",
@@ -469,7 +465,6 @@ describe("Jellyfin services", () => {
           url: "http://127.0.0.1:8096",
           apiKey: "token",
           userId: jellyfinUserId,
-          refreshPersonAfterSync: false,
         },
       }),
       "all",
@@ -531,7 +526,6 @@ describe("Jellyfin services", () => {
           ...defaultConfiguration.jellyfin,
           url: "http://127.0.0.1:8096",
           apiKey: "token",
-          refreshPersonAfterSync: true,
         },
       }),
       "all",
@@ -539,14 +533,12 @@ describe("Jellyfin services", () => {
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
     expect(networkClient.postContent).not.toHaveBeenCalled();
-    expect(networkClient.postText).toHaveBeenCalledTimes(3);
+    expect(networkClient.postText).toHaveBeenCalledTimes(2);
 
     const [firstUrl, firstBody] = networkClient.postText.mock.calls[0];
     const [secondUrl, secondBody] = networkClient.postText.mock.calls[1];
-    const [refreshUrl] = networkClient.postText.mock.calls[2];
     expect(firstUrl).toContain("/Items/person-1/Images/Primary");
     expect(secondUrl).toContain("/Items/person-1/Images/Primary/0");
-    expect(refreshUrl).toContain("/Items/person-1/Refresh");
     expect(firstBody).toBe(Buffer.from(await readFile(photoPath)).toString("base64"));
     expect(secondBody).toBe(firstBody);
     for (const [, , init] of networkClient.postText.mock.calls) expect(init?.useProxy).toBe(false);

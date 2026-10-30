@@ -27,6 +27,7 @@ export interface MaintenanceBatchBarPreviewGroup {
 
 export interface MaintenanceBatchBarViewProps {
   activeExecution: boolean;
+  blockedReason?: string;
   canPauseMaintenance: boolean;
   canReturnToSetup: boolean;
   canRunPrimaryAction: boolean;
@@ -55,6 +56,7 @@ export interface MaintenanceBatchBarViewProps {
 
 export function MaintenanceBatchBarView({
   activeExecution,
+  blockedReason,
   canPauseMaintenance,
   canReturnToSetup,
   canRunPrimaryAction,
@@ -98,6 +100,11 @@ export function MaintenanceBatchBarView({
   return (
     <>
       <div className="flex w-fit max-w-full flex-wrap items-center justify-center gap-2">
+        {blockedReason && !activeExecution ? (
+          <span role="status" className="text-xs text-muted-foreground">
+            {blockedReason}
+          </span>
+        ) : null}
         {!activeExecution ? (
           <>
             {onRerunDirectory ? (

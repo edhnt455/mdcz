@@ -14,7 +14,6 @@ import {
   type MediaServerMode,
   normalizeMediaServerBaseUrl,
   parseMediaServerMode,
-  refreshMediaServerPerson,
   updateMediaServerItem,
   uploadMediaServerPrimaryImage,
 } from "./client";
@@ -312,37 +311,6 @@ export const fetchJellyfinMetadataEditorInfo = async (
     },
   );
 
-export const refreshJellyfinPerson = async (
-  networkClient: RuntimeNetworkClient,
-  configuration: Configuration,
-  personId: string,
-): Promise<void> => {
-  await refreshMediaServerPerson(
-    {
-      networkClient,
-      configuration,
-      serverKey: "jellyfin",
-      personId,
-      toServiceError: toJellyfinServiceError,
-    },
-    {
-      statusMappings: {
-        400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin rejected person refresh request" },
-        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin credentials are invalid; cannot refresh person" },
-        403: {
-          code: "JELLYFIN_PERMISSION_DENIED",
-          message: "Current Jellyfin credentials lack person refresh permissions",
-        },
-        404: { code: "JELLYFIN_NOT_FOUND", message: "Jellyfin cannot refresh specified person" },
-      },
-      fallback: {
-        code: "JELLYFIN_REFRESH_FAILED",
-        message: "Failed to refresh Jellyfin person",
-      },
-    },
-  );
-};
-
 export const updateJellyfinPersonInfo = async (
   networkClient: RuntimeNetworkClient,
   configuration: Configuration,
@@ -482,7 +450,6 @@ export class JellyfinActorInfoService {
           userId: resolvedUserId,
         }),
       getPersonName: (person) => person.Name,
-      getPersonId: (person) => person.Id,
       fetchPersonDetail: async (person) =>
         await fetchJellyfinPersonDetail(this.networkClient, configuration, person, {
           userId: resolvedUserId,
@@ -499,10 +466,6 @@ export class JellyfinActorInfoService {
         await updateJellyfinPersonInfo(this.networkClient, configuration, person, detail, synced, {
           lockOverview: configuration.jellyfin.lockOverviewAfterSync,
         });
-      },
-      shouldRefreshPerson: configuration.jellyfin.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshJellyfinPerson(this.networkClient, configuration, personId);
       },
     });
   }
@@ -530,10 +493,6 @@ export class JellyfinActorPhotoService {
       hasPrimaryImage: hasJellyfinPrimaryImage,
       uploadPrimaryImage: async (personId, bytes, contentType) => {
         await uploadJellyfinPrimaryImage(this.networkClient, configuration, personId, bytes, contentType);
-      },
-      shouldRefreshPerson: configuration.jellyfin.refreshPersonAfterSync,
-      refreshPerson: async (personId) => {
-        await refreshJellyfinPerson(this.networkClient, configuration, personId);
       },
     });
   }

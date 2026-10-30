@@ -2,6 +2,7 @@ import type { SiteUrlConfiguration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatDuration } from "@mdcz/shared/format";
 import type { TaskStatus } from "@mdcz/shared/serverDtos";
+import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import {
   selectIsScraping,
   selectScrapeProgress,
@@ -42,6 +43,9 @@ export function ScrapeWorkbenchAdapter({
   const rerunning = useRef(false);
   const snapshot = useScrapeStore((state) => state.snapshot);
   const t = useT();
+  const maintenanceActive = useMaintenanceStore(
+    (state) => selectMaintenanceExecutionStatus(state) !== "idle" || state.pending,
+  );
   const { isScraping, scrapeStatus, progress, resultsCount, latestStage } = useScrapeStore(
     useShallow((state) => ({
       isScraping: selectIsScraping(state),
@@ -105,6 +109,7 @@ export function ScrapeWorkbenchAdapter({
           : undefined
       }
       failedCount={failedCount}
+      blockedReason={maintenanceActive ? t.workbench.maintenanceBlocksScrape : undefined}
       onPauseScrape={onPauseScrape}
       onResumeScrape={onResumeScrape}
       onStopScrape={onStopScrape}

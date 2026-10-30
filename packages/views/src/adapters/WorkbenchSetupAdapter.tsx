@@ -12,7 +12,12 @@ import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
 import type { ServerPathSuggestResponse } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId, MediaCandidate } from "@mdcz/shared/types";
 import { randomId } from "@mdcz/ui";
-import { changeMaintenancePreset, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
+import {
+  changeMaintenancePreset,
+  selectMaintenanceExecutionStatus,
+  useMaintenanceStore,
+} from "@mdcz/views/state/maintenanceStore";
+import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -101,6 +106,16 @@ export function WorkbenchSetupAdapter({
     setPathsSelected,
   } = useWorkbenchSetupStore();
   const presetId = useMaintenanceStore((state) => state.presetId);
+  const maintenanceActive = useMaintenanceStore(
+    (state) => selectMaintenanceExecutionStatus(state) !== "idle" || state.pending,
+  );
+  const scrapeActive = useScrapeStore((state) => selectIsScraping(state) || state.pending);
+  const blockedReason =
+    mode === "scrape" && maintenanceActive
+      ? getT().workbench.maintenanceBlocksScrape
+      : mode === "maintenance" && scrapeActive
+        ? getT().workbench.scrapeBlocksMaintenance
+        : undefined;
   const [draftDir, setDraftDir] = useState(scanDir);
   const [directoryError, setDirectoryError] = useState("");
   useEffect(() => setDraftDir(scanDir), [scanDir]);
@@ -130,6 +145,7 @@ export function WorkbenchSetupAdapter({
     Boolean(draftDir.trim()) !== Boolean(scanDir.trim()) ||
     normalizeComparableHostPath(draftDir) !== normalizeComparableHostPath(scanDir);
   const primaryDisabled =
+    Boolean(blockedReason) ||
     startPending ||
     !scanReady ||
     draftDirty ||
@@ -286,6 +302,7 @@ export function WorkbenchSetupAdapter({
       supportedExtensions={supportedExtensions}
       presetId={presetId}
       primaryDisabled={primaryDisabled}
+      blockedReason={blockedReason}
       onSuggestScanDir={
         suggestDirectory ? async (path) => toPathAutocompleteResult(await suggestDirectory(path)) : undefined
       }

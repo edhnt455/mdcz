@@ -316,6 +316,13 @@ describe("buildServer maintenance integration", () => {
     });
     const sessionId = startResponse.json().result.data.sessionId as string;
     await started;
+    const blockedScrape = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { executionMode: "single", libraryId, refs: [{ rootId, relativePath: "ABC-211.mp4" }] },
+    });
+    expect(blockedScrape.statusCode).toBe(409);
     const pauseResponsePromise = fastify.inject({
       method: "POST",
       url: "/trpc/maintenance.pause",
@@ -323,6 +330,13 @@ describe("buildServer maintenance integration", () => {
       payload: { sessionId },
     });
     await waitForMaintenanceSession(fastify, token, sessionId, "preview", "paused");
+    const pausedScrape = await fastify.inject({
+      method: "POST",
+      url: "/trpc/scrape.start",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { executionMode: "single", libraryId, refs: [{ rootId, relativePath: "ABC-211.mp4" }] },
+    });
+    expect(pausedScrape.statusCode).toBe(409);
     releaseFirstCall();
     const pauseResponse = await pauseResponsePromise;
     expect(pauseResponse.statusCode).toBe(200);

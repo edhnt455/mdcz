@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { createMediaRoot } from "@mdcz/media-store";
 import type { ScrapeRunRecord } from "@mdcz/persistence";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { describe, expect, it, vi } from "vitest";
 import { TaskEventBus } from "../taskEvents";
@@ -60,6 +61,7 @@ const createService = () => {
     config as unknown as ServerConfigService,
     new TaskEventBus(),
     {
+      taskGate: new LibraryTaskGate(),
       libraries: { get: vi.fn() },
       networkClient: { setDomainInterval: vi.fn() } as never,
       crawlerProvider: {} as never,

@@ -8,6 +8,7 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { PublicationConflictError } from "../publication/conflicts";
+import { LibraryTaskGate } from "../tasks/LibraryTaskGate";
 import { type MaintenancePersistencePort, MaintenanceSessionCoordinator } from "./coordinator";
 import type { MaintenanceRuntime } from "./MaintenanceRuntime";
 
@@ -103,6 +104,7 @@ const createCoordinator = (
       list: async () => roots,
     },
     runtime,
+    taskGate: new LibraryTaskGate(),
     persistence: {
       get: async () => ({
         library: library as unknown as import("@mdcz/persistence").LibraryRepository,
@@ -120,9 +122,16 @@ const createCoordinator = (
 
 describe("MaintenanceSessionCoordinator", () => {
   it("fixes ownership and reuses preview observations throughout apply", async () => {
-    const fixture = createCoordinator({
-      applyEntry: vi.fn(async () => ({ status: "success" as const })),
-    });
+    const taskGate = new LibraryTaskGate();
+    let scrapeBusy = false;
+    taskGate.track("scrape", () => scrapeBusy);
+    const fixture = createCoordinator(
+      {
+        applyEntry: vi.fn(async () => ({ status: "success" as const })),
+      },
+      [root],
+      { taskGate },
+    );
     fixture.library.inventoryOwnership.mockReturnValue([
       { rootId: root.id, relativePath: "one.mp4", movieId: "movie-1", fileId: "file-1", kind: "video", published: 1 },
     ]);
@@ -132,6 +141,14 @@ describe("MaintenanceSessionCoordinator", () => {
       refs: [ref("one.mp4")],
     });
     const batch = await preview.completion;
+    scrapeBusy = true;
+    await expect(
+      fixture.coordinator.beginApply({
+        sessionId: preview.session.id,
+        selections: [{ previewId: batch.items[0].id }],
+      }),
+    ).rejects.toThrow("A scrape task is running");
+    scrapeBusy = false;
     expect(batch.items[0].movieGroup?.files[0].fileId).toBe("file-1");
     fixture.library.inventoryOwnership.mockReturnValue([]);
     const apply = await fixture.coordinator.beginApply({
@@ -226,7 +243,8 @@ describe("MaintenanceSessionCoordinator", () => {
   it("reserves preview startup against concurrent previews and applies and releases it after scan failure", async () => {
     const scanning = promiseWithResolvers<void>();
     const scanned = promiseWithResolvers<LocalScanEntry[]>();
-    const fixture = createCoordinator();
+    const taskGate = new LibraryTaskGate();
+    const fixture = createCoordinator({}, [root], { taskGate });
     const input = { rootId: root.id, presetId: "import_local" as const, refs: [ref("one.mp4")] };
     const first = await fixture.coordinator.startPreview(input);
     const batch = await first.completion;
@@ -237,6 +255,8 @@ describe("MaintenanceSessionCoordinator", () => {
     const starting = await fixture.coordinator.startPreview(input);
     const failed = expect(starting.completion).rejects.toThrow("scan failed");
     await scanning.promise;
+    expect(fixture.coordinator.hasUnfinishedSession).toBe(true);
+    expect(() => taskGate.assertAvailable("scrape")).toThrow("A maintenance task is running");
     await expect(fixture.coordinator.startPreview(input)).rejects.toThrow(
       "An active maintenance session already exists",
     );
@@ -248,9 +268,23 @@ describe("MaintenanceSessionCoordinator", () => {
     ).rejects.toThrow("Maintenance session not found");
     scanned.reject(new Error("scan failed"));
     await failed;
+    expect(() => taskGate.assertAvailable("scrape")).not.toThrow();
     const retry = await fixture.coordinator.startPreview(input);
     await retry.completion;
     await fixture.coordinator.close();
+
+    const config = promiseWithResolvers<typeof defaultConfiguration>();
+    const startupGate = new LibraryTaskGate();
+    const startingFixture = createCoordinator({ getConfiguration: async () => await config.promise }, [root], {
+      taskGate: startupGate,
+    });
+    const startingPreview = startingFixture.coordinator.startPreview(input);
+    expect(startingFixture.coordinator.hasUnfinishedSession).toBe(true);
+    expect(() => startupGate.assertAvailable("scrape")).toThrow("A maintenance task is running");
+    config.resolve(defaultConfiguration);
+    await (await startingPreview).completion;
+    expect(() => startupGate.assertAvailable("scrape")).not.toThrow();
+    await startingFixture.coordinator.close();
   });
 
   it("discards a completed session before starting a new one", async () => {

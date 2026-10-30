@@ -53,6 +53,7 @@ export interface WorkbenchSetupViewProps {
   supportedExtensions: string[];
   presetId: MaintenancePresetId;
   primaryDisabled: boolean;
+  blockedReason?: string;
   onSuggestScanDir?: (path: string) => Promise<PathAutocompleteResult>;
   formatBytes: (value: number, options?: { trimTrailingZeros?: boolean }) => string;
   onScanDirChange?: (value: string) => void;
@@ -314,6 +315,7 @@ export function WorkbenchSetupView({
   supportedExtensions,
   presetId,
   primaryDisabled,
+  blockedReason,
   onSuggestScanDir,
   formatBytes,
   onScanDirChange,
@@ -365,6 +367,11 @@ export function WorkbenchSetupView({
   const someSelected = visibleSelectedCount > 0 && !allSelected;
   const actions = (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-5">
+      {blockedReason ? (
+        <p role="status" className="mr-auto text-xs text-muted-foreground">
+          {blockedReason}
+        </p>
+      ) : null}
       {previewMode ? (
         <p className="mr-auto text-xs leading-5 text-muted-foreground">
           {t.workbench.selectedFilesSummary(

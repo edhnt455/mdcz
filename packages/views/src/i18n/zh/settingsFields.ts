@@ -409,10 +409,6 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "Jellyfin 用户 ID",
       description: "必须是 UUID。用于人物列表读取，留空则按服务端默认处理。",
     },
-    "jellyfin.refreshPersonAfterSync": {
-      label: "同步后刷新人物",
-      description: "同步简介或头像后，额外请求 Jellyfin 刷新人物元数据与图片。",
-    },
     "jellyfin.lockOverviewAfterSync": {
       label: "同步后锁定人物简介",
       description: "写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。",
@@ -420,13 +416,10 @@ export const settingsFields: Messages["settingsFields"] = {
     "emby.url": { label: "Emby 服务器地址" },
     "emby.apiKey": { label: "Emby API Key" },
     "emby.userId": { label: "Emby 用户 ID", description: "用于人物列表读取，留空则按服务端默认处理。" },
-    "emby.refreshPersonAfterSync": {
-      label: "同步后刷新人物",
-      description: "同步简介或头像后，额外请求 Emby 刷新人物元数据与图片。",
-    },
     "emby.autoSyncActorPhotos": {
       label: "自动同步演员头像",
-      description: "影片整理入库后自动通知 Emby 扫描，并检查一次本次影片的演员头像。已有头像不覆盖，不自动循环重查。",
+      description:
+        "影片整理入库后自动通知 Emby 扫描，补全本次影片的演员头像。尚未建立的人物每 5 秒检查，最多等待 5 分钟；已有头像不覆盖。",
     },
     "emby.actorPhotoDailySyncTime": {
       label: "每日头像补查时间",

@@ -18,7 +18,7 @@ afterEach(async () => {
 function fixture() {
   vi.useFakeTimers();
   const configuration = configurationSchema.parse({
-    emby: { url: "http://emby.test", apiKey: "secret", userId: "user", refreshPersonAfterSync: false },
+    emby: { url: "http://emby.test", apiKey: "secret", userId: "user" },
   });
   const persons: { Id: string; Name: string; ImageTags?: Record<string, string> }[] = [];
   const uploaded: string[] = [];
@@ -39,6 +39,14 @@ function fixture() {
   };
   const lookup = vi.fn(async (_config: unknown, query: { name: string }) => ({
     profile: { name: query.name, photo_url: "https://photos.test/actor" },
+    sourceResults: [
+      {
+        source: "gfriends",
+        success: true,
+        profile: { name: query.name, photo_url: "https://photos.test/actor" },
+        warnings: [],
+      },
+    ],
     warnings: [],
   }));
   const manager = new PersonSyncManager({
@@ -80,7 +88,7 @@ describe("automatic Emby actor photos", () => {
     expect(networkClient.postText.mock.calls[0][2]?.headers?.get("content-type")).toBe("image/png");
   });
 
-  it("checks only published actors once, merges duplicates, and leaves existing images alone", async () => {
+  it("waits for published actors within independent deadlines, merges duplicates, and leaves existing images alone", async () => {
     const { manager, configuration, persons, uploaded, lookup, networkClient } = fixture();
     persons.push({ Id: "a", Name: "Actor A", ImageTags: { Primary: "manual" } }, { Id: "c", Name: "Unrelated" });
     manager.activate();
@@ -90,12 +98,10 @@ describe("automatic Emby actor photos", () => {
     manager.published(configuration, movie(["Actor B"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual([]);
-    expect(manager.snapshot().automatic).toMatchObject({ status: "idle", waitingActors: 0, nextRunAt: null });
-    persons.push({ Id: "b", Name: "Actor B" });
-    await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
-    expect(networkClient.getJson).toHaveBeenCalledTimes(1);
+    expect(manager.snapshot().automatic).toMatchObject({ status: "waiting", waitingActors: 1 });
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(lookup).not.toHaveBeenCalled();
-    manager.published(configuration, movie(["Actor B"]));
+    persons.push({ Id: "b", Name: "Actor B" });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual(["b"]);
     expect(lookup).toHaveBeenCalledTimes(1);
@@ -104,20 +110,42 @@ describe("automatic Emby actor photos", () => {
       status: "completed",
       result: { processedCount: 1 },
     });
+    expect(manager.snapshot().automatic).toMatchObject({ status: "idle", waitingActors: 0, nextRunAt: null });
+
+    manager.published(configuration, movie(["Never created"]));
+    await vi.advanceTimersByTimeAsync(295_000);
+    manager.published(configuration, movie(["Later actor"]));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(manager.snapshot().automatic.waitingActors).toBe(1);
+    persons.push({ Id: "late", Name: "Never created" }, { Id: "later", Name: "Later actor" });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(uploaded).toEqual(["b", "later"]);
+
+    manager.published(configuration, movie(["At deadline"]));
+    await vi.advanceTimersByTimeAsync(299_999);
+    persons.push({ Id: "deadline", Name: "At deadline" });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(uploaded).toEqual(["b", "later", "deadline"]);
+    expect(lookup).toHaveBeenCalledTimes(3);
+    expect(manager.snapshot().automatic).toMatchObject({ status: "idle", waitingActors: 0, nextRunAt: null });
+    const calls = networkClient.getJson.mock.calls.length;
     await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
-    expect(uploaded).toEqual(["b"]);
+    expect(networkClient.getJson).toHaveBeenCalledTimes(calls);
   });
 
   it("leaves missing sources for manual sync and never follows manual sync with an automatic check", async () => {
     const { manager, configuration, persons, uploaded, lookup, networkClient } = fixture();
     persons.push({ Id: "a", Name: "Actor A" });
-    lookup.mockResolvedValueOnce({ profile: { name: "Actor A", photo_url: "" }, warnings: [] });
+    lookup.mockResolvedValueOnce({ profile: { name: "Actor A", photo_url: "" }, sourceResults: [], warnings: [] });
     manager.activate();
     manager.published(configuration, movie(["Actor A"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual([]);
     await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
     expect(lookup).toHaveBeenCalledTimes(1);
+    manager.published(configuration, movie(["Still scanning"]));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(manager.snapshot().automatic.waitingActors).toBe(1);
     await manager.run({ server: "emby", kind: "photo", mode: "missing" });
     expect(uploaded).toEqual(["a"]);
     await manager.run({ server: "emby", kind: "photo", mode: "all" });
@@ -146,13 +174,18 @@ describe("automatic Emby actor photos", () => {
     manager.published(configuration, movie(["Actor A"]));
     await vi.advanceTimersByTimeAsync(5_000);
     expect(uploaded).toEqual(["a"]);
+    manager.published(configuration, movie(["Still scanning"]));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(manager.snapshot().automatic.waitingActors).toBe(1);
     configuration.emby.autoSyncActorPhotos = false;
     manager.configurationChanged();
     await vi.advanceTimersByTimeAsync(0);
     expect(manager.snapshot().automatic.status).toBe("disabled");
     persons.push({ Id: "b", Name: "Actor B" });
     manager.published(configuration, movie(["Actor B"]));
+    const calls = networkClient.getJson.mock.calls.length;
     await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(networkClient.getJson).toHaveBeenCalledTimes(calls);
     expect(uploaded).toEqual(["a"]);
     await manager.close();
     manager.configurationChanged();
@@ -181,7 +214,11 @@ describe("automatic Emby actor photos", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     configuration.emby.url = "http://new-emby.test";
     manager.configurationChanged();
-    resolveLookup({ profile: { name: "Actor A", photo_url: "https://photos.test/actor" }, warnings: [] });
+    resolveLookup({
+      profile: { name: "Actor A", photo_url: "https://photos.test/actor" },
+      sourceResults: [],
+      warnings: [],
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(uploaded).toEqual([]);
     manager.published(configuration, movie(["Actor A", "Actor B"]));
@@ -237,7 +274,11 @@ describe("automatic Emby actor photos", () => {
     manager.published(configuration, movie(["Actor B"]));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(uploaded).toEqual([]);
-    resolveLookup({ profile: { name: "Actor A", photo_url: "https://photos.test/actor" }, warnings: [] });
+    resolveLookup({
+      profile: { name: "Actor A", photo_url: "https://photos.test/actor" },
+      sourceResults: [],
+      warnings: [],
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(uploaded).toEqual(["a", "b"]);
     expect(manager.snapshot().automatic.nextRunAt).toBe(new Date(2026, 9, 27, 3, 0).toISOString());

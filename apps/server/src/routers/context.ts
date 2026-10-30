@@ -1,4 +1,5 @@
 import { PersistenceError, persistenceErrorCodes } from "@mdcz/persistence";
+import { LibraryTaskConflictError } from "@mdcz/runtime/tasks";
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ServerServices } from "../services";
 import { ServerConfigValidationError } from "../services/configService";
@@ -33,6 +34,8 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   const cause = result.ok ? undefined : result.error.cause;
   if (cause instanceof PersistenceError && cause.code === persistenceErrorCodes.NotFound)
     throw new TRPCError({ code: "NOT_FOUND", message: cause.message, cause });
+  if (cause instanceof LibraryTaskConflictError)
+    throw new TRPCError({ code: "CONFLICT", message: cause.message, cause });
   return result;
 });
 
