@@ -14,6 +14,9 @@ import { mediaLibraryConfigSchema } from "./mediaLibrary";
 
 describe("configuration codec", () => {
   it("defaults, validates, and round-trips the untranslated Japanese character threshold", () => {
+    const legacy = parseConfigurationContent('[paths]\noutputSummaryPath = "/old/summary"\n', "toml");
+    expect(legacy.paths).not.toHaveProperty("outputSummaryPath");
+    expect(serializeConfiguration(legacy, "toml")).not.toContain("outputSummaryPath");
     expect(configurationSchema.parse({}).translate.untranslatedJapaneseRunLength).toBe(5);
     for (const threshold of [1, 5, 12]) {
       const configuration = configurationSchema.parse({ translate: { untranslatedJapaneseRunLength: threshold } });

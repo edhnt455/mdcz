@@ -313,6 +313,7 @@ test("ordered site field exposes grouped priority semantics", async () => {
   await expect.element(screen.getByText("dmm / dmm_tv")).toBeVisible();
   await expect.element(screen.getByText("已启用 1/2")).toBeVisible();
   await expect.element(screen.getByRole("checkbox")).toHaveAttribute("aria-checked", "mixed");
+  expect(screen.container.querySelector('[data-state="indeterminate"] .lucide-minus')).not.toBeNull();
 });
 
 test("profile capsule marks loading busy state", async () => {

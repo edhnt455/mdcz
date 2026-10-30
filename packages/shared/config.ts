@@ -375,7 +375,6 @@ const pathsSchema = z.object({
   defaultScanExcludeDirs: z.array(z.string()).default([]),
   sceneImagesFolder: z.string().default("extrafanart"),
   configDirectory: z.string().default("config"),
-  outputSummaryPath: z.string().default(""),
 });
 
 /** Downloader paths are translated before matching library roots, as with *arr remote path mappings. */
