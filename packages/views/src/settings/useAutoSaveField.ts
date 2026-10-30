@@ -217,7 +217,11 @@ export function SettingsEditorAutosaveProvider({
 
                 const serverError = extractServerValidation(error);
                 if (serverError) {
-                  const ownError = serverError.fieldErrors[path];
+                  const ownError =
+                    serverError.fieldErrors[path] ??
+                    (path === "personSync.actorAliases"
+                      ? Object.entries(serverError.fieldErrors).find(([field]) => field.startsWith(`${path}.`))?.[1]
+                      : undefined);
                   if (ownError) {
                     formRef.current.setError(path, { type: "server", message: ownError });
                   } else {
@@ -225,7 +229,10 @@ export function SettingsEditorAutosaveProvider({
                   }
 
                   for (const otherField of serverError.fields) {
-                    if (otherField === path) {
+                    if (
+                      otherField === path ||
+                      (path === "personSync.actorAliases" && otherField.startsWith(`${path}.`))
+                    ) {
                       continue;
                     }
 

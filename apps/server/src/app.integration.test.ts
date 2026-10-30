@@ -256,6 +256,16 @@ describe("buildServer composition integration", () => {
     expect(readResponse.json().result.data.network.timeout).toBe(defaultConfiguration.network.timeout);
     expect(exportResponse.statusCode).toBe(200);
     expect(exportResponse.json().result.data).toContain("[network]");
+    for (const aliases of [{ A: ["Alias A"], B: ["Alias B"] }, { C: ["Alias C"] }, {}]) {
+      const updated = await fastify.inject({
+        method: "POST",
+        url: "/trpc/config.update",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { personSync: { actorAliases: aliases } },
+      });
+      expect(updated.statusCode).toBe(200);
+      expect(updated.json().result.data.personSync.actorAliases).toEqual(aliases);
+    }
   });
 
   it("initializes SQLite migrations before serving tRPC persistence status", async () => {

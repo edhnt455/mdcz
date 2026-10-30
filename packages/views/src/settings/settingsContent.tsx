@@ -1,5 +1,8 @@
+import { normalizeActorName } from "@mdcz/shared/actorAliases";
 import {
   type Configuration,
+  configurationSchema,
+  defaultConfiguration,
   NFO_FIELD_OPTIONS,
   NOTIFICATION_CHANNELS,
   notificationsSchema,
@@ -19,7 +22,9 @@ import {
   DialogTrigger,
   FormControl,
   Input,
+  Label,
   Switch,
+  Textarea,
 } from "@mdcz/ui";
 import { CircleHelp, Loader2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -76,6 +81,7 @@ const NAMING_SECTION_FIELD_KEYS = [
   "naming.actorNameMax",
   "naming.actorNameMore",
   "naming.actorFallbackToStudio",
+  "personSync.actorAliases",
   "naming.releaseRule",
   "naming.folderNameMax",
   "naming.fileNameMax",
@@ -357,6 +363,7 @@ export function NamingSection() {
       <NumberField name="naming.actorNameMax" min={1} max={20} />
       <TextField name="naming.actorNameMore" />
       <BoolField name="naming.actorFallbackToStudio" />
+      <ActorAliasesField />
       <TextField name="naming.releaseRule" />
       <EnumField name="naming.partStyle" options={toEnumOptions(t.settings.options.partStyle)} />
       <NumberField name="naming.folderNameMax" min={10} max={255} />
@@ -612,6 +619,157 @@ export function QbittorrentSection({ status }: { status: ReactNode }) {
       <TextField name="automation.qbittorrent.category" />
       {status}
     </>
+  );
+}
+
+function ActorAliasesField() {
+  const t = useT();
+  const [draft, setDraft] = useState<{ original?: string; name: string; aliases: string; snapshot: string } | null>(
+    null,
+  );
+  const [error, setError] = useState("");
+  return (
+    <BaseField name="personSync.actorAliases" layout="vertical" commitMode="immediate">
+      {(field) => {
+        const groups = isRecord(field.value) ? (field.value as Record<string, string[]>) : {};
+        const open = (name?: string) => {
+          setError("");
+          setDraft({
+            original: name,
+            name: name ?? "",
+            aliases: name ? groups[name].join("\n") : "",
+            snapshot: JSON.stringify(groups),
+          });
+        };
+        const save = () => {
+          if (!draft) return;
+          if (draft.snapshot !== JSON.stringify(groups)) {
+            setError(t.settings.actorAliases.changed);
+            return;
+          }
+          const name = draft.name.trim();
+          if (!name) {
+            setError(t.settings.configValidation.issues.actorCanonicalNameEmpty ?? "actorCanonicalNameEmpty");
+            return;
+          }
+          if (
+            Object.keys(groups).some(
+              (key) => key !== draft.original && normalizeActorName(key) === normalizeActorName(name),
+            )
+          ) {
+            setError(t.settings.actorAliases.nameConflict);
+            return;
+          }
+          const aliases = draft.aliases
+            .split(/[,，\r\n]+/u)
+            .map((alias) => alias.trim())
+            .filter(Boolean);
+          const next = Object.fromEntries([
+            ...Object.entries(groups).filter(([key]) => key !== draft.original),
+            [name, aliases],
+          ]);
+          const result = configurationSchema.safeParse({
+            ...defaultConfiguration,
+            personSync: { ...defaultConfiguration.personSync, actorAliases: next },
+          });
+          if (!result.success) {
+            const issue = result.error.issues[0].message;
+            setError(
+              t.settings.configValidation.issues[issue as keyof typeof t.settings.configValidation.issues] ?? issue,
+            );
+            return;
+          }
+          field.onChange(result.data.personSync.actorAliases);
+          setDraft(null);
+        };
+        return (
+          <div className="space-y-2">
+            {Object.entries(groups).length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t.settings.actorAliases.empty}</p>
+            ) : null}
+            {Object.entries(groups).map(([name, aliases]) => (
+              <div key={name} className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <strong>{name}</strong>
+                  <p className="break-words text-xs text-muted-foreground">{aliases.join(" / ")}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`${t.settings.actorAliases.edit} ${name}`}
+                  onClick={() => open(name)}
+                >
+                  {t.settings.actorAliases.edit}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`${t.settings.actorAliases.remove} ${name}`}
+                  onClick={() =>
+                    field.onChange(Object.fromEntries(Object.entries(groups).filter(([key]) => key !== name)))
+                  }
+                >
+                  {t.settings.actorAliases.remove}
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={() => open()}>
+              {t.settings.actorAliases.add}
+            </Button>
+            <Dialog
+              open={draft !== null}
+              onOpenChange={(open) => {
+                if (!open) setDraft(null);
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>
+                    {draft?.original ? t.settings.actorAliases.edit : t.settings.actorAliases.add}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <Label htmlFor="actor-alias-name">{t.settings.actorAliases.name}</Label>
+                  <Input
+                    id="actor-alias-name"
+                    value={draft?.name ?? ""}
+                    onChange={(event) => {
+                      setError("");
+                      setDraft((current) => current && { ...current, name: event.target.value });
+                    }}
+                  />
+                  <Label htmlFor="actor-alias-values">{t.settings.actorAliases.aliases}</Label>
+                  <Textarea
+                    id="actor-alias-values"
+                    value={draft?.aliases ?? ""}
+                    onChange={(event) => {
+                      setError("");
+                      setDraft((current) => current && { ...current, aliases: event.target.value });
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">{t.settings.actorAliases.aliasesHint}</p>
+                  {error ? (
+                    <p role="alert" className="text-xs text-destructive">
+                      {error}
+                    </p>
+                  ) : null}
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setDraft(null)}>
+                    {t.common.cancel}
+                  </Button>
+                  <Button type="button" onClick={save}>
+                    {t.common.save}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        );
+      }}
+    </BaseField>
   );
 }
 

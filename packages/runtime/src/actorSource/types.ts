@@ -46,5 +46,6 @@ export interface ActorLookupResult {
 
 export interface BaseActorSource {
   readonly name: ActorSourceName;
+  clearCache?(): void;
   lookup(configuration: Configuration, query: ActorLookupQuery): Promise<ActorSourceResult>;
 }

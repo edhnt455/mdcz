@@ -1159,9 +1159,12 @@ describe("buildServer scrape integration", () => {
     const confirm = async () =>
       await fastify.inject({
         method: "POST",
-        url: "/trpc/pending.confirmUncensored",
+        url: scenario === "single" ? "/trpc/pending.batch" : "/trpc/pending.confirmUncensored",
         headers,
-        payload: { id: item.id, choice: "leak" },
+        payload:
+          scenario === "single"
+            ? { action: "confirm", ids: ["missing", item.id], choice: "leak" }
+            : { id: item.id, choice: "leak" },
       });
     const confirmResponse = await confirm();
 
@@ -1178,6 +1181,12 @@ describe("buildServer scrape integration", () => {
       return;
     }
     expect(confirmResponse.statusCode, confirmResponse.body).toBe(200);
+    if (scenario === "single") {
+      expect(confirmResponse.json().result.data).toEqual({
+        succeededIds: [item.id],
+        failures: [{ id: "missing", message: expect.stringContaining("Pending item not found") }],
+      });
+    }
     expect(aggregateCount).toBe(1);
     const confirmed = await state.repositories.library.getEntryById(originalEntry.id);
     expect(confirmed.files.map((file) => file.id).sort()).toEqual(originalEntry.files.map((file) => file.id).sort());
@@ -1196,7 +1205,13 @@ describe("buildServer scrape integration", () => {
     const previousEntries = await readdir(join(root, previousDirectory)).catch(() => [] as string[]);
     expect(previousEntries.some((name) => name.endsWith(".nfo"))).toBe(false);
     expect(await pendingItems()).toEqual([]);
-    expect((await confirm()).statusCode).not.toBe(200);
+    const repeated = await confirm();
+    if (scenario === "single") {
+      expect(repeated.json().result.data).toMatchObject({
+        succeededIds: [],
+        failures: [{ id: "missing" }, { id: item.id }],
+      });
+    } else expect(repeated.statusCode).not.toBe(200);
     expect(aggregateCount).toBe(1);
   });
 
@@ -1257,8 +1272,10 @@ describe("buildServer scrape integration", () => {
       if (input.libraryId === second.libraryId) throw new Error("Library unavailable");
       return { task: { id: "batch-task" } } as ScrapeRunSnapshotDto;
     });
-    const batch = (payload: { action: string; ids: string[] }, requestHeaders: Record<string, string> = headers) =>
-      fastify.inject({ method: "POST", url: "/trpc/pending.batch", headers: requestHeaders, payload });
+    const batch = (
+      payload: { action: string; ids: string[]; libraryId?: string },
+      requestHeaders: Record<string, string> = headers,
+    ) => fastify.inject({ method: "POST", url: "/trpc/pending.batch", headers: requestHeaders, payload });
     expect((await batch({ action: "ignore", ids }, {})).statusCode).toBe(401);
     expect((await batch({ action: "ignore", ids: [] })).statusCode).toBe(400);
     const response = await batch({ action: "retry", ids: [...ids, ids[0], "missing"] });
@@ -1286,6 +1303,20 @@ describe("buildServer scrape integration", () => {
       ),
     });
     expect(pending.list()).toHaveLength(items.length);
+    start.mockClear();
+    const unassigned = items.find((item) => item.relativePath === "unassigned.mp4");
+    if (!unassigned) throw new Error("Expected an unassigned entry");
+    const redirected = await batch({
+      action: "retry",
+      ids: [unassigned.id],
+      libraryId: first.libraryId,
+    });
+    expect(redirected.json().result.data.failures).toEqual([]);
+    expect(start).toHaveBeenCalledWith({
+      executionMode: "batch",
+      libraryId: first.libraryId,
+      refs: [{ rootId: first.rootId, relativePath: "unassigned.mp4" }],
+    });
     const ignoredIds = ids.filter((id) => id !== untouched.id);
     const ignored = await batch({ action: "ignore", ids: [...ignoredIds, ignoredIds[0], "missing"] });
     expect(ignored.json().result.data).toEqual({ succeededIds: [...ignoredIds, "missing"], failures: [] });

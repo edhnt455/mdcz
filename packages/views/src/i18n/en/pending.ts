@@ -3,16 +3,28 @@ import type { SkipReason } from "@mdcz/shared/siteResults";
 
 export const pending = {
   title: "Pending",
+  kindFilter: "Filter by type",
+  allKinds: "All types",
+  filterEmpty: "No entries of this type.",
+  batchLibrary: "Batch destination library",
+  ownLibrary: "Each file's original library",
+  batchConfirmType: "Release type for selected entries",
+  batchConfirm: "Confirm type",
+  batchConfirmCount: (count: number) => `Confirm type (${count})`,
+  batchConfirmPrompt: (count: number) => `Confirm the release type for ${count} entries?`,
+  batchConfirmDescription: (choice: string) =>
+    `Apply ${choice} to the selected published movies. Their file names and metadata may change.`,
   selectAll: "Select all",
   selectItem: (name: string) => `Select ${name}`,
   selectedCount: (count: number) => `${count} selected`,
   batchRetry: "Process selected",
   batchIgnore: "Ignore selected",
   batchRetryHint:
-    "Retries scraping into each file's library. Missing numbers, ambiguous works and release types need individual review.",
+    "Retries eligible entries; missing numbers and ambiguous works need individual review. Other selected entries remain selected.",
   batchIgnoreConfirm: (count: number) => `Ignore ${count} selected files?`,
   batchIgnoreDescription: "Remove the selected entries from the pending list. Files stay where they are.",
   batchResult: (succeeded: number, failed: number) => `${succeeded} processed · ${failed} failed`,
+  batchRetryResult: (succeeded: number, failed: number) => `${succeeded} submitted · ${failed} not submitted`,
   empty: "Nothing needs your attention.",
   loadFailed: (error: string) => `Could not load the pending list: ${error}`,
   kinds: {

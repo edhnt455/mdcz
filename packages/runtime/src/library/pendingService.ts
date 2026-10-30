@@ -188,16 +188,28 @@ export class PendingService {
     }
 
     const result: PendingBatchResponse = { succeededIds: [], failures: [] };
+    if (input.action === "confirm") {
+      for (const id of ids) {
+        try {
+          await this.confirmUncensored({ id, choice: input.choice });
+          result.succeededIds.push(id);
+        } catch (error) {
+          result.failures.push({ id, message: toErrorMessage(error) });
+        }
+      }
+      return result;
+    }
     const groups = new Map<string, PendingItemRecord[]>();
     for (const id of ids) {
       try {
         const item = repositories.pending.get(id);
         if (["uncensored", "ambiguous", "no_number"].includes(item.kind))
           throw new Error("This entry needs manual input; process it individually");
-        if (!item.libraryId) throw new Error("Choose a library to scrape this file into");
-        const group = groups.get(item.libraryId) ?? [];
+        const libraryId = input.libraryId ?? item.libraryId;
+        if (!libraryId) throw new Error("Choose a library to scrape this file into");
+        const group = groups.get(libraryId) ?? [];
         group.push(item);
-        groups.set(item.libraryId, group);
+        groups.set(libraryId, group);
       } catch (error) {
         result.failures.push({ id, message: toErrorMessage(error) });
       }

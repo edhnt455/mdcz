@@ -32,6 +32,55 @@ import { render } from "vitest-browser-react";
 
 const noop = vi.fn();
 
+test("edits actor aliases with validation and saves the complete mapping", async () => {
+  const saveConfig = vi.fn(async () => undefined);
+  const values = {
+    ...defaultConfiguration,
+    personSync: { ...defaultConfiguration.personSync, actorAliases: { "Actor A": ["Old Name"], "Actor B": ["Other"] } },
+  };
+  const screen = await render(
+    <FormHarness values={values} services={createSettingsServices({ saveConfig })}>
+      <NamingSection />
+    </FormHarness>,
+  );
+  await screen.getByRole("button", { name: "编辑 Actor A" }).click();
+  const dialog = screen.getByRole("dialog");
+  await dialog.getByLabelText("规范名称").fill("Actor B");
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect.element(dialog.getByRole("alert")).toHaveTextContent("规范名称与其他组冲突");
+  expect(saveConfig).not.toHaveBeenCalled();
+  await dialog.getByLabelText("规范名称").fill("Actor C");
+  await dialog.getByLabelText("别名", { exact: true }).fill("Old Name\nNew Name");
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect
+    .poll(() => saveConfig.mock.calls)
+    .toContainEqual([{ personSync: { actorAliases: { "Actor B": ["Other"], "Actor C": ["Old Name", "New Name"] } } }]);
+  await screen.getByRole("button", { name: "删除 Actor B" }).click();
+  await expect
+    .poll(() => saveConfig.mock.calls)
+    .toContainEqual([{ personSync: { actorAliases: { "Actor C": ["Old Name", "New Name"] } } }]);
+  await screen.getByRole("button", { name: "添加别名组" }).click();
+  await screen.getByRole("dialog").getByLabelText("规范名称").fill("Actor D");
+  await screen.getByRole("dialog").getByRole("button", { name: "保存" }).click();
+  await expect.element(screen.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await screen.getByRole("dialog").getByLabelText("别名", { exact: true }).fill("Old Name");
+  await screen.getByRole("dialog").getByRole("button", { name: "保存" }).click();
+  await expect.element(screen.getByRole("dialog").getByRole("alert")).toBeVisible();
+  await screen.getByRole("dialog").getByLabelText("别名", { exact: true }).fill("Alternative Name");
+  await screen.getByRole("dialog").getByRole("button", { name: "保存" }).click();
+  await expect
+    .poll(() => saveConfig.mock.calls)
+    .toContainEqual([
+      { personSync: { actorAliases: { "Actor C": ["Old Name", "New Name"], "Actor D": ["Alternative Name"] } } },
+    ]);
+  await screen.getByRole("button", { name: "删除 Actor C" }).click();
+  await expect
+    .poll(() => saveConfig.mock.calls)
+    .toContainEqual([{ personSync: { actorAliases: { "Actor D": ["Alternative Name"] } } }]);
+  await screen.getByRole("button", { name: "删除 Actor D" }).click();
+  await expect.poll(() => saveConfig.mock.calls).toContainEqual([{ personSync: { actorAliases: {} } }]);
+});
+
 const baseSettingsServices = {
   checkCookies: vi.fn(async () => ({ results: [] })),
   decrementInFlightSaves: vi.fn(),

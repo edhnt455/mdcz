@@ -1,4 +1,5 @@
 import { isUnrecoverableNetworkError } from "@mdcz/runtime/network";
+import { isAbortError } from "@mdcz/runtime/scrape/utils/abort";
 import {
   CachedAsyncResolver,
   hasActorProfileFieldValue,
@@ -103,7 +104,7 @@ export class ActorSourceProvider {
 
   private readonly aggregator: ActorProfileAggregator;
 
-  private readonly lookupResolver = new CachedAsyncResolver<string, ActorLookupResult>();
+  private lookupResolver = new CachedAsyncResolver<string, ActorLookupResult>();
 
   private lookupBucket = "";
 
@@ -113,7 +114,8 @@ export class ActorSourceProvider {
   }
 
   clearCache(): void {
-    this.lookupResolver.clear();
+    this.lookupResolver = new CachedAsyncResolver<string, ActorLookupResult>();
+    this.deps.registry.get("official")?.clearCache?.();
   }
 
   async lookup(configuration: Configuration, query: string | ActorLookupQuery): Promise<ActorLookupResult> {
@@ -133,7 +135,7 @@ export class ActorSourceProvider {
     const bucket = String(Math.floor(Date.now() / LOOKUP_CACHE_TTL_MS));
 
     if (bucket !== this.lookupBucket) {
-      this.lookupResolver.clear();
+      this.lookupResolver = new CachedAsyncResolver<string, ActorLookupResult>();
       this.lookupBucket = bucket;
     }
 
@@ -188,7 +190,7 @@ export class ActorSourceProvider {
     try {
       return await source.lookup(configuration, query);
     } catch (error) {
-      if (isUnrecoverableNetworkError(error)) throw error;
+      if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
       const message = `Actor source "${sourceName}" failed for ${query.name}: ${toErrorMessage(error)}`;
       this.logger.warn(message);
       return {
@@ -207,6 +209,7 @@ export class ActorSourceProvider {
       requiredField: query.requiredField,
       actorPhotoFolder: (configuration.paths.actorPhotoFolder ?? "").trim(),
       personOverviewSources: configuration.personSync.personOverviewSources,
+      network: configuration.network,
       personImageSources: configuration.personSync.personImageSources,
       actorAliases: configuration.personSync.actorAliases,
     });

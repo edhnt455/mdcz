@@ -508,6 +508,12 @@ const fields: Record<FieldKey, FieldText> = {
   },
   "personSync.personOverviewSources": { label: "Person overview source order" },
   "personSync.personImageSources": { label: "Person photo source order" },
+  "personSync.actorAliases": {
+    label: "Actor aliases",
+    description:
+      "Map alternate names to a canonical name for new scrapes and person lookups. Existing files are not renamed.",
+    aliases: ["actor name", "alias"],
+  },
   "jellyfin.url": { label: "Jellyfin server URL", aliases: ["media server", "jellyfin", "server"] },
   "jellyfin.apiKey": { label: "Jellyfin API Key" },
   "jellyfin.userId": {

@@ -341,7 +341,11 @@ export class RuntimeConfigService {
       this.runWithValidation(async () => {
         const current = await this.get();
         if (expected && current !== expected) throw new Error("Configuration changed while saving; try again");
-        return await this.saveConfiguration(parseRuntimeConfiguration(mergeRuntimeConfig(current, patch)));
+        const { actorAliases, ...personSync } = patch.personSync ?? {};
+        const base = mergeRuntimeConfig(current, { ...patch, ...(patch.personSync ? { personSync } : {}) });
+        const merged =
+          actorAliases === undefined ? base : { ...base, personSync: { ...base.personSync, actorAliases } };
+        return await this.saveConfiguration(parseRuntimeConfiguration(merged));
       }),
     );
   }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createAbortError } from "../scrape/utils/abort";
 import { ActorSourceProvider } from "./ActorSourceProvider";
 import { ActorSourceRegistry } from "./registry";
 import type { ActorSourceResult, BaseActorSource } from "./types";
@@ -21,6 +22,26 @@ describe("ActorSourceProvider media-server ports", () => {
 
     expect(result.profile).toEqual({ name: "Actor A" });
     expect(result.warnings).toEqual(['Actor source "gfriends" is not registered.']);
+
+    const aborted = new ActorSourceProvider({
+      registry: new ActorSourceRegistry([
+        {
+          name: "gfriends",
+          lookup: async () => {
+            throw createAbortError();
+          },
+        },
+      ]),
+    });
+    await expect(
+      aborted.lookup(
+        {
+          paths: { actorPhotoFolder: "" },
+          personSync: { actorAliases: {}, personImageSources: ["gfriends"], personOverviewSources: [] },
+        } as never,
+        "Actor A",
+      ),
+    ).rejects.toThrow("Operation aborted");
   });
 
   it("stops calling later sources once the required field is satisfied", async () => {

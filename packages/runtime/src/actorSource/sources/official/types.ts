@@ -18,6 +18,7 @@ export interface OfficialLookupResult {
 
 export interface OfficialSiteAdapter {
   readonly key: string;
+  clearCache(): void;
   matchesHints(hints: ActorSourceHint[]): boolean;
   lookup(query: OfficialLookupRequest): Promise<OfficialLookupResult | null>;
 }

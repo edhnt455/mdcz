@@ -403,6 +403,11 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "personSync.personOverviewSources": { label: "人物简介来源顺序" },
     "personSync.personImageSources": { label: "人物头像来源顺序" },
+    "personSync.actorAliases": {
+      label: "演员别名",
+      description: "将不同名称统一为规范名，用于新刮削和人物查询；不会自动重命名现有文件。",
+      aliases: ["演员名称", "别名"],
+    },
     "jellyfin.url": { label: "Jellyfin 服务器地址" },
     "jellyfin.apiKey": { label: "Jellyfin API Key" },
     "jellyfin.userId": {

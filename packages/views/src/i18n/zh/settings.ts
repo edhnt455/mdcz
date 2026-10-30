@@ -155,6 +155,17 @@ export const settings: Messages["settings"] = {
   },
   templatesMovedNotice: "文件夹与文件名模板按库设置，与输出目录和视频放置方式放在一起。",
   notificationChannels: { telegram: "Telegram", bark: "Bark", ntfy: "ntfy" },
+  actorAliases: {
+    add: "添加别名组",
+    edit: "编辑",
+    remove: "删除",
+    name: "规范名称",
+    aliases: "别名",
+    aliasesHint: "多个别名用逗号或换行分隔，名称中的空格会保留。",
+    nameConflict: "规范名称与其他组冲突。",
+    changed: "编辑期间别名已变化，请重新打开编辑器。",
+    empty: "尚未配置演员别名。",
+  },
   pathMappings: {
     from: "下载器路径",
     to: "MDCz 路径",

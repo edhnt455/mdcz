@@ -2,6 +2,7 @@ import { ACTOR_PROFILE_METADATA_FIELDS, hasActorProfileFieldValue } from "@mdcz/
 import { normalizeActorName, toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { ActorProfile } from "@mdcz/shared/types";
+import { actorProfilesAgree } from "./profileAgreement";
 import type { ActorLookupQuery, ActorLookupResult, ActorSourceName, ActorSourceResult } from "./types";
 
 type OverviewProfileField = Exclude<(typeof ACTOR_PROFILE_METADATA_FIELDS)[number], "photo_url">;
@@ -91,15 +92,22 @@ export class ActorProfileAggregator {
 
     const profileSources: Partial<Record<(typeof ACTOR_PROFILE_METADATA_FIELDS)[number], ActorSourceName>> = {};
 
-    for (const field of OVERVIEW_PROFILE_FIELDS) {
-      const value = primaryProfile?.[field];
-      if (!hasActorProfileFieldValue(value)) {
-        continue;
+    if (primaryProfile && primaryOverviewResult) {
+      for (const field of OVERVIEW_PROFILE_FIELDS) {
+        if (hasActorProfileFieldValue(primaryProfile[field])) {
+          Object.assign(profile, { [field]: primaryProfile[field] });
+          profileSources[field] = primaryOverviewResult.source;
+        }
       }
-
-      Object.assign(profile, { [field]: value });
-      if (primaryOverviewResult) {
-        profileSources[field] = primaryOverviewResult.source;
+    }
+    for (const source of configuration.personSync.personOverviewSources) {
+      const candidate = results.find((result) => result.source === source && result.success)?.profile;
+      if (!candidate || !actorProfilesAgree(profile, candidate)) continue;
+      for (const field of OVERVIEW_PROFILE_FIELDS) {
+        if (!hasActorProfileFieldValue(profile[field]) && hasActorProfileFieldValue(candidate[field])) {
+          Object.assign(profile, { [field]: candidate[field] });
+          profileSources[field] = source;
+        }
       }
     }
 

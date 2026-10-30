@@ -153,6 +153,20 @@ describe("runtime config helpers", () => {
     const service = new RuntimeConfigService({ store: new RuntimeConfigProfileStore({ configDir }) });
     const loaded = await service.load();
 
+    await service.update({ personSync: { actorAliases: { "Actor A": ["Alias A"], "Actor B": ["Alias B"] } } });
+    await service.createProfile("alternate");
+    await service.switchProfile("alternate");
+    await service.update({ personSync: { actorAliases: { Different: ["Alias D"] } } });
+    expect((await service.switchProfile("default")).personSync.actorAliases).toEqual({
+      "Actor A": ["Alias A"],
+      "Actor B": ["Alias B"],
+    });
+    const replaced = await service.update({ personSync: { actorAliases: { "Actor C": ["Alias C"] } } });
+    expect(replaced.personSync.actorAliases).toEqual({ "Actor C": ["Alias C"] });
+    const empty = await service.update({ personSync: { actorAliases: {} } });
+    expect(empty.personSync.actorAliases).toEqual({});
+    expect((await new RuntimeConfigProfileStore({ configDir }).load()).personSync.actorAliases).toEqual({});
+
     expect(loaded.paths.actorPhotoFolder).toBe(join(mediaPath, "actors"));
     expect(loaded).not.toHaveProperty("watch");
     expect(service.takeLegacyConversion()).toEqual({

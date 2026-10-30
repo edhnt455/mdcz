@@ -170,6 +170,17 @@ export const settings = {
   templatesMovedNotice:
     "Folder and file name templates are set per library, together with the output directory and how videos are placed.",
   notificationChannels: { telegram: "Telegram", bark: "Bark", ntfy: "ntfy" },
+  actorAliases: {
+    add: "Add alias group",
+    edit: "Edit",
+    remove: "Remove",
+    name: "Canonical name",
+    aliases: "Aliases",
+    aliasesHint: "Separate names with commas or new lines; spaces inside names are preserved.",
+    nameConflict: "This canonical name conflicts with another group.",
+    changed: "The aliases changed while editing; reopen the editor.",
+    empty: "No alias groups configured.",
+  },
   pathMappings: {
     from: "Downloader path",
     to: "MDCz path",

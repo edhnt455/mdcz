@@ -12,6 +12,7 @@ import type {
   PendingRetryInput,
   PendingSiteResultDto,
 } from "@mdcz/shared/pending";
+import { PENDING_KINDS } from "@mdcz/shared/pending";
 import {
   Badge,
   Button,
@@ -115,10 +116,17 @@ export function PendingView({
   const selectAllId = useId();
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [batchAction, setBatchAction] = useState<PendingBatchInput["action"] | null>(null);
+  const [kindFilter, setKindFilter] = useState<PendingKindDto | "all">("all");
+  const [batchLibrary, setBatchLibrary] = useState("own");
+  const [batchChoice, setBatchChoice] = useState<"uncensored" | "umr" | "leak">("uncensored");
   const [detailBusy, setDetailBusy] = useState(false);
   const [batchResult, setBatchResult] = useState<PendingBatchResponse | null>(null);
+  const [resultAction, setResultAction] = useState<PendingBatchInput["action"] | null>(null);
   const [batchError, setBatchError] = useState<string | null>(null);
-  const selectedItems = items.filter((item) => checkedIds.has(item.id));
+  const visibleItems = kindFilter === "all" ? items : items.filter((item) => item.kind === kindFilter);
+  const selectedItems = visibleItems.filter((item) => checkedIds.has(item.id));
+  const retryItems = selectedItems.filter((item) => !["uncensored", "ambiguous", "no_number"].includes(item.kind));
+  const confirmItems = selectedItems.filter((item) => item.kind === "uncensored");
   const busy = batchAction !== null || detailBusy;
   useEffect(() => {
     const availableIds = new Set(items.map((item) => item.id));
@@ -129,7 +137,10 @@ export function PendingView({
   }, [items]);
   const runBatch = async (action: PendingBatchInput["action"]) => {
     if (busy || !selectedItems.length) return;
-    const ids = selectedItems.map((item) => item.id);
+    const ids = (action === "retry" ? retryItems : action === "confirm" ? confirmItems : selectedItems).map(
+      (item) => item.id,
+    );
+    if (!ids.length) return;
     setBatchAction(action);
     try {
       if (
@@ -141,10 +152,26 @@ export function PendingView({
         }))
       )
         return;
+      if (
+        action === "confirm" &&
+        !(await confirmDialog({
+          title: t.pending.batchConfirmPrompt(ids.length),
+          description: t.pending.batchConfirmDescription(t.pending.confirmTypes[batchChoice]),
+          confirmLabel: t.pending.batchConfirm,
+        }))
+      )
+        return;
       setBatchError(null);
       setBatchResult(null);
-      const result = await onBatch({ action, ids });
+      const input: PendingBatchInput =
+        action === "retry"
+          ? { action, ids, ...(batchLibrary === "own" ? {} : { libraryId: batchLibrary }) }
+          : action === "confirm"
+            ? { action, ids, choice: batchChoice }
+            : { action, ids };
+      const result = await onBatch(input);
       setBatchResult(result);
+      setResultAction(action);
       const succeeded = new Set(result.succeededIds);
       setCheckedIds((current) => new Set([...current].filter((id) => !succeeded.has(id))));
     } catch (error) {
@@ -174,29 +201,67 @@ export function PendingView({
           </span>
         </div>
         <div className="mb-3 shrink-0 space-y-3 rounded-quiet-lg border border-border/60 bg-surface-low/60 p-3">
+          <Select
+            value={kindFilter}
+            disabled={busy}
+            onValueChange={(value) => {
+              setKindFilter(value as PendingKindDto | "all");
+              setCheckedIds(new Set());
+            }}
+          >
+            <SelectTrigger aria-label={t.pending.kindFilter} className="h-8 w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t.pending.allKinds} ({items.length})
+              </SelectItem>
+              {PENDING_KINDS.map((kind) => {
+                const count = items.filter((item) => item.kind === kind).length;
+                return count ? (
+                  <SelectItem key={kind} value={kind}>
+                    {t.pending.kinds[kind]} ({count})
+                  </SelectItem>
+                ) : null;
+              })}
+            </SelectContent>
+          </Select>
           <div className="flex items-center justify-between gap-2 text-xs">
             <label htmlFor={selectAllId} className="flex cursor-pointer items-center gap-2">
               <Checkbox
                 id={selectAllId}
                 aria-label={t.pending.selectAll}
                 checked={
-                  selectedItems.length > 0 && selectedItems.length === items.length
+                  selectedItems.length > 0 && selectedItems.length === visibleItems.length
                     ? true
                     : selectedItems.length > 0
                       ? "indeterminate"
                       : false
                 }
-                disabled={busy || loading || !items.length}
+                disabled={busy || loading || !visibleItems.length}
                 onCheckedChange={(checked) =>
-                  setCheckedIds(new Set(checked === true ? items.map((item) => item.id) : []))
+                  setCheckedIds(new Set(checked === true ? visibleItems.map((item) => item.id) : []))
                 }
               />
               {t.pending.selectAll}
             </label>
             <span className="text-muted-foreground">{t.pending.selectedCount(selectedItems.length)}</span>
           </div>
+          <Select value={batchLibrary} onValueChange={setBatchLibrary} disabled={busy}>
+            <SelectTrigger aria-label={t.pending.batchLibrary} className="h-8 w-full text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="own">{t.pending.ownLibrary}</SelectItem>
+              {libraries.map((library) => (
+                <SelectItem key={library.id} value={library.id}>
+                  {library.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="grid grid-cols-2 gap-2">
-            <Button size="sm" disabled={busy || !selectedItems.length} onClick={() => void runBatch("retry")}>
+            <Button size="sm" disabled={busy || !retryItems.length} onClick={() => void runBatch("retry")}>
               {batchAction === "retry" ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
@@ -219,10 +284,39 @@ export function PendingView({
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">{t.pending.batchRetryHint}</p>
+          {confirmItems.length > 0 ? (
+            <div className="flex gap-2">
+              <Select
+                value={batchChoice}
+                onValueChange={(value) => setBatchChoice(value as typeof batchChoice)}
+                disabled={busy}
+              >
+                <SelectTrigger aria-label={t.pending.batchConfirmType} className="h-8 min-w-0 flex-1 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["uncensored", "umr", "leak"] as const).map((choice) => (
+                    <SelectItem key={choice} value={choice}>
+                      {t.pending.confirmTypes[choice]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" disabled={busy} onClick={() => void runBatch("confirm")}>
+                {batchAction === "confirm" ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                {t.pending.batchConfirmCount(confirmItems.length)}
+              </Button>
+            </div>
+          ) : null}
         </div>
         {batchResult ? (
           <div role="status" className="mb-3 shrink-0 space-y-2 rounded-quiet border border-border/60 p-3 text-xs">
-            <p>{t.pending.batchResult(batchResult.succeededIds.length, batchResult.failures.length)}</p>
+            <p>
+              {(resultAction === "retry" ? t.pending.batchRetryResult : t.pending.batchResult)(
+                batchResult.succeededIds.length,
+                batchResult.failures.length,
+              )}
+            </p>
             {batchResult.failures.length > 0 ? (
               <ul className="max-h-36 space-y-1 overflow-y-auto text-destructive">
                 {batchResult.failures.map(({ id, message }) => (
@@ -246,7 +340,7 @@ export function PendingView({
           </div>
         ) : null}
         <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-1">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const active = item.id === selectedId;
             return (
               <li key={item.id} className="flex items-center gap-2">
@@ -296,6 +390,9 @@ export function PendingView({
             );
           })}
         </ul>
+        {!loading && items.length > 0 && !visibleItems.length ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">{t.pending.filterEmpty}</p>
+        ) : null}
         {!loading && !items.length ? (
           <p className="py-6 text-center text-sm text-muted-foreground">{t.pending.empty}</p>
         ) : null}

@@ -1,6 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { getT } from "../i18n";
-import { type FieldKey, unflattenConfig } from "./settingsRegistry";
+import { type FieldKey, setNestedValue, unflattenConfig } from "./settingsRegistry";
 
 export interface ServerValidationPayload {
   fields: string[];
@@ -137,7 +137,11 @@ export function mergeConfigWithFlatPayload(
   baseConfig: Record<string, unknown>,
   flatPayload: Record<string, unknown>,
 ): Record<string, unknown> {
-  return mergeConfigValue(baseConfig, unflattenConfig(flatPayload)) as Record<string, unknown>;
+  const merged = mergeConfigValue(baseConfig, unflattenConfig(flatPayload)) as Record<string, unknown>;
+  if ("personSync.actorAliases" in flatPayload) {
+    setNestedValue(merged, "personSync.actorAliases", cloneConfigValue(flatPayload["personSync.actorAliases"]));
+  }
+  return merged;
 }
 
 export function formatFieldLabel(path: string): string {

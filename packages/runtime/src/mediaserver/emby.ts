@@ -238,32 +238,48 @@ export const fetchEmbyPersonDetail = async (
     },
   );
 
+// Item details also include user state and image metadata, which are not part of this edit.
+const EMBY_PERSON_METADATA_FIELDS = [
+  "ServerId",
+  "Type",
+  "DateCreated",
+  "OriginalTitle",
+  "ForcedSortName",
+  "EndDate",
+  "CustomRating",
+  "OfficialRating",
+  "CommunityRating",
+  "CriticRating",
+  "PreferredMetadataLanguage",
+  "PreferredMetadataCountryCode",
+  "ProviderIds",
+  "LockedFields",
+  "LockData",
+  "Genres",
+  "Studios",
+  "PremiereDate",
+  "ProductionYear",
+  "ProductionLocations",
+] as const;
+
 export const buildEmbyPersonUpdatePayload = (
   person: EmbyPerson,
   detail: EmbyItemDetail,
   synced: PlannedPersonSyncState,
 ): Record<string, unknown> => {
-  const hasOwn = (key: string): boolean => Object.hasOwn(detail, key);
-  const payload: Record<string, unknown> = {
+  const payload: Record<string, unknown> = Object.fromEntries(
+    EMBY_PERSON_METADATA_FIELDS.filter((key) => Object.hasOwn(detail, key)).map((key) => [key, detail[key]]),
+  );
+  Object.assign(payload, {
     Id: person.Id,
     Name: toStringValue(detail.Name) ?? person.Name,
     Overview: synced.overview ?? toStringValue(detail.Overview) ?? "",
-    Tags: synced.tags,
-    Taglines: synced.taglines,
-  };
-
-  if (hasOwn("ProviderIds")) payload.ProviderIds = toStringRecord(detail.ProviderIds);
-  if (hasOwn("LockedFields")) payload.LockedFields = toStringArray(detail.LockedFields);
-  if (typeof detail.LockData === "boolean") payload.LockData = detail.LockData;
+    ...(Object.hasOwn(detail, "Tags") ? { Tags: synced.tags } : {}),
+    ...(Object.hasOwn(detail, "Taglines") ? { Taglines: synced.taglines } : {}),
+  });
 
   const serverId = toStringValue(detail.ServerId) ?? person.ServerId;
   if (serverId) payload.ServerId = serverId;
-
-  const genres = toStringArray(detail.Genres);
-  if (genres.length > 0) payload.Genres = genres;
-
-  const type = toStringValue(detail.Type);
-  if (type) payload.Type = type;
 
   if (synced.productionLocations && synced.productionLocations.length > 0) {
     payload.ProductionLocations = synced.productionLocations;
@@ -451,8 +467,19 @@ export class EmbyActorInfoService {
           userId: resolvedUserId,
         }),
       getPersonName: (person) => person.Name,
-      fetchPersonDetail: async (person) =>
-        await fetchEmbyPersonDetail(this.networkClient, configuration, person, resolvedUserId),
+      fetchPersonDetail: async (person) => {
+        const { TagItems: tagItems, ...detail } = await fetchEmbyPersonDetail(
+          this.networkClient,
+          configuration,
+          person,
+          resolvedUserId,
+        );
+        if (tagItems === undefined || tagItems === null) return detail;
+        if (!Array.isArray(tagItems) || tagItems.some((tag) => !isRecord(tag) || !toStringValue(tag.Name))) {
+          throw new Error(`Invalid Emby person tags: ${person.Name}`);
+        }
+        return { ...detail, Tags: tagItems.map((tag) => tag.Name as string) };
+      },
       buildExistingState: (person, detail) => ({
         overview: toStringValue(detail.Overview) ?? person.Overview,
         tags: toStringArray(detail.Tags),

@@ -51,7 +51,7 @@ test("batch selection supports select all, locks while processing and retains on
   await expect.element(process).toBeDisabled();
   await expect.element(screen.getByRole("button", { name: "批量忽略" })).toBeDisabled();
   settle({ succeededIds: ["ABC-001"], failures: [{ id: "ABC-002", message: "Library unavailable" }] });
-  await expect.element(screen.getByText("成功 1 项 · 失败 1 项")).toBeVisible();
+  await expect.element(screen.getByText("已提交 1 项 · 未提交 1 项")).toBeVisible();
   await expect.element(screen.getByText("ABC-002.mp4: Library unavailable")).toBeVisible();
   await expect.element(screen.getByRole("checkbox", { name: "选择 ABC-001.mp4" })).not.toBeChecked();
   await expect.element(screen.getByRole("checkbox", { name: "选择 ABC-002.mp4" })).toBeChecked();
@@ -87,6 +87,59 @@ test("batch ignore requires confirmation and preserves selections after cancella
   await screen.getByRole("dialog").getByRole("button", { name: "批量忽略" }).click();
   expect(onBatch).toHaveBeenLastCalledWith({ action: "ignore", ids: ["ABC-001"] });
   await expect.element(screen.getByText("已选 0 项")).toBeVisible();
+});
+
+test("filters selection, targets a library, and confirms only selected published movies", async () => {
+  const mixed = [
+    items[0],
+    { ...items[1], kind: "uncensored" as const },
+    { ...items[0], id: "third", fileName: "third.mp4", kind: "ambiguous" as const },
+  ];
+  const library = {
+    id: "target",
+    name: "目标库",
+    sourcePath: "/media",
+    outputPath: "/out",
+    folderTemplate: "{number}",
+    fileTemplate: "{number}",
+    placement: "move" as const,
+    automation: "off" as const,
+    discovery: "events" as const,
+    cloudPath: "",
+    scanIntervalMinutes: 15,
+    createdAt: items[0].createdAt,
+    updatedAt: items[0].updatedAt,
+  };
+  const onBatch = vi.fn(async (input: { ids: string[] }) => ({ succeededIds: input.ids, failures: [] }));
+  const screen = await render(
+    <>
+      <PendingView {...props} items={mixed} libraries={[library]} onBatch={onBatch} />
+      <ConfirmDialogHost />
+    </>,
+  );
+  await screen.getByRole("combobox", { name: "按类型筛选" }).click();
+  await screen.getByRole("option", { name: "刮削失败 (1)" }).click();
+  await screen.getByRole("checkbox", { name: "全选" }).click();
+  await expect.element(screen.getByText("已选 1 项")).toBeVisible();
+  await screen.getByRole("combobox", { name: "按类型筛选" }).click();
+  await screen.getByRole("option", { name: "全部类型 (3)" }).click();
+  await expect.element(screen.getByText("已选 0 项")).toBeVisible();
+  await screen.getByRole("checkbox", { name: "全选" }).click();
+  await screen.getByRole("combobox", { name: "批量处理目标媒体库" }).click();
+  await screen.getByRole("option", { name: "目标库" }).click();
+  await screen.getByRole("button", { name: "批量处理" }).click();
+  await expect
+    .poll(() => onBatch.mock.calls)
+    .toContainEqual([{ action: "retry", ids: [items[0].id], libraryId: "target" }]);
+  await expect.element(screen.getByText("已选 2 项")).toBeVisible();
+  await screen.getByRole("button", { name: "确认类型（1）" }).click();
+  const dialog = screen.getByRole("dialog");
+  await expect.element(dialog).toHaveTextContent("可能更改文件名及元数据");
+  await dialog.getByRole("button", { name: "确认类型" }).click();
+  await expect
+    .poll(() => onBatch.mock.calls)
+    .toContainEqual([{ action: "confirm", ids: [items[1].id], choice: "uncensored" }]);
+  await expect.element(screen.getByText("已选 1 项")).toBeVisible();
 });
 
 test("pending details show AI outcomes, inputs, rejected output and missing or skipped diagnostics", async () => {

@@ -275,7 +275,20 @@ describe("Emby actor services", () => {
             Name: "神木麗",
             Overview: "",
             DateCreated: "2026-01-01T00:00:00.0000000Z",
-            ProviderIds: {},
+            EndDate: "2024-03-04T00:00:00.0000000Z",
+            ForcedSortName: "User Sort",
+            OfficialRating: "R18",
+            CommunityRating: 8.2,
+            Genres: [],
+            Tags: ["stale"],
+            TagItems: [
+              { Name: "收藏", Id: "1" },
+              { Name: "mdcz:legacy", Id: "2" },
+            ],
+            Taglines: ["个人备注", "MDCz: old"],
+            UserData: { IsFavorite: true },
+            ImageTags: { Primary: "image-tag" },
+            ProviderIds: { Imdb: "nm123" },
             Type: "Person",
             LockedFields: [],
             LockData: false,
@@ -298,14 +311,23 @@ describe("Emby actor services", () => {
     expectStructuredActorPayload(
       readPostedPayload(networkClient),
       "基本资料\n血型：A型\n身高：169cm\n三围：B95 W60 H85\n罩杯：G杯\n\n官方简介\n\n别名：神木れい / かみきれい",
+      { tags: ["收藏"], taglines: ["个人备注"] },
     );
     expect(readPostedPayload(networkClient)).toMatchObject({
-      ProviderIds: {},
+      DateCreated: "2026-01-01T00:00:00.0000000Z",
+      EndDate: "2024-03-04T00:00:00.0000000Z",
+      ForcedSortName: "User Sort",
+      OfficialRating: "R18",
+      CommunityRating: 8.2,
+      Genres: [],
+      ProviderIds: { Imdb: "nm123" },
       Type: "Person",
       LockedFields: [],
       LockData: false,
     });
-    expect(readPostedPayload(networkClient)).not.toHaveProperty("DateCreated");
+    expect(readPostedPayload(networkClient)).not.toHaveProperty("TagItems");
+    expect(readPostedPayload(networkClient)).not.toHaveProperty("UserData");
+    expect(readPostedPayload(networkClient)).not.toHaveProperty("ImageTags");
     expect(
       networkClient.getJson.mock.calls.filter(([url]) => new URL(url as string).pathname === "/Users/Query"),
     ).toHaveLength(1);
@@ -345,6 +367,35 @@ describe("Emby actor services", () => {
     expect(readPostedPayload(networkClient)).not.toHaveProperty("ProviderIds");
     expect(readPostedPayload(networkClient)).not.toHaveProperty("LockedFields");
     expect(readPostedPayload(networkClient)).not.toHaveProperty("LockData");
+    expect(readPostedPayload(networkClient)).not.toHaveProperty("Tags");
+    expect(readPostedPayload(networkClient)).not.toHaveProperty("Taglines");
+
+    for (const [fields, expected] of [
+      [{ Tags: ["legacy tag"] }, ["legacy tag"]],
+      [{ Tags: ["stale"], TagItems: [] }, []],
+    ] as const) {
+      networkClient.getJson.mockImplementation(
+        createMockGetJson({
+          usersQuery: createAdminUsersQueryResponse(),
+          persons: [{ Id: "person-1", Name: "神木麗" }],
+          personDetails: { "person-1": { Id: "person-1", Name: "神木麗", ...fields } },
+        }),
+      );
+      networkClient.postText.mockClear();
+      await service.run(createEmbyConfig(), "all");
+      expect(readPostedPayload(networkClient).Tags).toEqual(expected);
+      expect(readPostedPayload(networkClient)).not.toHaveProperty("TagItems");
+    }
+    networkClient.getJson.mockImplementation(
+      createMockGetJson({
+        usersQuery: createAdminUsersQueryResponse(),
+        persons: [{ Id: "person-1", Name: "神木麗" }],
+        personDetails: { "person-1": { Id: "person-1", Name: "神木麗", TagItems: [{ Id: "1" }] } },
+      }),
+    );
+    networkClient.postText.mockClear();
+    expect(await service.run(createEmbyConfig(), "all")).toMatchObject({ failedCount: 1 });
+    expect(networkClient.postText).not.toHaveBeenCalled();
   });
 
   it("preserves existing Emby production fields in the update payload", async () => {
@@ -487,6 +538,7 @@ describe("Emby actor services", () => {
       createMockGetJson({
         usersQuery: createAdminUsersQueryResponse(),
         persons: [{ Id: "person-1", Name: "神木麗", ImageTags: {} }],
+        personDetails: { "person-1": { Id: "person-1", Name: "神木麗", ImageTags: {}, TagItems: [{ Id: "1" }] } },
         extra: (parsed) => {
           if (parsed.pathname === "/Persons" && !parsed.searchParams.get("userid")) {
             throw new Error(`HTTP 400 Bad Request for ${parsed.toString()}`);
@@ -518,7 +570,7 @@ describe("Emby actor services", () => {
           personImageSources: ["official"],
         },
       }),
-      "all",
+      "missing",
     );
 
     expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });

@@ -208,6 +208,12 @@ describe("settings editor save and content helpers", () => {
     ).toEqual({
       translate: { engine: "openai", llmApiKey: "secret" },
     });
+    expect(
+      mergeConfigWithFlatPayload(
+        { personSync: { actorAliases: { Old: ["Alias"], Other: ["Name"] }, personImageSources: ["local"] } },
+        { "personSync.actorAliases": { New: ["Name"] } },
+      ),
+    ).toEqual({ personSync: { actorAliases: { New: ["Name"] }, personImageSources: ["local"] } });
   });
 
   it("finalizes stale autosave revisions without running superseded work", async () => {

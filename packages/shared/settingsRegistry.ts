@@ -170,6 +170,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "translate.untranslatedJapaneseRunLength", anchor: "translate" },
   { key: "personSync.personOverviewSources", anchor: "mediaServer" },
   { key: "personSync.personImageSources", anchor: "mediaServer" },
+  { key: "personSync.actorAliases", anchor: "naming" },
   { key: "jellyfin.url", anchor: "mediaServer" },
   { key: "jellyfin.apiKey", anchor: "mediaServer" },
   { key: "jellyfin.userId", anchor: "mediaServer" },
@@ -227,11 +228,6 @@ export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
     path: "libraries",
     kind: "internal",
     reason: "Libraries are edited on the Libraries page and saved in the active configuration profile.",
-  },
-  {
-    path: "personSync.actorAliases",
-    kind: "dynamic-record",
-    reason: "Actor aliases are user-defined keys and cannot be represented as static registry leaves.",
   },
   {
     path: "scrape.numberMappings",
