@@ -96,7 +96,12 @@ export const runMediaServerPhotoSync = async <TPerson>(
             ? "photo found"
             : "no photo found";
         const warnings = result.warnings.length ? ` (${result.warnings.join("; ")})` : "";
-        return `${result.source}: ${outcome}${warnings}`;
+        const sites = result.siteResults?.map(
+          (site) =>
+            `${site.site}: ${!site.success ? "lookup failed" : site.photoFound ? "photo found" : "no photo found"}`,
+        );
+        const siteTrace = sites?.length ? ` [${sites.join("; ")}]` : "";
+        return `${result.source}: ${outcome}${siteTrace}${warnings}`;
       });
       options.signalService.showLogText(
         `${options.serviceName} actor photo lookup for ${actorName}: ${sourceTrace.join(" → ") || "no photo sources queried"}`,

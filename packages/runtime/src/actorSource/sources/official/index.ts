@@ -38,29 +38,38 @@ export class OfficialActorSource implements BaseActorSource {
 
     const queryNames = toUniqueNames([query.name, ...(query.aliases ?? [])]);
     const warnings: string[] = [];
-    let hadError = false;
 
     // Every agency roster is checked on each lookup; each site has its own host and rate limit, so they load at once.
     const lookups = await Promise.all(
       candidates.map(async (adapter) => {
         try {
-          return await adapter.lookup({ queryNames, fallbackName: query.name.trim() });
+          const result = await adapter.lookup({ queryNames, fallbackName: query.name.trim() });
+          return { site: adapter.key, success: true, result };
         } catch (error) {
           if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
-          hadError = true;
-          warnings.push(`Failed to load official actor data from ${adapter.key}: ${toErrorMessage(error)}`);
-          return null;
+          return {
+            site: adapter.key,
+            success: false,
+            result: null,
+            warning: `Failed to load official actor data from ${adapter.key}: ${toErrorMessage(error)}`,
+          };
         }
       }),
     );
     const matchedResults: OfficialLookupResult[] = [];
-    for (const result of lookups) {
+    const siteResults: NonNullable<ActorSourceResult["siteResults"]> = [];
+    for (const lookup of lookups) {
+      const { result } = lookup;
+      const siteResult = { site: lookup.site, success: lookup.success, photoFound: false };
+      siteResults.push(siteResult);
+      if (lookup.warning) warnings.push(lookup.warning);
       if (!result) continue;
       const current = mergeActorProfiles(matchedResults.map((item) => item.profile));
       if (current && !actorProfilesAgree(current, result.profile)) {
         warnings.push(`Conflicting official profile for ${query.name}; skipped`);
         continue;
       }
+      siteResult.photoFound = Boolean(result.profile.photo_url?.trim());
       matchedResults.push(result);
     }
 
@@ -72,6 +81,7 @@ export class OfficialActorSource implements BaseActorSource {
           success: true,
           profile,
           warnings,
+          siteResults,
           sourceHints: mergeActorSourceHints(...matchedResults.map((result) => result.sourceHints)),
         };
       }
@@ -79,8 +89,9 @@ export class OfficialActorSource implements BaseActorSource {
 
     return {
       source: this.name,
-      success: !hadError,
+      success: lookups.every((lookup) => lookup.success),
       warnings,
+      siteResults,
     };
   }
 }

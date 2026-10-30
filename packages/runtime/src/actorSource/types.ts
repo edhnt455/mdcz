@@ -35,6 +35,7 @@ export interface ActorSourceResult {
   profile?: ActorProfile;
   warnings: string[];
   sourceHints?: ActorSourceHint[];
+  siteResults?: { site: string; success: boolean; photoFound: boolean }[];
 }
 
 export interface ActorLookupResult {

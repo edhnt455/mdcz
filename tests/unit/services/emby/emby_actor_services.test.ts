@@ -460,12 +460,25 @@ describe("Emby actor services", () => {
             name: source,
             lookup: async () => {
               calls.push(source);
-              const failed = source === "avbase" && !matchedSource;
+              const officialFailed = source === "official" && !matchedSource;
+              const failed = officialFailed || (source === "avbase" && !matchedSource);
               return {
                 source,
                 success: !failed,
                 profile: source === matchedSource ? { name: "神木麗", photo_url: photoUrl } : undefined,
-                warnings: failed ? ["Failed to load AVBase actor data: HTTP 403 Forbidden"] : [],
+                warnings: officialFailed
+                  ? ["Failed to load official actor data from life: HTTP 403 Forbidden"]
+                  : failed
+                    ? ["Failed to load AVBase actor data: HTTP 403 Forbidden"]
+                    : [],
+                siteResults:
+                  source === "official"
+                    ? ["tpowers", "cmore", "nax", "mines", "alive", "life"].map((site) => ({
+                        site,
+                        success: !(site === "life" && officialFailed),
+                        photoFound: site === "nax" && matchedSource === "official",
+                      }))
+                    : undefined,
               };
             },
           })),
@@ -493,13 +506,23 @@ describe("Emby actor services", () => {
         : [...sourceOrder];
       expect(calls).toEqual(attemptedSources);
       const trace = attemptedSources
-        .map((source) =>
-          source === matchedSource
-            ? `${source}: photo found`
-            : source === "avbase"
-              ? "avbase: lookup failed (Failed to load AVBase actor data: HTTP 403 Forbidden)"
-              : `${source}: no photo found`,
-        )
+        .map((source) => {
+          const outcome =
+            source === matchedSource
+              ? `${source}: photo found`
+              : source === "avbase"
+                ? "avbase: lookup failed (Failed to load AVBase actor data: HTTP 403 Forbidden)"
+                : `${source}: no photo found`;
+          if (source !== "official") return outcome;
+          const sites = ["tpowers", "cmore", "nax", "mines", "alive", "life"].map(
+            (site) =>
+              `${site}: ${site === "life" && !matchedSource ? "lookup failed" : site === "nax" && matchedSource === "official" ? "photo found" : "no photo found"}`,
+          );
+          if (!matchedSource) {
+            return `official: lookup failed [${sites.join("; ")}] (Failed to load official actor data from life: HTTP 403 Forbidden)`;
+          }
+          return `${outcome} [${sites.join("; ")}]`;
+        })
         .join(" → ");
       expect(signalService.showLogText).toHaveBeenCalledWith(
         `Emby actor photo lookup for 神木麗: ${trace}`,

@@ -95,6 +95,11 @@ describe("OfficialActorSource", () => {
         source: "official",
         success: false,
         warnings: ["Failed to load official actor data from life: 403 Forbidden"],
+        siteResults: ["tpowers", "cmore", "nax", "mines", "alive", "life"].map((site) => ({
+          site,
+          success: site !== "life",
+          photoFound: false,
+        })),
       });
     }
     expect(networkClient.getText.mock.calls.map(([url]) => url)).toEqual([
@@ -297,6 +302,7 @@ describe("OfficialActorSource", () => {
     expect(conflicting.profile?.waist_cm).toBeUndefined();
     expect(conflicting.profile?.description).toBeUndefined();
     expect(conflicting.warnings).toContain("Conflicting official profile for Actor A; skipped");
+    expect(conflicting.siteResults).toContainEqual({ site: "prestige", success: true, photoFound: false });
   });
 
   it("parses supported official site and agency pages", async () => {
@@ -474,6 +480,7 @@ describe("OfficialActorSource", () => {
 
       expect(result.success).toBe(true);
       expect(result.profile).toMatchObject(expectedProfile);
+      expect(result.siteResults?.filter((site) => site.photoFound)).toHaveLength(1);
       for (const fragment of descriptionFragments) {
         expect(result.profile?.description).toContain(fragment);
       }
