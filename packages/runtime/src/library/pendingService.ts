@@ -146,6 +146,7 @@ export class PendingService {
       entry,
       localState: { uncensoredChoice: input.choice },
       publication: {
+        library: repositories.library,
         roots,
         identity: {
           movieId: entry.id,

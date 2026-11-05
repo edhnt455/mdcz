@@ -1,5 +1,5 @@
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
@@ -486,6 +486,75 @@ describe("buildServer maintenance integration", () => {
     const library = await createTestLibrary(fastify, token, root, librarySettings);
     await services.config.update({ naming: { assetNamingMode: "followVideo" }, download: { nfoNaming: "filename" } });
     const relativePath = join(sourceRelative, "ABC-125.mp4").replaceAll("\\", "/");
+    const actorDir = join(sourceDir, ".actors");
+    const targetDir = join(outputPath, "S", "ABC-125");
+    const sharedPhoto = join(actorDir, "Shared.jpg");
+    const exclusivePhoto = join(actorDir, "Exclusive.jpg");
+    const remainingDir = location === "incoming" ? sourceDir : join(root, "elsewhere");
+    const remainingVideo = join(remainingDir, "XYZ-126.mp4");
+    const remainingNfo = join(remainingDir, "XYZ-126.nfo");
+    const remainingXml = `<movie><title>Other</title><actor><name>Shared</name><thumb>${relative(remainingDir, sharedPhoto).replaceAll("\\", "/")}</thumb></actor></movie>`;
+    const { repositories } = await services.persistence.getState();
+    if (location !== "nested-root") {
+      await mkdir(actorDir);
+      await mkdir(remainingDir, { recursive: true });
+      await writeFile(sharedPhoto, "shared photo");
+      await writeFile(exclusivePhoto, "exclusive photo");
+      await writeFile(remainingVideo, "other movie");
+      await writeFile(remainingNfo, remainingXml);
+      const asset = (kind: string, path: string) => {
+        const relativePath = relative(root, path).replaceAll("\\", "/");
+        return { kind, rootId: library.rootId, relativePath, uri: relativePath, published: true };
+      };
+      const claimedTarget = join(targetDir, ".actors", "Exclusive.jpg");
+      const remainingAssets = [asset("nfo", remainingNfo), asset("actor", sharedPhoto)];
+      if (location === "organized") {
+        await mkdir(join(targetDir, ".actors"), { recursive: true });
+        await writeFile(claimedTarget, "other movie's target photo");
+      }
+      await repositories.library.upsertEntry({
+        movie: {
+          id: "leaving-movie",
+          assets: [
+            asset("nfo", join(sourceDir, "ABC-125.nfo")),
+            asset("poster", join(sourceDir, "ABC-125-poster.jpg")),
+            asset("actor", exclusivePhoto),
+            ...(location === "incoming" ? [asset("actor", sharedPhoto)] : []),
+          ],
+        },
+        files: [{ rootId: library.rootId, rootRelativePath: relativePath }],
+      });
+      await repositories.library.upsertEntry({
+        movie: {
+          id: "remaining-movie",
+          assets: [...remainingAssets, ...(location === "organized" ? [asset("actor", claimedTarget)] : [])],
+        },
+        files: [{ rootId: library.rootId, rootRelativePath: relative(root, remainingVideo).replaceAll("\\", "/") }],
+      });
+      if (location === "organized") {
+        const preview = await startMaintenancePreview(fastify, token, library, "local_organize", [relativePath]);
+        const result = await fastify.inject({
+          method: "POST",
+          url: "/trpc/maintenance.execute",
+          headers: { authorization: `Bearer ${token}` },
+          payload: { sessionId: preview.sessionId, confirmationToken: `maintenance:${preview.sessionId}` },
+        });
+        expect(result.statusCode).toBe(200);
+        const conflict = await waitForMaintenanceSession(fastify, token, preview.sessionId, "apply", "failed");
+        expect(conflict.currentBatch?.items[0]).toMatchObject({
+          status: "skipped",
+          error: expect.stringContaining("Another movie still uses this actor photo"),
+        });
+        expect(await readFile(claimedTarget, "utf8")).toBe("other movie's target photo");
+        expect(await readFile(exclusivePhoto, "utf8")).toBe("exclusive photo");
+        expect(await readFile(join(sourceDir, "ABC-125.mp4"), "utf8")).toBe("video");
+        await rm(targetDir, { recursive: true });
+        await repositories.library.upsertEntry({
+          movie: { id: "remaining-movie", assets: remainingAssets },
+          files: [],
+        });
+      }
+    }
     const { session, sessionId } = await startMaintenancePreview(fastify, token, library, "local_organize", [
       relativePath,
     ]);
@@ -517,7 +586,6 @@ describe("buildServer maintenance integration", () => {
       number: "ABC-125",
       title: "Local Title ABC-125",
     });
-    const targetDir = join(outputPath, "S", "ABC-125");
     const organizedVideo = join(targetDir, "ABC-125_new.mp4");
     const organizedNfo = join(targetDir, "ABC-125_new.nfo");
     await expect(access(organizedVideo)).resolves.toBeUndefined();
@@ -529,6 +597,25 @@ describe("buildServer maintenance integration", () => {
     await expect(access(join(sourceDir, "ABC-125.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(sourceDir, "ABC-125-poster.jpg"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(sourceDir, "ABC-125.nfo"))).rejects.toMatchObject({ code: "ENOENT" });
+    if (location !== "nested-root") {
+      expect(await readFile(sharedPhoto, "utf8")).toBe("shared photo");
+      expect(await readFile(remainingVideo, "utf8")).toBe("other movie");
+      expect(await readFile(remainingNfo, "utf8")).toBe(remainingXml);
+      const remaining = await repositories.library.getEntryById("remaining-movie");
+      expect(remaining.assets).toContainEqual(
+        expect.objectContaining({ kind: "actor", relativePath: relative(root, sharedPhoto).replaceAll("\\", "/") }),
+      );
+      await expect(access(exclusivePhoto)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(join(targetDir, ".actors", "Exclusive.jpg"), "utf8")).toBe("exclusive photo");
+      const leaving = await repositories.library.getEntryById("leaving-movie");
+      const photos = leaving.assets.filter(({ kind }) => kind === "actor").map(({ relativePath }) => relativePath);
+      const targetPhotos = ["Exclusive.jpg", ...(location === "incoming" ? ["Shared.jpg"] : [])];
+      expect(photos.sort()).toEqual(
+        targetPhotos.map((name) => relative(root, join(targetDir, ".actors", name)).replaceAll("\\", "/")).sort(),
+      );
+      if (location === "incoming")
+        expect(await readFile(join(targetDir, ".actors", "Shared.jpg"), "utf8")).toBe("shared photo");
+    }
   });
 
   it.each([
@@ -538,6 +625,7 @@ describe("buildServer maintenance integration", () => {
     "added",
     "metadata-changed",
     "conflict",
+    "directory_conflict",
     "offline",
     "commit_failure",
   ] as const)("publishes the complete movie or preserves all files (%s)", async (scenario) => {
@@ -611,6 +699,15 @@ describe("buildServer maintenance integration", () => {
       await mkdir(join(root, "JAV_output", "ABC-300"), { recursive: true });
       await writeFile(join(root, "JAV_output", "ABC-300", sourceNames[0]), "occupied");
     }
+    if (scenario === "directory_conflict") {
+      const relativePath = "JAV_output/ABC-300/XYZ-999.mp4";
+      await mkdir(join(root, "JAV_output", "ABC-300"), { recursive: true });
+      await writeFile(join(root, relativePath), "other movie");
+      await state.repositories.library.upsertEntry({
+        movie: { id: "other-movie", number: "XYZ-999" },
+        files: [{ rootId, rootRelativePath: relativePath }],
+      });
+    }
     if (scenario === "offline")
       await state.repositories.mediaRoots.upsert({
         ...(await state.repositories.mediaRoots.get(rootId)),
@@ -652,8 +749,12 @@ describe("buildServer maintenance integration", () => {
     );
     if (failed) {
       expect(appliedSession.currentBatch?.items[0]).toMatchObject({
-        status: scenario === "conflict" ? "skipped" : "failed",
+        status: scenario === "conflict" || scenario === "directory_conflict" ? "skipped" : "failed",
       });
+      if (scenario === "directory_conflict")
+        expect(appliedSession.currentBatch?.items[0]?.error).toContain(
+          "Another movie already owns this output directory",
+        );
       const remainingFiles = (await readdir(root, { recursive: true, withFileTypes: true }))
         .filter((entry) => entry.isFile())
         .map((entry) => join(entry.parentPath, entry.name));

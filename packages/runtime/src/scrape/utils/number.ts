@@ -27,7 +27,9 @@ const SHORT_TOKEN_PATTERNS = [
   "2160P",
   "1080P",
   "720P",
+  "FHD",
   "HD",
+  "SD",
   "HEVC",
   "H264",
   "H265",
@@ -37,6 +39,14 @@ const SHORT_TOKEN_PATTERNS = [
   "DVD",
   "FULL",
 ] as const;
+
+const COMMON_DOMAIN_PATTERN =
+  /(?:^|[-_.\s[@])(?:WWW\.)?[A-Z0-9_-]+\.(?:COM|NET|ORG|LA|CC|ME|XYZ|TOP|VIP|TV)(?=$|[-_.\s@\]])\]?@?/giu;
+// A tag can also be a catalog prefix, as in SD-123.
+const SHORT_TOKEN_PATTERN = new RegExp(
+  String.raw`(?:^|[-_.\s\[@])(?:${SHORT_TOKEN_PATTERNS.join("|")})(?![-_.\s]+\d{2})(?:\]|(?=$|[-_.\s@\[]))`,
+  "giu",
+);
 
 const stripTrailingTokens = (value: string, options: { stripBarePart: boolean }): string => {
   let current = value;
@@ -63,11 +73,8 @@ const normalizeName = (rawName: string, escapeStrings: string[] = [], options: {
     normalized = normalized.replaceAll(token.toUpperCase(), "");
   }
 
-  for (const token of SHORT_TOKEN_PATTERNS) {
-    normalized = normalized.replace(new RegExp(`[-_.\\s\\[]${token}[-_.\\s\\]]`, "giu"), "-");
-  }
-
   normalized = normalized
+    .replace(SHORT_TOKEN_PATTERN, "-")
     .replace(/FC2[-_ ]?PPV/giu, "FC2-")
     .replace(/GACHIPPV/giu, "GACHI")
     .replace(/--+/gu, "-")
@@ -86,7 +93,7 @@ const normalizeRawName = (rawName: string, escapeStrings: string[] = []): string
   normalizeName(rawName, escapeStrings, { stripBarePart: true });
 
 const normalizePartProbeName = (rawName: string, escapeStrings: string[] = []): string =>
-  normalizeName(rawName, escapeStrings, { stripBarePart: false });
+  normalizeName(rawName.replace(COMMON_DOMAIN_PATTERN, "-"), escapeStrings, { stripBarePart: false });
 
 const findSuffixAfterNumber = (stem: string, number: string, escapeStrings: string[] = []): string | undefined => {
   const normalizedProbe = normalizePartProbeName(stem, escapeStrings);
@@ -163,10 +170,10 @@ const ORDERED_NUMBER_EXTRACTION_RULES: NumberExtractionRule[] = [
   { pattern: /([A-Z]{2,})00(\d{3})/iu, format: joinFirstTwoCaptures },
   { pattern: /(\d{2,}[A-Z]{2,}-\d{2,}[A-Z]?)/iu },
   { pattern: /((?=[A-Z0-9]*[A-Z])[A-Z0-9]{2,}-\d{2,}[A-Z]?)/iu },
+  { pattern: /(?:^|[^A-Z0-9])(N\d{4})(?![A-Z0-9])/iu },
   { pattern: /([A-Z]+-[A-Z]\d+)/iu },
   { pattern: /(\d{2,}[-_]\d{2,})/iu },
   { pattern: /(\d{3,}-[A-Z]{3,})/iu },
-  { pattern: /(?:^|[^A-Z])(N\d{4})(?:[^A-Z]|$)/iu },
   { pattern: /H_\d{3,}([A-Z]{2,})(\d{2,})/iu, format: joinFirstTwoCaptures },
   { pattern: /([A-Z]{3,}).*?(\d{2,})/iu, format: joinFirstTwoCaptures },
   { pattern: /([A-Z]{2,}).*?(\d{3,})/iu, format: joinFirstTwoCaptures },
@@ -177,7 +184,7 @@ export const extractNumber = (
   escapeStrings: string[] = [],
   keywords: FilenameKeywords = DEFAULT_FILENAME_KEYWORDS,
 ): string => {
-  const cleanedName = stripFilenameKeywords(fileName, keywords);
+  const cleanedName = stripFilenameKeywords(fileName.replace(COMMON_DOMAIN_PATTERN, "-"), keywords);
   const taggedDateSequence = extractTaggedDateSequence(cleanedName);
   if (taggedDateSequence) {
     return taggedDateSequence;
@@ -192,10 +199,10 @@ export const extractNumber = (
   const number = normalizeNumber(rule.format?.(match) ?? match[1] ?? match[0]);
 
   // Name normalization turns every separator into "-", but in a bare date-sequence number "_" and "-" name
-  // different studios, so the separator is read back from the original name.
+  // different studios, so read the separator before normalization collapses it.
   const dateSequence = number.match(/^(\d{6})-(\d{2,3})$/u);
   return dateSequence
-    ? (fileName.match(new RegExp(String.raw`(?<!\d)${dateSequence[1]}[-_]${dateSequence[2]}(?!\d)`, "u"))?.[0] ??
+    ? (cleanedName.match(new RegExp(String.raw`(?<!\d)${dateSequence[1]}[-_]${dateSequence[2]}(?!\d)`, "u"))?.[0] ??
         number)
     : number;
 };

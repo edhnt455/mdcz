@@ -48,7 +48,6 @@ export const createServerMaintenanceRuntime = (deps: ServerMaintenanceRuntimeDep
       logger,
     }),
     fileOrganizer: new FileOrganizer(logger),
-    networkPolicyClient: deps.networkClient,
     nfoGenerator: new NfoGenerator(),
     postProcessAssets: async ({ configuration, ...input }) =>
       await applyImageWatermarks({

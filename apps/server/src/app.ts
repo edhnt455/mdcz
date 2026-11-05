@@ -8,7 +8,7 @@ import { MediaLibraryService, PendingService } from "@mdcz/runtime/library";
 import type { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import { NetworkClient } from "@mdcz/runtime/network";
-import { ActorImageService, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
+import { ActorImageService, createJavdbNetworkPolicy, type PrepareScrapeItem } from "@mdcz/runtime/scrape";
 import { NumberRecognitionService } from "@mdcz/runtime/scrape/NumberRecognitionService";
 import { LlmApiClient } from "@mdcz/runtime/scrape/translate/engines/LlmApiClient";
 import { LlmRequestService } from "@mdcz/runtime/scrape/translate/engines/LlmRequestService";
@@ -113,6 +113,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       getTimeoutMs: () => config.getComputed().networkTimeoutMs,
       getRetryCount: () => config.getComputed().networkRetryCount,
     });
+  const applyJavdbNetworkPolicy = createJavdbNetworkPolicy(networkClient);
+  const unsubscribeJavdbConfig = config.onChange(({ configuration }) => applyJavdbNetworkPolicy(configuration));
   const fetchGateway = options.resources?.fetchGateway ?? new FetchGateway(networkClient);
   const crawlerProvider =
     options.resources?.crawlerProvider ??
@@ -331,6 +333,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     if (closed) return;
     closed = true;
     services.automation.close();
+    unsubscribeJavdbConfig();
     unsubscribePersonConfig();
     unsubscribeLibraryConfig();
     await services.personSync.close();

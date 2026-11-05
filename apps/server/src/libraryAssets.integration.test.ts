@@ -136,6 +136,15 @@ describe("library asset HTTP representations", () => {
     expect(cached.headers.etag).toBe(first.headers.etag);
     expect(cached.rawPayload).toEqual(first.rawPayload);
 
+    const avif = await fixture.fastify.inject({
+      method: "GET",
+      url: `${fixture.url}?w=120&format=avif`,
+      headers: { authorization: `Bearer ${fixture.token}` },
+    });
+    expect(avif.statusCode).toBe(200);
+    expect(avif.headers["content-type"]).toContain("image/avif");
+    expect(await sharp(avif.rawPayload).metadata()).toMatchObject({ compression: "av1", width: 120 });
+
     const revised = await fixture.fastify.inject({
       method: "GET",
       url: `${variantUrl}&revision=crop-2`,

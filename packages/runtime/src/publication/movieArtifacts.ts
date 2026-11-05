@@ -38,6 +38,7 @@ export interface PreparedMovieFile {
 }
 
 export interface MovieArtifacts {
+  metadataDirectories: string[];
   files: PreparedMovieFile[];
   movieAssets: AssetRef[];
   artifacts: WriteArtifact[];
@@ -309,6 +310,10 @@ export const prepareMovieArtifacts = async (input: {
         key: "sceneImages" as const,
         paths: downloaded.sceneImages.length ? downloaded.sceneImages : (existing?.sceneImages ?? []),
       },
+      {
+        key: "actorPhotos" as const,
+        paths: input.relocateExistingArtifacts ? (existing?.actorPhotos ?? []) : [],
+      },
     ];
     for (const group of groups) {
       const targets: string[] = [];
@@ -337,11 +342,11 @@ export const prepareMovieArtifacts = async (input: {
         }
         targets.push(targetPath);
       }
-      const kind = group.key === "sceneImages" ? "scene" : group.key;
+      const kind = group.key === "sceneImages" ? "scene" : group.key === "actorPhotos" ? "actor" : group.key;
       for (const targetPath of targets)
         locationAssets.set(`${kind}\0${targetPath}`, { type: "local", kind, file: toRef(targetPath) });
       if (metadataOutputDir !== first.layout.metadataDir) continue;
-      if (group.key === "sceneImages") assets[group.key] = [...new Set(targets)];
+      if (group.key === "sceneImages" || group.key === "actorPhotos") assets[group.key] = [...new Set(targets)];
       else assets[group.key] = targets[0];
     }
   }
@@ -470,6 +475,7 @@ export const prepareMovieArtifacts = async (input: {
       throw new Error(`Artifact target cannot overwrite a source media file: ${artifact.targetPath}`);
   }
   return {
+    metadataDirectories: [...new Set(input.members.map((member) => member.layout.metadataDir))],
     assets,
     nfoPath,
     files,

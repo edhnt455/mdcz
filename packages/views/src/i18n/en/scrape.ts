@@ -79,6 +79,8 @@ export const scrape = {
   scanningVideoFiles: "Scanning video files",
   stoppingWaitingCurrent: "Stopping, waiting for current file to complete",
   noVideosFound: "No processable videos found",
+  noNewVideos: "No new videos to scrape",
+  noNewVideosHint: "To scrape library movies again, use the library or select the files under Preview files.",
   taskStopped: "Task stopped",
   taskInterrupted: "Task interrupted",
   preparingTask: "Preparing task",

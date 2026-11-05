@@ -125,7 +125,7 @@ describe("AI movie code fallback", () => {
     [["not_found", "partial"], false],
     [["not_found", "ambiguous"], false],
   ] as const)("requires a real successful query with no movie (%j)", async (outcomes, shouldRecognize) => {
-    const input = await createInput(["ZZZ-999.mp4"], onTestFinished);
+    const input = await createInput(["host-99.com@ZZZ-999.mp4"], onTestFinished);
     const { service, crawl } = createAggregation(outcomes);
     const recognize = vi.fn(async () => recognitionResult());
     const resolver = createScrapeNumberResolver({
@@ -146,6 +146,7 @@ describe("AI movie code fallback", () => {
     );
     await resolver.aggregationService.aggregate("ZZZ-999").catch(() => undefined);
     expect(crawl).toHaveBeenCalledTimes(2);
+    expect(crawl.mock.calls.map(([request]) => request.number)).toEqual(["ZZZ-999", "ZZZ-999"]);
   });
 
   it("fills missing numbers, rebuilds multipart groups and shares the resolved number with subtitles", async ({

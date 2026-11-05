@@ -209,7 +209,13 @@ const runScenario = async ({
   const results = [first.items];
   if (rescrape) {
     for (const [path, content] of Object.entries(rescrape)) await writeFile(join(root, path), content);
-    results.push((await scrapeDirectory(targetDir)).items);
+    const published = await (await services.persistence.getState()).repositories.library.listEntries();
+    const refs = published.flatMap((entry) =>
+      entry.files.map((file) => ({ rootId: file.rootId, relativePath: file.rootRelativePath })),
+    );
+    results.push(
+      (await scrape("start", { executionMode: refs.length === 1 ? "single" : "batch", refs, libraryId })).items,
+    );
   }
   if (rerunConfig) {
     await services.config.update(rerunConfig);

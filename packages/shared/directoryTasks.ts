@@ -18,6 +18,7 @@ export interface DiscoveryProgress {
   directories: number;
   candidates: number;
   skipped: number;
+  inLibrary?: number;
   elapsedMs: number;
   currentPath: string | null;
   warnings: string[];

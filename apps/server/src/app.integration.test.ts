@@ -2,6 +2,7 @@ import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promis
 import { join } from "node:path";
 import { deterministicMediaRootId } from "@mdcz/media-store";
 import { RECENT_ACQUISITION_LIMIT } from "@mdcz/runtime/library";
+import { NetworkClient } from "@mdcz/runtime/network";
 import { LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { parseConfigurationContent } from "@mdcz/shared/configCodec";
@@ -663,6 +664,65 @@ describe("buildServer composition integration", () => {
     expect(watermarkResponse.json().result.data.path).toBe("/server-data/watermark");
     expect(unauthorizedResponse.statusCode).toBe(401);
     expect(unauthorizedResponse.json().error.message).toContain("Authentication required");
+  });
+
+  it("paces JavDB site tests from startup and retains pending requests through concurrent configuration updates", async () => {
+    const javdbDelaySeconds = 2;
+    const dispatched: number[] = [];
+    const networkClient = new NetworkClient({
+      rawDispatch: async () => {
+        dispatched.push(Date.now());
+        return Object.assign(new Response("ok"), { abort: () => undefined });
+      },
+    });
+    const { fastify, services } = await createTestServer({ networkClient });
+    await mkdir(services.config.runtimePaths.configDir, { recursive: true });
+    await writeFile(services.config.runtimePaths.configPath, `[scrape]\njavdbDelaySeconds = ${javdbDelaySeconds}\n`);
+    const token = await loginAsAdmin(fastify);
+    const probe = async () =>
+      await fastify.inject({
+        method: "POST",
+        url: "/trpc/crawler.probeSiteConnectivity",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { site: Website.JAVDB },
+      });
+
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    try {
+      const start = Date.now();
+      const first = await probe();
+      expect(first.statusCode).toBe(200);
+      expect(first.json().result.data).toMatchObject({ ok: true });
+      const second = probe();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatched).toEqual([start]);
+
+      await Promise.all([
+        services.config.update({ scrape: { javdbDelaySeconds } }),
+        services.config.update({ scrape: { threadNumber: 2 } }),
+      ]);
+      const third = probe();
+      const delay = javdbDelaySeconds * 1000;
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(dispatched).toEqual([start]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(dispatched).toEqual([start, start + delay]);
+      await vi.advanceTimersByTimeAsync(delay);
+      expect(dispatched).toEqual([start, start + delay, start + delay * 2]);
+      for (const result of await Promise.all([second, third])) {
+        expect(result.statusCode).toBe(200);
+        expect(result.json().result.data).toMatchObject({ ok: true });
+      }
+
+      await services.config.update({ scrape: { javdbDelaySeconds: 0 } });
+      const unpaced = probe();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatched.at(-1)).toBe(start + delay * 2);
+      expect(dispatched).toHaveLength(4);
+      expect((await unpaced).json().result.data).toMatchObject({ ok: true });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("exposes synced media roots as read-only tRPC state", async () => {

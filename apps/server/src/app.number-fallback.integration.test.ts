@@ -84,7 +84,7 @@ it.each([
       aiNumberFallback: scenario !== "disabled",
       sites: [Website.JAVDB],
       restDuration: 0,
-      filenameIgnoreTokens: ["www.98T.la@", "restored"],
+      filenameIgnoreTokens: ["restored"],
     },
     translate: { enableTranslation: false, engine: TranslateEngine.GOOGLE, llmApiKey: "test-key" },
     download: {

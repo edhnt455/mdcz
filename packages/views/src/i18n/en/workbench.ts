@@ -6,8 +6,16 @@ export const workbench = {
 
   // Frame actions
   analyzingFiles: "Analyzing files…",
-  runSummary: (succeeded: number, failed: number, skipped: number, duration: string | null) =>
-    [`${succeeded} succeeded`, `${failed} failed`, `${skipped} skipped`, duration ?? ""].filter(Boolean).join(" · "),
+  runSummary: (succeeded: number, failed: number, skipped: number, duration: string | null, inLibrary: number) =>
+    [
+      `${succeeded} succeeded`,
+      `${failed} failed`,
+      `${skipped} skipped`,
+      inLibrary ? `${inLibrary} already in library` : "",
+      duration,
+    ]
+      .filter(Boolean)
+      .join(" · "),
   resumeScrape: "Resume scrape task",
   pauseScrape: "Pause scrape task",
   resume: "Resume",
@@ -28,9 +36,9 @@ export const workbench = {
   scopeRecursive: "Including subdirectories",
   scopeCurrentOnly: "Current directory only",
   selectedFilesSummary: (count: number, size: string) => `${count} file(s) selected · ${size}`,
-  startWholeDirectoryTitle: "Process all videos in the directory?",
+  startWholeDirectoryTitle: "Scrape new videos in the directory?",
   startWholeDirectoryDescription: (scanDir: string, scope: string) =>
-    `Files have not been previewed, so every video in ${scanDir} will be processed (${scope}). To pick files, click "Preview files" first.`,
+    `This will scan ${scanDir} (${scope}) and skip videos already in the library. To pick files, click "Preview files" first.`,
   backToConfig: "Back to config",
   previewFiles: "Preview files",
   startScrape: "Start Scraping",

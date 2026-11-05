@@ -8,8 +8,10 @@ export const workbench: Messages["workbench"] = {
 
   // Frame actions
   analyzingFiles: "正在分析文件...",
-  runSummary: (succeeded: number, failed: number, skipped: number, duration: string | null) =>
-    [`成功 ${succeeded}`, `失败 ${failed}`, `跳过 ${skipped}`, duration ?? ""].filter(Boolean).join(" · "),
+  runSummary: (succeeded: number, failed: number, skipped: number, duration: string | null, inLibrary: number) =>
+    [`成功 ${succeeded}`, `失败 ${failed}`, `跳过 ${skipped}`, inLibrary ? `已在库中 ${inLibrary}` : "", duration]
+      .filter(Boolean)
+      .join(" · "),
   resumeScrape: "恢复刮削任务",
   pauseScrape: "暂停刮削任务",
   resume: "恢复",
@@ -29,9 +31,9 @@ export const workbench: Messages["workbench"] = {
   scopeRecursive: "含子目录",
   scopeCurrentOnly: "仅当前目录",
   selectedFilesSummary: (count: number, size: string) => `已选 ${count} 个文件 · ${size}`,
-  startWholeDirectoryTitle: "处理目录内全部视频？",
+  startWholeDirectoryTitle: "刮削目录内的新视频？",
   startWholeDirectoryDescription: (scanDir: string, scope: string) =>
-    `尚未预览文件，将处理 ${scanDir} 内的全部视频（${scope}）。如需挑选文件，请先点击“预览文件”。`,
+    `将扫描 ${scanDir}（${scope}），并跳过已入库视频。如需挑选文件，请先点击“预览文件”。`,
   backToConfig: "返回配置",
   previewFiles: "预览文件",
   startScrape: "开始刮削",

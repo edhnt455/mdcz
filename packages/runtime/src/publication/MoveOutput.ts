@@ -58,6 +58,7 @@ export class MoveOutput {
     validate?(): Promise<void> | void;
     commit(): TResult | Promise<TResult>;
     protectedMediaFiles?: readonly string[];
+    preservedSourcePaths?: readonly string[];
     reorganize?: boolean;
   }): Promise<TResult> {
     const fs = this.fileSystem;
@@ -114,19 +115,22 @@ export class MoveOutput {
         return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
       };
       const sources = new Set(moves.map((move) => filesystemPathKey(move.sourcePath)));
-      // A movie that owns its folder is renamed with it, so a new name leaves no emptied folder behind.
+      // A single movie can still share its .actors directory with movies whose videos are stored elsewhere.
       if (
         input.reorganize &&
         first?.source.relativePath.includes("/") &&
         filesystemPathKey(from) !== filesystemPathKey(to) &&
         !inside(from, to) &&
+        !input.preservedSourcePaths?.some((sourcePath) => inside(from, sourcePath)) &&
         moves.every(
           (move) =>
             filesystemPathKey(path.dirname(move.sourcePath)) === filesystemPathKey(from) &&
             filesystemPathKey(path.dirname(move.targetPath)) === filesystemPathKey(to),
         ) &&
         (await fs.readdir(from, { withFileTypes: true })).every(
-          (entry) => !isPrimaryVideoFile(entry.name) || sources.has(filesystemPathKey(path.join(from, entry.name))),
+          (entry) =>
+            entry.name.toLowerCase() !== ".actors" &&
+            (!isPrimaryVideoFile(entry.name) || sources.has(filesystemPathKey(path.join(from, entry.name)))),
         ) &&
         !(await fs.lstat(to).then(
           () => true,

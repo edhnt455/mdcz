@@ -1,10 +1,10 @@
+import { isDeepStrictEqual } from "node:util";
 import PQueue from "p-queue";
 
-export interface DomainRateLimit {
-  requestsPerSecond: number;
-  intervalMs?: number;
-  intervalCap?: number;
-  concurrency?: number;
+interface DomainRateLimit {
+  interval: number;
+  intervalCap: number;
+  concurrency: number;
 }
 
 interface QueueEntry {
@@ -26,29 +26,32 @@ export class RateLimiter {
     private readonly idleQueueTtlMs = DEFAULT_IDLE_QUEUE_TTL_MS,
   ) {
     this.defaultLimit = {
-      requestsPerSecond: defaultRequestsPerSecond,
+      interval: 1000,
+      intervalCap: Math.max(1, Math.trunc(defaultRequestsPerSecond)),
       concurrency: 1,
     };
   }
 
   setDomainLimit(domain: string, requestsPerSecond: number, concurrency = 1): void {
-    this.domainLimits.set(domain, { requestsPerSecond, concurrency });
-    this.disposeQueue(domain);
+    this.setDomainInterval(domain, 1000, requestsPerSecond, concurrency);
   }
 
   setDomainInterval(domain: string, intervalMs: number, intervalCap = 1, concurrency = 1): void {
-    this.domainLimits.set(domain, {
-      requestsPerSecond: Math.max(1, intervalCap),
-      intervalMs: Math.max(1, Math.trunc(intervalMs)),
+    const limit = {
+      interval: Math.max(1, Math.trunc(intervalMs)),
       intervalCap: Math.max(1, Math.trunc(intervalCap)),
       concurrency,
-    });
+    };
+    const previous = this.domainLimits.get(domain) ?? this.defaultLimit;
+    // A replacement queue would start beside the old one while it drains.
+    if (isDeepStrictEqual(previous, limit)) return;
+    if (isDeepStrictEqual(limit, this.defaultLimit)) this.domainLimits.delete(domain);
+    else this.domainLimits.set(domain, limit);
     this.disposeQueue(domain);
   }
 
   clearDomainLimit(domain: string): void {
-    this.domainLimits.delete(domain);
-    this.disposeQueue(domain);
+    if (this.domainLimits.delete(domain)) this.disposeQueue(domain);
   }
 
   async schedule<T>(urlOrDomain: string, task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -77,18 +80,8 @@ export class RateLimiter {
     }
 
     const limit = this.domainLimits.get(domain) ?? this.defaultLimit;
-    const intervalMs = limit.intervalMs ? Math.max(1, Math.trunc(limit.intervalMs)) : 1000;
-    const intervalCap = limit.intervalCap ?? Math.max(1, Math.trunc(limit.requestsPerSecond));
-    const queue = new PQueue({
-      concurrency: limit.concurrency ?? 1,
-      interval: intervalMs,
-      intervalCap,
-    });
-
-    const entry: QueueEntry = {
-      queue,
-      cleanupTimer: null,
-    };
+    // A one-request limit is a minimum delay between starts, even at a window boundary.
+    const entry: QueueEntry = { queue: new PQueue({ ...limit, strict: limit.intervalCap === 1 }), cleanupTimer: null };
     this.queues.set(domain, entry);
 
     return entry;
@@ -105,6 +98,8 @@ export class RateLimiter {
     }
 
     this.clearCleanupTimer(entry);
+    const { interval } = this.domainLimits.get(domain) ?? this.defaultLimit;
+    const cleanupDelay = Math.max(this.idleQueueTtlMs, interval);
     entry.cleanupTimer = setTimeout(() => {
       if (entry.queue.size > 0 || entry.queue.pending > 0 || this.queues.get(domain) !== entry) {
         return;
@@ -112,7 +107,7 @@ export class RateLimiter {
 
       this.clearCleanupTimer(entry);
       this.queues.delete(domain);
-    }, this.idleQueueTtlMs);
+    }, cleanupDelay);
     entry.cleanupTimer.unref?.();
   }
 

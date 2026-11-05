@@ -67,7 +67,8 @@ test("submits directories without scanning and keeps explicit previews cancellab
   expect(scanCandidates).not.toHaveBeenCalled();
   const startWholeDirectory = async () => {
     await start.click();
-    await expect.element(screen.getByRole("dialog", { name: "处理目录内全部视频？" })).toBeVisible();
+    const dialog = screen.getByRole("dialog", { name: "刮削目录内的新视频？" });
+    await expect.element(dialog.getByText(/跳过已入库视频/)).toBeVisible();
     await screen.getByRole("dialog").getByRole("button", { name: "开始刮削" }).click();
   };
   await startWholeDirectory();

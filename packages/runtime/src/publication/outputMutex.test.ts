@@ -5,7 +5,7 @@ describe("output directory serialization", () => {
   it("queues intersecting directory sets, leaves independent outputs free, and releases once", async () => {
     const order: number[] = [];
     const release = await acquireOutputDirectories(["/a/video.mp4", "/b/movie.nfo"]);
-    const second = acquireOutputDirectories(["/b/other.mp4", "/a/poster.jpg"]).then((unlock) => {
+    const second = acquireOutputDirectories(["/b/other.mp4", "/a/art/poster.jpg"], undefined, ["/a"]).then((unlock) => {
       order.push(2);
       return unlock;
     });

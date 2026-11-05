@@ -30,7 +30,7 @@ describe("extractNumber", () => {
     }
   });
 
-  it("extracts canonical numbers after stripping naming suffixes", () => {
+  it("extracts canonical numbers after stripping filename noise", () => {
     const cases = [
       { input: "ABC-123-C-CD1", expected: "ABC-123" },
       { input: "ABC-123-中文字幕", expected: "ABC-123" },
@@ -44,6 +44,28 @@ describe("extractNumber", () => {
       { input: "IDBD-905-A", expected: "IDBD-905" },
       { input: "IDBD-905-H", expected: "IDBD-905" },
       { input: "123-456", expected: "123-456" },
+      { input: "[FHD] 300MIUM-688", expected: "300MIUM-688" },
+      { input: "[SD] MIDV-123", expected: "MIDV-123" },
+      { input: "FHD_SD_ABP123", expected: "ABP-123" },
+      { input: "FHD_SD_MIDV-123", expected: "MIDV-123" },
+      { input: "FHD SD", expected: "" },
+      { input: "SD-123", expected: "SD-123" },
+      { input: "Tokyo-Hot-n1234", expected: "N1234" },
+      { input: "Tokyo-Hot_n1234", expected: "N1234" },
+      { input: "TOKYO-N12345", expected: "TOKYO-N12345" },
+      { input: "btbtt12.com@SSIS-888", expected: "SSIS-888" },
+      { input: "javdb.net_MIDV-123", expected: "MIDV-123" },
+      { input: "hhd800.org-ABP-456", expected: "ABP-456" },
+      { input: "www.98t.la@MEYD-911-U", expected: "MEYD-911" },
+      { input: "javdb.cc_MIDV-123", expected: "MIDV-123" },
+      { input: "thz.me-ABP-456", expected: "ABP-456" },
+      { input: "test.xyz@SSIS-888", expected: "SSIS-888" },
+      { input: "bt.top-WANZ-123", expected: "WANZ-123" },
+      { input: "vip.vip_WWVR-01", expected: "WWVR-01" },
+      { input: "[av.tv]@FC2-1234567", expected: "FC2-1234567" },
+      { input: "1pon-100524_001.com@ABC-123", expected: "ABC-123" },
+      { input: "av.tv@100524_001", expected: "100524_001" },
+      { input: "ABC-123.compact", expected: "ABC-123" },
       { input: "甘えたいカラダ 真田まこと", expected: "" },
       { input: "sample", expected: "" },
     ];
@@ -93,7 +115,7 @@ describe("parseFileInfo", () => {
       },
     });
 
-    expect(parseFileInfo("/tmp/FC2-123456-1080p-1.mp4")).toMatchObject({
+    expect(parseFileInfo("/tmp/www.98t.la@FC2-123456-1080p-FHD-1.mp4")).toMatchObject({
       number: "FC2-123456",
       part: {
         number: 1,

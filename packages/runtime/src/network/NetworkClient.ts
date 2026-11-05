@@ -4,7 +4,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Website } from "@mdcz/shared/enums";
 import type { FailureReason } from "@mdcz/shared/siteResults";
-import { type Browser, Impit, type RequestInit as ImpitRequestInit } from "impit";
+import { type Browser, Impit, type RequestInit as ImpitFetchInit } from "impit";
 import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
@@ -26,6 +26,7 @@ const IMAGE_METADATA_PROBE_BYTES = 64 * 1024;
 const IMAGE_METADATA_PROBE_RETRY_BYTES = 256 * 1024;
 const ERROR_BODY_PREVIEW_BYTES = 64 * 1024;
 type HeaderInit = ConstructorParameters<typeof Headers>[0];
+type ImpitRequestInit = Omit<ImpitFetchInit, "timeout"> & { timeout?: number };
 type NetworkRequestInit = ImpitRequestInit & { useProxy?: boolean };
 export interface RawNetworkResponse {
   readonly status: number;

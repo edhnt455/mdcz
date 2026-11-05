@@ -42,6 +42,7 @@ export function ScrapeWorkbenchAdapter({
 }: ScrapeWorkbenchAdapterProps) {
   const rerunning = useRef(false);
   const snapshot = useScrapeStore((state) => state.snapshot);
+  const inLibrary = snapshot?.discovery?.inLibrary ?? 0;
   const t = useT();
   const maintenanceActive = useMaintenanceStore(
     (state) => selectMaintenanceExecutionStatus(state) !== "idle" || state.pending,
@@ -63,7 +64,10 @@ export function ScrapeWorkbenchAdapter({
     queued: { icon: Loader2, tone: "active", title: t.scrape.taskQueued },
     discovering: { icon: Loader2, tone: "active", title: t.scrape.scanningVideoFiles },
     stopping: { icon: Loader2, tone: "active", title: t.scrape.stoppingWaitingCurrent },
-    completed: { icon: SearchX, tone: "muted", title: t.scrape.noVideosFound },
+    completed:
+      inLibrary > 0 && snapshot?.discovery?.candidates === 0
+        ? { icon: SearchX, tone: "muted", title: t.scrape.noNewVideos, hint: t.scrape.noNewVideosHint }
+        : { icon: SearchX, tone: "muted", title: t.scrape.noVideosFound },
     stopped: { icon: CircleStop, tone: "muted", title: t.scrape.taskStopped },
     interrupted: {
       icon: Unplug,
@@ -105,6 +109,7 @@ export function ScrapeWorkbenchAdapter({
               snapshot.task.startedAt && snapshot.task.completedAt
                 ? formatDuration(Date.parse(snapshot.task.completedAt) - Date.parse(snapshot.task.startedAt))
                 : null,
+              inLibrary,
             )
           : undefined
       }

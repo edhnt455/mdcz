@@ -6,20 +6,30 @@ const getQueueCount = (limiter: RateLimiter): number => {
 };
 
 describe("RateLimiter", () => {
-  it("evicts idle per-domain queues after the ttl", async () => {
+  it("evicts idle queues after the ttl once their rate window has expired", async () => {
     vi.useFakeTimers();
+    try {
+      const limiter = new RateLimiter(5, 1_000);
+      limiter.setDomainInterval("javdb.com", 3_000);
 
-    const limiter = new RateLimiter(5, 1_000);
+      await limiter.schedule("https://images.example.com/poster.jpg", async () => undefined);
+      await limiter.schedule("https://javdb.com/a", async () => undefined);
+      expect(getQueueCount(limiter)).toBe(2);
 
-    await expect(limiter.schedule("https://images.example.com/poster.jpg", async () => "ok")).resolves.toBe("ok");
-    expect(getQueueCount(limiter)).toBe(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(getQueueCount(limiter)).toBe(1);
+      const start = vi.fn(async () => undefined);
+      const pending = limiter.schedule("https://javdb.com/b", start);
+      await vi.advanceTimersByTimeAsync(1_999);
+      expect(start).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(start).toHaveBeenCalledOnce();
 
-    vi.advanceTimersByTime(999);
-    expect(getQueueCount(limiter)).toBe(1);
-
-    vi.advanceTimersByTime(1);
-    expect(getQueueCount(limiter)).toBe(0);
-
-    vi.useRealTimers();
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(getQueueCount(limiter)).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -312,6 +312,95 @@ describe("buildServer scrape integration", () => {
     expect(manifest.manifestFixedAt).not.toBeNull();
     if (kind !== "files") expect(manifest.items).toEqual([]);
   });
+
+  it.each([
+    "inPlace",
+    "copy",
+    "hardlink",
+  ] as const)("excludes published videos from both directory start and rerun (%s)", async (placement) => {
+    const source = await createTempRoot("folder-scrape-owned");
+    const addMovie = async (number: string) => {
+      const folder = join(source, number);
+      await mkdir(folder);
+      await writeFile(join(folder, `${number}.mp4`), "video");
+    };
+    await addMovie("ABC-123");
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+    });
+    await services.config.update({
+      download: {
+        downloadThumb: false,
+        downloadPoster: false,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+      },
+    });
+    const token = await loginAsAdmin(fastify);
+    const { libraryId } = await createTestLibrary(fastify, token, source, {
+      placement,
+      ...(placement === "inPlace" ? { outputPath: "" } : {}),
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const scrape = async (procedure: "start" | "rerunDirectory", payload: object) => {
+      const accepted = await fastify.inject({ method: "POST", url: `/trpc/scrape.${procedure}`, headers, payload });
+      expect(accepted.statusCode, accepted.body).toBe(200);
+      const taskId: string = accepted.json().result.data.runId;
+      await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+      const response = await fastify.inject({
+        method: "GET",
+        url: `/trpc/scrape.snapshot?input=${encodeURIComponent(JSON.stringify({ taskId }))}`,
+        headers,
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      return response.json().result.data as ScrapeRunSnapshotDto;
+    };
+    const start = () =>
+      scrape("start", {
+        executionMode: "batch",
+        libraryId,
+        source: { kind: "directory", scanDir: source, recursive: true },
+      });
+
+    const first = await start();
+    await addMovie("XYZ-111");
+    const mixed = await start();
+    await addMovie("XYZ-222");
+    const rerun = await scrape("rerunDirectory", { taskId: first.task.id });
+    const unchanged = await scrape("rerunDirectory", { taskId: first.task.id });
+
+    expect(
+      [first, mixed, rerun, unchanged].map(({ task, items, discovery }) => ({
+        totalItems: task.totalItems,
+        files: items.map((item) => item.relativePath.split("/").at(-1)),
+        candidates: discovery?.candidates,
+        inLibrary: discovery?.inLibrary,
+      })),
+    ).toEqual([
+      { totalItems: 1, files: ["ABC-123.mp4"], candidates: 1, inLibrary: 0 },
+      { totalItems: 1, files: ["XYZ-111.mp4"], candidates: 1, inLibrary: 1 },
+      { totalItems: 1, files: ["XYZ-222.mp4"], candidates: 1, inLibrary: 2 },
+      { totalItems: 0, files: [], candidates: 0, inLibrary: 3 },
+    ]);
+
+    const { repositories } = await services.persistence.getState();
+    const manifest = await repositories.scrapeRuns.get(unchanged.task.id);
+    expect(JSON.parse(manifest.discoveryJson ?? "null")).toMatchObject({ candidates: 0, inLibrary: 3 });
+    await expect(services.scrape.retry({ taskId: unchanged.task.id, itemIds: [first.items[0].id] })).rejects.toThrow(
+      "does not belong to run",
+    );
+    const [movie] = await repositories.library.listEntries();
+    const [file] = movie.files;
+    const explicit = await scrape("start", {
+      executionMode: placement === "inPlace" ? "single" : "batch",
+      libraryId,
+      refs: [{ rootId: file.rootId, relativePath: file.rootRelativePath }],
+    });
+    expect(explicit.discovery).toBeNull();
+    expect(explicit.task).toMatchObject({ totalItems: 1, successCount: 1 });
+  });
+
   it.each([
     "conflict",
     "metadata",
@@ -454,15 +543,17 @@ describe("buildServer scrape integration", () => {
     }
   });
 
-  it("labels resolution versions of one movie and attaches later versions to the library movie", async () => {
+  it("attaches later versions of one movie and rejects another movie with the same truncated output folder", async () => {
     const root = await createTempRoot("scrape-versions-root");
     for (const [name, content] of [
       ["ABC-123.mp4", "height=800"],
       ["ABC-123-4K.mp4", "height=2160"],
+      ["XYZ-999.mp4", "other movie"],
     ])
       await writeFile(join(root, name), content);
+    const titlePrefix = "很长的系列标题".repeat(10);
     const { fastify, services } = await createTestServer({
-      scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+      scrapeAggregation: createTestAggregation("https://unused.example/image.png", { titlePrefix }),
     });
     await services.config.update({
       download: {
@@ -474,8 +565,8 @@ describe("buildServer scrape integration", () => {
       },
     });
     const token = await loginAsAdmin(fastify);
-    const { rootId, libraryId } = await createTestLibrary(fastify, token, root, { folderTemplate: "fixed/{number}" });
-    const scrape = async (names: string[]) => {
+    const { rootId, libraryId } = await createTestLibrary(fastify, token, root, { folderTemplate: "fixed/{title}" });
+    const scrape = async (names: string[], status: "completed" | "failed" = "completed") => {
       const response = await fastify.inject({
         method: "POST",
         url: "/trpc/scrape.start",
@@ -486,15 +577,26 @@ describe("buildServer scrape integration", () => {
           libraryId,
         },
       });
-      await waitForScrapeRunStatus(fastify, token, response.json().result.data.runId, "completed");
+      const taskId = response.json().result.data.runId;
+      await waitForScrapeRunStatus(fastify, token, taskId, status);
+      return taskId;
     };
-    const output = join(root, "JAV_output/fixed/ABC-123");
+    const relativeOutput = `JAV_output/fixed/${titlePrefix.slice(0, 60)}`;
+    const output = join(root, relativeOutput);
     const { repositories } = await services.persistence.getState();
 
     await scrape(["ABC-123.mp4", "ABC-123-4K.mp4"]);
     await writeFile(join(root, "ABC-123-1080P.mp4"), "hd");
     await scrape(["ABC-123-1080P.mp4"]);
-    await scrape(["JAV_output/fixed/ABC-123/ABC-123.mp4"]);
+    await scrape([`${relativeOutput}/ABC-123.mp4`]);
+    const filesBeforeCollision = await readdir(output);
+    const nfoBeforeCollision = await readFile(join(output, "movie.nfo"));
+    const conflict = await services.scrape.snapshot({ taskId: await scrape(["XYZ-999.mp4"], "failed") });
+    expect(conflict.items[0]?.error).toContain("Another movie already owns this output directory");
+    expect(conflict.items[0]?.conflict).toBeUndefined();
+    expect(await readFile(join(root, "XYZ-999.mp4"), "utf8")).toBe("other movie");
+    expect((await readdir(output)).sort()).toEqual(filesBeforeCollision.sort());
+    expect(await readFile(join(output, "movie.nfo"))).toEqual(nfoBeforeCollision);
 
     for (const [name, content] of [
       ["ABC-123.mp4", "height=2160"],
@@ -903,13 +1005,20 @@ describe("buildServer scrape integration", () => {
     await writeFile(join(mediaRoot, "ABC-123.en.forced.srt"), "subtitle");
     await writeFile(join(mediaRoot, "poster.jpg"), "source poster");
     const imageServer = await startTestImageServer();
+    const aggregation = createTestAggregation(`${imageServer.url}/image.png`);
     const { fastify, services } = await createTestServer({
-      scrapeAggregation: createTestAggregation(`${imageServer.url}/image.png`),
+      scrapeAggregation: {
+        aggregate: async (number, ...args) => {
+          const result = await aggregation.aggregate(number, ...args);
+          return { ...result, data: { ...result.data, title: "Runtime Title ABC-123" } };
+        },
+      },
     });
     const token = await loginAsAdmin(fastify);
     const { rootId, libraryId } = await createTestLibrary(fastify, token, mediaRoot, {
       placement,
       outputPath: metadataRoot,
+      folderTemplate: "{actor}/{title}",
       fileTemplate: "{number}_output",
     });
     await services.config.update({ download: { downloadSceneImages: false, downloadTrailer: false } });
@@ -933,7 +1042,7 @@ describe("buildServer scrape integration", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     const result = historyResponse.json().result.data.results[0];
-    const directory = "Actor A/ABC-123";
+    const directory = "Actor A/Runtime Title ABC-123";
     const outputRelativePath = "ABC-123.mp4";
     const nfoRelativePath = `${directory}/ABC-123_output.nfo`;
     const posterRelativePath = `${directory}/poster.png`;
@@ -954,6 +1063,25 @@ describe("buildServer scrape integration", () => {
     const strm = readFile(join(metadataRoot, directory, "ABC-123_output.strm"), "utf8");
     if (placement === "strm") await expect(strm).resolves.toBe(`${join(mediaRoot, "ABC-123.mp4")}\n`);
     else await expect(strm).rejects.toMatchObject({ code: "ENOENT" });
+
+    if (placement === "metadataOnly") {
+      const existingNfo = await readFile(join(metadataRoot, directory, "movie.nfo"));
+      await writeFile(join(mediaRoot, "XYZ-999.mp4"), "other movie");
+      const started = await fastify.inject({
+        method: "POST",
+        url: "/trpc/scrape.start",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { executionMode: "single", refs: [{ rootId, relativePath: "XYZ-999.mp4" }], libraryId },
+      });
+      expect(started.statusCode).toBe(200);
+      const taskId = started.json().result.data.runId;
+      await waitForScrapeRunStatus(fastify, token, taskId, "failed");
+      const { items } = await services.scrape.snapshot({ taskId });
+      expect(items[0]?.error).toContain("Another movie already owns this output directory");
+      expect(await readFile(join(mediaRoot, "XYZ-999.mp4"), "utf8")).toBe("other movie");
+      expect(await readFile(join(metadataRoot, directory, "movie.nfo"))).toEqual(existingNfo);
+      expect(await readFile(join(metadataRoot, posterRelativePath))).toEqual(posterContent);
+    }
 
     const rootsResponse = await fastify.inject({
       method: "GET",

@@ -3,7 +3,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { ScrapeResult } from "@mdcz/shared/types";
 import { describe, expect, it, vi } from "vitest";
 import { getNetworkRequestExecutionContext, runWithNetworkChannel } from "./network/networkExecution";
-import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
+import { createJavdbNetworkPolicy, createScrapeExecutionPolicy } from "./scrape";
 import { type ScrapeRunExecution, type ScrapeRunItem, ScrapeRunSession, TaskExecutor } from "./tasks";
 
 const deferred = () => {
@@ -295,29 +295,34 @@ describe("scrape execution policy", () => {
 
   it("applies and clears the JavDB delay for official aliases and the configured mirror", () => {
     const calls: string[] = [];
-    const client = {
+    const applyPolicy = createJavdbNetworkPolicy({
       setDomainInterval: (domain: string, intervalMs: number, intervalCap?: number, concurrency?: number) => {
         calls.push(`interval:${domain}:${intervalMs}:${intervalCap}:${concurrency}`);
       },
-      setDomainLimit: () => undefined,
       clearDomainLimit: (domain: string) => {
         calls.push(`clear:${domain}`);
       },
-    };
-    for (const [javdbUrl, hosts] of [
-      ["", ["javdb.com", "www.javdb.com"]],
-      ["https://www.javdb.com/", ["javdb.com", "www.javdb.com"]],
-      ["https://javdb571.com/", ["javdb.com", "www.javdb.com", "javdb571.com"]],
+    });
+    for (const [javdbUrl, javdbDelaySeconds, expected] of [
+      ["https://www.javdb.com/", 2, ["interval:javdb.com:2000:1:1", "interval:www.javdb.com:2000:1:1"]],
+      [
+        "https://javdb571.com/",
+        2,
+        ["interval:javdb.com:2000:1:1", "interval:www.javdb.com:2000:1:1", "interval:javdb571.com:2000:1:1"],
+      ],
+      [
+        "https://javdb572.com/",
+        0,
+        ["clear:javdb571.com", "clear:javdb.com", "clear:www.javdb.com", "clear:javdb572.com"],
+      ],
     ] as const) {
-      for (const javdbDelaySeconds of [2, 0]) {
-        calls.length = 0;
-        applyScrapeNetworkPolicy(client, {
-          ...defaultConfiguration,
-          network: { ...defaultConfiguration.network, javdbUrl },
-          scrape: { ...defaultConfiguration.scrape, javdbDelaySeconds },
-        });
-        expect(calls).toEqual(hosts.map((host) => (javdbDelaySeconds ? `interval:${host}:2000:1:1` : `clear:${host}`)));
-      }
+      calls.length = 0;
+      applyPolicy({
+        ...defaultConfiguration,
+        network: { ...defaultConfiguration.network, javdbUrl },
+        scrape: { ...defaultConfiguration.scrape, javdbDelaySeconds },
+      });
+      expect(calls).toEqual(expected);
     }
   });
 });

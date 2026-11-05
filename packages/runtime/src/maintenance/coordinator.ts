@@ -669,7 +669,6 @@ export class MaintenanceSessionCoordinator {
         initial.fixDiscoveredRefs(selections.map((selection) => selection.ref));
         await this.publishChanged(initial);
       }
-      await this.runtime.applyNetworkPolicy?.();
       initial = this.assertCurrent(sessionId, ["running", "paused"]);
       if (initial.status === "paused") return;
       const selections = initial.refs.map((ref) => {
@@ -770,7 +769,6 @@ export class MaintenanceSessionCoordinator {
 
   private async runApply(sessionId: string): Promise<void> {
     try {
-      await this.runtime.applyNetworkPolicy?.();
       const initial = this.assertCurrent(sessionId, ["running"]);
       const pending = initial.pendingBatchItems();
       await this.executeItems<MaintenanceBatchItem, void>(sessionId, pending, {
@@ -809,6 +807,7 @@ export class MaintenanceSessionCoordinator {
               files,
               signal: context.signal,
               publication: {
+                library,
                 roots: publicationRoots,
                 commit: (movie) => writeCommittedMovie(library, movie),
                 validate: (movie) =>

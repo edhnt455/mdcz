@@ -37,7 +37,9 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
         return {
           snapshot,
           ancestors:
-            previous && snapshot.task.previousTaskId === previous.task.id ? [...state.ancestors, previous] : [],
+            previous && !snapshot.directorySource && snapshot.task.previousTaskId === previous.task.id
+              ? [...state.ancestors, previous]
+              : [],
           retiredTaskIds: previous ? [...state.retiredTaskIds, previous.task.id] : state.retiredTaskIds,
           error: null,
         };

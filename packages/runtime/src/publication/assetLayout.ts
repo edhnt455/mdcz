@@ -30,8 +30,11 @@ export const resolvePublicationAssetLayout = async (input: {
   const imageExtensions = [".jpg", ".jpeg", ".png", ".webp"] as const;
 
   for (const [kind, value] of Object.entries(input.existingAssets ?? {})) {
-    if (kind === "actorPhotos") continue;
     for (const source of Array.isArray(value) ? value : value ? [value] : []) {
+      if (kind === "actorPhotos") {
+        retained.set(source, layout.mode === "move" ? join(layout.metadataDir, ".actors", basename(source)) : source);
+        continue;
+      }
       const name = relative(layout.existingMetadataDir, source);
       const collection = kind === "sceneImages";
       const targetName = collection

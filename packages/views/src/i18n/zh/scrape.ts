@@ -75,6 +75,8 @@ export const scrape: Messages["scrape"] = {
   scanningVideoFiles: "正在扫描视频文件",
   stoppingWaitingCurrent: "正在停止，等待当前文件处理完成",
   noVideosFound: "未找到可处理视频",
+  noNewVideos: "没有待刮削的新视频",
+  noNewVideosHint: "如需重新刮削已入库影片，请在媒体库中操作，或在“预览文件”中勾选。",
   taskStopped: "任务已停止",
   taskInterrupted: "任务已中断",
   preparingTask: "正在准备任务",

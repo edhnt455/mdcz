@@ -18,6 +18,7 @@ const resolveCanonicalOutputDirectory = async (directory: string): Promise<strin
 export const acquireOutputDirectories = async (
   targetPaths: readonly string[],
   canonicalDirectory: (directory: string) => Promise<string> = resolveCanonicalOutputDirectory,
+  metadataDirectories: readonly string[] = [],
 ): Promise<() => void> => {
   let waiters: Array<{ key: string; previous: Promise<void>; waiter: Waiter }> = [];
   let releaseRegistration!: () => void;
@@ -30,7 +31,9 @@ export const acquireOutputDirectories = async (
     const keys = [
       ...new Set(
         await Promise.all(
-          targetPaths.map(async (targetPath) => filesystemPathKey(await canonicalDirectory(dirname(targetPath)))),
+          [...targetPaths.map((targetPath) => dirname(targetPath)), ...metadataDirectories].map(async (directory) =>
+            filesystemPathKey(await canonicalDirectory(directory)),
+          ),
         ),
       ),
     ].sort();

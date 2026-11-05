@@ -1,7 +1,7 @@
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
-import { resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
+import { filesystemPathKey, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
 import { isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
@@ -27,7 +27,7 @@ import { runWithScrapeItem } from "../network";
 import { resolvePublicationAssetLayout } from "../publication/assetLayout";
 import type { CommittedMovie } from "../publication/committedMovie";
 import { toCommittedMovie } from "../publication/committedMovie";
-import { PublicationConflictError } from "../publication/conflicts";
+import { assertMovieDirectoryOwnership, PublicationConflictError } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
 import {
   MANAGED_MOVIE_ASSET_KINDS,
@@ -38,16 +38,15 @@ import {
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
+import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import {
-  applyScrapeNetworkPolicy,
   type DownloadManager,
   downloadCrawlerAssets,
   type FileOrganizer,
   type NfoGenerator,
   prepareOutputCrawlerData,
   type ResolvedPublicationLayout,
-  type ScrapeNetworkPolicyClient,
   type TranslateService,
   writePreparedNfo,
 } from "../scrape";
@@ -89,7 +88,6 @@ export interface MaintenanceRuntimeDependencies {
   config: MaintenanceRuntimeConfigProvider;
   downloadManager?: DownloadManager;
   fileOrganizer: Pick<FileOrganizer, "plan" | "resolveOutputPlan">;
-  networkPolicyClient?: ScrapeNetworkPolicyClient;
   nfoGenerator: Pick<NfoGenerator, "writeNfo">;
   signalService: MaintenanceSignalService;
   translateService?: TranslateService;
@@ -147,6 +145,7 @@ export interface MaintenanceRuntimeApplyEntryInput {
   publication: {
     commit(movie: CommittedMovie): void;
     validate?(movie: CommittedMovie): void;
+    library: Pick<PublicationOutputPort, "publicationSnapshot">;
     roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
     identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
   };
@@ -243,11 +242,6 @@ export class MaintenanceRuntime {
       input.target,
       input.inventory,
     );
-  }
-
-  async applyNetworkPolicy(): Promise<void> {
-    if (!this.deps.networkPolicyClient) return;
-    applyScrapeNetworkPolicy(this.deps.networkPolicyClient, await this.deps.config.get());
   }
 
   async scanRefs(input: {
@@ -653,15 +647,81 @@ export class MaintenanceRuntime {
         { crawlerData: preparedCrawlerData, sources: undefined },
       );
 
+      const cleanupPaths = [
+        ...new Set(published.artifacts.flatMap((artifact) => artifact.removeSourcesAfterCommit ?? [])),
+      ];
       const unlock = await acquireOutputDirectories(
         [
           ...published.moves.map((move) => move.targetPath),
           ...published.artifacts.map((artifact) => artifact.targetPath),
+          ...cleanupPaths,
         ],
         (directory) => this.inventory.canonicalDirectory(directory),
+        preset.output === "move" ? published.metadataDirectories : [],
       );
       try {
         throwIfAborted(signal);
+        if (preset.output === "move" && this.target) {
+          await assertMovieDirectoryOwnership({
+            target: { ...this.target, placement: "move" },
+            movieId: movie.id,
+            sourcePaths: files.map((file) => file.fileInfo.filePath),
+            directories: published.metadataDirectories,
+            library: publication.library,
+          });
+        }
+        const actorCopies = published.artifacts.flatMap((artifact) =>
+          "sourcePath" in artifact && basename(dirname(artifact.targetPath)) === ".actors" ? [artifact] : [],
+        );
+        const ownershipPaths = [...new Set([...cleanupPaths, ...actorCopies.map((artifact) => artifact.targetPath)])];
+        let preservedSourcePaths: string[] = [];
+        if (ownershipPaths.length) {
+          const entryPaths = new Map(
+            await Promise.all(
+              ownershipPaths.map(async (path) => [path, await this.inventory.entryPath(path)] as const),
+            ),
+          );
+          const snapshot = publication.library.publicationSnapshot({
+            paths: [...ownershipPaths, ...entryPaths.values()],
+          });
+          const shared = new Set(
+            await Promise.all(
+              [...snapshot.files, ...snapshot.assets]
+                .filter((row) => row.itemId !== movie.id)
+                .map(async (row) => {
+                  const root = publication.roots.find((candidate) => candidate.id === row.rootId);
+                  if (!root) throw new Error(`Publication root not found: ${row.rootId}`);
+                  return filesystemPathKey(
+                    await this.inventory.entryPath(resolveRootRelativePath(root, row.relativePath)),
+                  );
+                }),
+            ),
+          );
+          const isShared = (path: string) => shared.has(filesystemPathKey(entryPaths.get(path) ?? path));
+          for (const copy of actorCopies) {
+            if (!isShared(copy.targetPath)) continue;
+            const exists = await lstat(copy.targetPath).then(
+              () => true,
+              (error: NodeJS.ErrnoException) => {
+                if (error.code === "ENOENT") return false;
+                throw error;
+              },
+            );
+            if (exists)
+              throw new PublicationConflictError(
+                copy.sourcePath,
+                copy.targetPath,
+                "Another movie still uses this actor photo",
+              );
+          }
+          preservedSourcePaths = cleanupPaths.filter(isShared);
+          const preserved = new Set(preservedSourcePaths);
+          for (const artifact of published.artifacts) {
+            artifact.removeSourcesAfterCommit = artifact.removeSourcesAfterCommit?.filter(
+              (path) => !preserved.has(path),
+            );
+          }
+        }
         const validate = async () => {
           throwIfAborted(signal);
           publication.validate?.(movie);
@@ -675,6 +735,7 @@ export class MaintenanceRuntime {
             moves: published.moves,
             artifacts: published.artifacts,
             protectedMediaFiles: published.protectedMediaFiles,
+            preservedSourcePaths,
             validate,
             commit,
           });
@@ -689,12 +750,7 @@ export class MaintenanceRuntime {
         unlock();
       }
 
-      if (preset.output !== "none")
-        this.deps.onPublished?.(
-          [...new Set(members.map((member) => member.layout.metadataDir))],
-          config,
-          preparedCrawlerData,
-        );
+      if (preset.output !== "none") this.deps.onPublished?.(published.metadataDirectories, config, preparedCrawlerData);
       return {
         status: "success",
         crawlerData: preparedCrawlerData,

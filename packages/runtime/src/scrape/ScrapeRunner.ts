@@ -38,6 +38,7 @@ import type { ConfiguredMediaRootService } from "../library/mediaRootService";
 import { buildMovieTags } from "../maintenance/movieTags";
 import type { NetworkClient } from "../network";
 import { toCommittedMovie } from "../publication/committedMovie";
+import { assertMovieDirectoryOwnership } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
 import { assertSymlinkSupport } from "../publication/outputFileSystem";
 import { movieOutputResultAssets } from "../publication/outputLibrary";
@@ -62,7 +63,7 @@ import { AggregationService, type CrawlerPort, type SiteResultSink } from "./agg
 import { DirectoryInventory } from "./DirectoryInventory";
 import { createDirectoryScope, discoverDirectoryFiles } from "./directoryDiscovery";
 import { DownloadManager, type ImageHostCooldownStore } from "./download";
-import { applyScrapeNetworkPolicy, createScrapeExecutionPolicy } from "./executionPolicy";
+import { createScrapeExecutionPolicy } from "./executionPolicy";
 import { assertTargetLayout, FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedMovieGroup, type RuntimeScrapeSignalService } from "./FileScraper";
 import { admitScrapeGroups, groupMovieMembers, type MovieGroup, type MovieMember } from "./movieGroups";
@@ -621,7 +622,11 @@ export class ScrapeRunner {
 
     // A retry run only holds the retried items, so the batch is the union of the whole retry chain with newer runs winning.
     const lineage = [run];
-    for (let previousId = run.previousRunId; previousId; previousId = lineage[0].previousRunId) {
+    for (
+      let previousId = run.previousRunId;
+      previousId && !lineage[0].directoryScopeJson;
+      previousId = lineage[0].previousRunId
+    ) {
       lineage.unshift(await this.deps.persistence.scrapeRuns.get(previousId));
     }
     const publishedLocations = new Map<string, RootFileRef>();
@@ -752,8 +757,22 @@ export class ScrapeRunner {
       onProgress,
     });
 
+    const roots = new Map((await repository.mediaRoots.listRoots()).map((root) => [root.id, root]));
+    const identities = await Promise.all(
+      found.refs.map(async (ref) => {
+        const root = roots.get(ref.rootId);
+        if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+        return filesystemPathKey(await found.inventory.entryPath(resolveRootRelativePath(root, ref.relativePath)));
+      }),
+    );
+    signal.throwIfAborted();
+    const owned = repository.library.knownMediaIdentities(identities);
+    const refs = found.refs.filter((_, index) => !owned.has(identities[index]));
+    const discovery = { ...found.discovery, candidates: refs.length, inLibrary: found.refs.length - refs.length };
+    onProgress(discovery);
+
     const groups = await admitScrapeGroups({
-      refs: found.refs,
+      refs,
       resolveRoot: (id) => repository.mediaRoots.get(id),
       inventory: found.inventory,
       configuration: context.configuration,
@@ -762,7 +781,7 @@ export class ScrapeRunner {
     const manifest = await repository.scrapeRuns.fixManifest({
       runId: run.id,
       signal,
-      discoveryJson: JSON.stringify(found.discovery),
+      discoveryJson: JSON.stringify(discovery),
       items: groups
         .flatMap((group) => group.members)
         .map((member, ordinal) => ({
@@ -790,7 +809,6 @@ export class ScrapeRunner {
     await checkRoots([...new Set([...manifest.items.map((item) => item.rootId), ...outputRootIds])]);
 
     const { configuration, target, unpin } = context;
-    applyScrapeNetworkPolicy(this.deps.networkClient, configuration);
     const policy = createScrapeExecutionPolicy(configuration, { logger: this.logger });
 
     const numberResolver = createScrapeNumberResolver({
@@ -1122,8 +1140,18 @@ export class ScrapeRunner {
         const release = await acquireOutputDirectories(
           [...output.moves.map((move) => move.targetPath), ...output.artifacts.map((artifact) => artifact.targetPath)],
           (directory) => inventory.canonicalDirectory(directory),
+          output.metadataDirectories,
         );
         try {
+          await assertMovieDirectoryOwnership({
+            target: scrapeOptions.target,
+            movieId: committedMovie.id,
+            sourcePaths: output.files.map(({ source }) =>
+              resolveRootRelativePath(requireRoot(source.rootId), source.relativePath),
+            ),
+            directories: output.metadataDirectories,
+            library: this.deps.persistence.library,
+          });
           const validate = () =>
             this.deps.persistence.library.assertNotSuppressed(
               output.files.flatMap((file) => [file.sourceEntryIdentity, file.entryIdentity]),
