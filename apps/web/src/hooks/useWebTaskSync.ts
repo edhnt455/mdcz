@@ -117,6 +117,13 @@ export const useWebTaskSync = (): void => {
       onNotification: (payload) => {
         recordDispatch();
         if (payload.kind !== "invalidate") return;
+        if (
+          payload.resources.some((resource) =>
+            ["ready", "scan", "scrape-live", "scrape-history", "maintenance", "activity"].includes(resource),
+          )
+        ) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.activity.list });
+        }
         if (payload.resources.includes("ready")) {
           refreshLiveRuns();
           refreshMaintenanceSession();

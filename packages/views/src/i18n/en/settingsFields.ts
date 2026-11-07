@@ -108,6 +108,12 @@ const fields: Record<FieldKey, FieldText> = {
     ],
   },
   "scrape.siteOrder": { label: "Site position" },
+  "scrape.autoResolveDuplicates": {
+    label: "Automatically keep the larger duplicate source",
+    description:
+      "For target conflicts in copy STRM libraries, compare actual 115 video sizes, keep the larger version and delete the smaller 115 source and its STRMs. Configure MoviePilot, save the library binding and verify source associations first. Equal sizes or failed verification require manual selection; turning this off keeps all selection manual.",
+    aliases: ["duplicate", "115", "source", "size", "automatic deletion"],
+  },
   "scrape.r18MetadataLanguage": { label: "R18.dev metadata language" },
   "scrape.aiNumberFallback": {
     label: "AI movie code fallback",

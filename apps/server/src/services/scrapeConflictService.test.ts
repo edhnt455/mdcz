@@ -203,6 +203,56 @@ async function fixture(shared = false) {
 }
 
 describe("STRM duplicate resolution", () => {
+  it.each([
+    "incoming",
+    "existing",
+    "off",
+    "equal",
+    "shared",
+    "unknown size",
+    "rejected",
+    "disabled during preview",
+  ])("automatically selects by verified source size (%s)", async (scenario) => {
+    const f = await fixture(scenario === "shared");
+    f.configuration.scrape.autoResolveDuplicates = scenario !== "off";
+    if (scenario === "existing") f.remote.files[0].size = 3 * 1024 ** 3;
+    if (scenario === "equal") f.remote.files[1].size = f.remote.files[0].size;
+    if (scenario === "unknown size") f.remote.files[1].size = null;
+    if (scenario === "rejected") f.remote.reject = true;
+    if (scenario === "disabled during preview") {
+      const preview = f.service.preview.bind(f.service);
+      vi.spyOn(f.service, "preview").mockImplementation(async (input) => {
+        const result = await preview(input);
+        f.configuration.scrape.autoResolveDuplicates = false;
+        return result;
+      });
+    }
+    const resolving = f.service.resolveAutomatically(input);
+    if (scenario === "equal" || scenario === "unknown size" || scenario === "rejected") {
+      await expect(resolving).rejects.toThrow(
+        scenario === "equal" ? "sizes are equal" : scenario === "unknown size" ? "size is unavailable" : "unsuccessful",
+      );
+    } else {
+      expect(await resolving).toEqual(
+        scenario === "off" || scenario === "disabled during preview"
+          ? null
+          : { runId: scenario === "incoming" ? "retry" : null },
+      );
+    }
+    expect(f.remote.deletions).toEqual(scenario === "incoming" ? ["old"] : scenario === "existing" ? ["new"] : []);
+    expect(f.retry).toHaveBeenCalledTimes(scenario === "incoming" ? 1 : 0);
+    if (scenario === "incoming" || scenario === "existing" || scenario === "shared") {
+      const deleted = scenario === "incoming" ? f.existingNormal : f.incomingNormal;
+      await expect(lstat(deleted)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(f.jobs.get(input.itemId)?.step).toBe("completed");
+    } else {
+      for (const file of [f.existingNormal, f.incomingNormal, f.linkPath])
+        expect((await lstat(file)).isFile()).toBe(true);
+      if (scenario === "off") expect(f.jobs.get(input.itemId)).toBeUndefined();
+      if (scenario === "rejected") expect(f.jobs.get(input.itemId)?.error).toContain("unsuccessful");
+    }
+  });
+
   it("publishes the selected deletion's live steps and restores its completed result", async () => {
     const f = await fixture();
     const preview = await f.service.preview(input);

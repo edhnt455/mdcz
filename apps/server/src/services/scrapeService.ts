@@ -81,6 +81,7 @@ export class ScrapeService {
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
   private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly announcedRunIds = new Set<string>();
+  private duplicateResolution: Promise<void> = Promise.resolve();
   private closed = false;
 
   constructor(
@@ -242,6 +243,29 @@ export class ScrapeService {
             },
           });
           this.taskEvents.invalidate("scrape-history", "pending");
+          if (snapshot.task.status !== "failed" && snapshot.task.status !== "completed") return;
+          this.duplicateResolution = this.duplicateResolution
+            .then(async () => {
+              for (const item of snapshot.items) {
+                if (item.status !== "failed" || !item.conflict) continue;
+                // Resolution may retry a scrape, so it must run after terminal callbacks release the queue.
+                await this.runnerInstance?.waitForIdle();
+                if (this.closed) return;
+                const logger = runtimeLoggerService.getLogger(`scrape:${run.id}`);
+                try {
+                  const result = await this.conflicts.resolveAutomatically({ taskId: run.id, itemId: item.id });
+                  if (result)
+                    logger.info(
+                      `Duplicate resolved automatically: ${item.relativePath}${result.runId ? `; replacement scrape: ${result.runId}` : ""}`,
+                    );
+                } catch (error) {
+                  logger.warn(`Duplicate requires manual resolution: ${item.relativePath}: ${toErrorMessage(error)}`);
+                }
+              }
+            })
+            .catch((error) => {
+              runtimeLoggerService.getLogger(`scrape:${run.id}`).error(toErrorMessage(error));
+            });
         },
         onError: async (runId, error) => {
           runtimeLoggerService.getLogger(`scrape:${runId}`).error(`Scrape execution failed: ${toErrorMessage(error)}`);
@@ -366,6 +390,7 @@ export class ScrapeService {
     this.closed = true;
     await this.runnerInitPromise?.catch(() => undefined);
     await this.runnerInstance?.shutdown();
+    await this.duplicateResolution;
   }
 
   private async toArtifactRecord(id: string): Promise<ServerScrapeArtifactRecord> {

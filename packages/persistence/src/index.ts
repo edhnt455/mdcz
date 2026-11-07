@@ -1,3 +1,4 @@
+export * from "./activityRepository";
 export * from "./credentialRepository";
 export * from "./database";
 export * from "./downloaderRepository";

@@ -198,6 +198,17 @@ export class ScrapeConflictService {
     return this.toPreview(snapshot, token, null, null);
   }
 
+  async resolveAutomatically(input: ScrapeConflictInput): Promise<ScrapeConflictResolution | null> {
+    if (!(await this.deps.config.get()).scrape.autoResolveDuplicates) return null;
+    const preview = await this.preview(input);
+    if (preview.keep) return null;
+    if (!preview.sameResource && preview.existing.size === preview.incoming.size)
+      throw new Error("115 source sizes are equal; select a version manually");
+    if (!(await this.deps.config.get()).scrape.autoResolveDuplicates) return null;
+    const keep = preview.incoming.size > preview.existing.size ? "incoming" : "existing";
+    return this.resolve({ ...input, token: preview.token, keep }, true);
+  }
+
   private toPreview(
     snapshot: ScrapeConflictSnapshot,
     token: string,
@@ -224,7 +235,7 @@ export class ScrapeConflictService {
     };
   }
 
-  async resolve(input: ScrapeConflictResolveInput): Promise<ScrapeConflictResolution> {
+  async resolve(input: ScrapeConflictResolveInput, automatic = false): Promise<ScrapeConflictResolution> {
     if (this.running.has(input.itemId)) throw new Error("Duplicate resolution is already running");
     this.running.add(input.itemId);
     let release: (() => void) | undefined;
@@ -267,7 +278,10 @@ export class ScrapeConflictService {
       const strm = new StrmDeletionService(() => configuration.embyDeletion);
       const client = new MoviePilotClient(connection, connection.token, this.deps.moviePilotFetch);
       const assertActive = async () => {
-        const current = (await this.deps.config.get()).embyDeletion;
+        const currentConfiguration = await this.deps.config.get();
+        if (automatic && !currentConfiguration.scrape.autoResolveDuplicates)
+          throw new Error("Automatic duplicate resolution is disabled; continue manually");
+        const current = currentConfiguration.embyDeletion;
         const library = await this.deps.libraries.get(snapshot.library.id);
         if (this.deps.isBusy() || repository.hasLiveScrapes())
           throw new Error("Wait for active media tasks before resolving duplicates");

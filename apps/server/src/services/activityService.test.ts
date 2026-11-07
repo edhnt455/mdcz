@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { createTestPersistenceDatabase } from "@mdcz/persistence/test";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { TaskEventBus } from "../taskEvents";
 import { ActivityService } from "./activityService";
+import type { ServerPersistenceState } from "./persistenceService";
 
 const scrapeRun = (id: string, completedAt: string) => ({
   id,
@@ -16,8 +19,18 @@ const scrapeRun = (id: string, completedAt: string) => ({
 });
 
 describe("ActivityService", () => {
+  let database: ReturnType<typeof createTestPersistenceDatabase>;
+  const taskEvents = new TaskEventBus();
+  const persistence = { getState: async () => ({ database }) as ServerPersistenceState };
+  beforeEach(() => {
+    database = createTestPersistenceDatabase();
+  });
+  afterEach(() => database.close());
+
   it("lists scans, scrape runs and the active maintenance session newest first, once per run", async () => {
     const service = new ActivityService({
+      persistence,
+      taskEvents,
       libraries: { list: async () => [{ id: "lib-1", name: "Movies" }] as never },
       scans: {
         list: async () =>
@@ -93,5 +106,59 @@ describe("ActivityService", () => {
     expect(entries.map((entry) => entry.target)).toEqual(["Downloads", "Movies", "Library"]);
     expect(entries[1]?.counts).toEqual({ success: 3, failed: 1, skipped: 0 });
     expect(entries.map((entry) => entry.durationMs)).toEqual([null, 12_000, null]);
+  });
+
+  it("persistently clears every finished activity while preserving active tasks and later outcomes", async () => {
+    const statuses = [
+      "queued",
+      "discovering",
+      "running",
+      "paused",
+      "stopping",
+      "completed",
+      "failed",
+      "stopped",
+      "interrupted",
+    ] as const;
+    const tasks = statuses.map((status) => ({
+      id: status,
+      rootId: "root",
+      status,
+      updatedAt: "2026-10-08T10:00:00.000Z",
+      startedAt: null,
+      completedAt: null,
+      error: null,
+    }));
+    const runs = Array.from({ length: 15 }, (_, index) => scrapeRun(`run-${index}`, "2026-10-08T11:00:00.000Z"));
+    const maintenanceTask = { ...tasks[5], id: "completed", kind: "maintenance", durationMs: null };
+    const deps = {
+      persistence,
+      taskEvents,
+      libraries: { list: async () => [] as never },
+      scans: { list: async () => ({ tasks }) as never },
+      scrape: { history: async () => ({ runs, results: [] }) as never, liveRuns: async () => ({ runs: [] }) },
+      maintenance: {
+        automationTask: async () => maintenanceTask as never,
+      },
+    };
+    const service = new ActivityService(deps);
+    expect((await service.list(12)).entries).toHaveLength(12);
+    expect(await service.clearCompleted()).toEqual({ cleared: 20 });
+    const reloaded = new ActivityService(deps);
+    expect((await reloaded.list()).entries.map((entry) => entry.status)).toEqual(statuses.slice(0, 5));
+    expect(await reloaded.clearCompleted()).toEqual({ cleared: 0 });
+    expect(tasks).toHaveLength(9);
+    expect(runs).toHaveLength(15);
+    tasks[2] = { ...tasks[2], status: "completed", updatedAt: "2026-10-08T12:00:00.000Z" };
+    tasks[5] = { ...tasks[5], updatedAt: "2026-10-08T12:00:00.000Z" };
+    expect((await reloaded.list()).entries.map((entry) => entry.id)).toEqual([
+      "running",
+      "completed",
+      "queued",
+      "discovering",
+      "paused",
+      "stopping",
+    ]);
+    expect(await reloaded.clearCompleted()).toEqual({ cleared: 2 });
   });
 });

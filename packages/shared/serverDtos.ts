@@ -673,7 +673,17 @@ export const taskNotificationSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("invalidate"),
     resources: z.array(
-      z.enum(["ready", "scan", "scrape-live", "scrape-history", "maintenance", "pending", "library", "config"]),
+      z.enum([
+        "ready",
+        "scan",
+        "scrape-live",
+        "scrape-history",
+        "maintenance",
+        "pending",
+        "library",
+        "config",
+        "activity",
+      ]),
     ),
   }),
   z.object({ kind: z.literal("log"), log: logEntrySchema }),

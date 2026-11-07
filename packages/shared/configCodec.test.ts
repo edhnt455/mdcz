@@ -13,6 +13,18 @@ import { DEFAULT_FILENAME_KEYWORDS } from "./filenameKeywords";
 import { mediaLibraryConfigSchema } from "./mediaLibrary";
 
 describe("configuration codec", () => {
+  it("defaults automatic duplicate resolution to off and preserves both switch values", () => {
+    expect(configurationSchema.parse({}).scrape.autoResolveDuplicates).toBe(false);
+    for (const enabled of [true, false]) {
+      const configuration = configurationSchema.parse({ scrape: { autoResolveDuplicates: enabled } });
+      for (const format of ["toml", "json"] as const)
+        expect(
+          parseConfigurationContent(serializeConfiguration(configuration, format), format).scrape.autoResolveDuplicates,
+        ).toBe(enabled);
+    }
+    expect(configurationSchema.safeParse({ scrape: { autoResolveDuplicates: "true" } }).success).toBe(false);
+  });
+
   it("defaults, validates, and round-trips the untranslated Japanese character threshold", () => {
     const legacy = parseConfigurationContent('[paths]\noutputSummaryPath = "/old/summary"\n', "toml");
     expect(legacy.paths).not.toHaveProperty("outputSummaryPath");

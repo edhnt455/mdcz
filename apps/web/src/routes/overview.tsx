@@ -1,5 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { openNewWorkbenchTask } from "@mdcz/views/adapters/workbenchSession";
+import { confirmDialog } from "@mdcz/views/common";
 import { useT } from "@mdcz/views/i18n";
 import {
   ActivityTimelineCard,
@@ -8,7 +9,7 @@ import {
   OverviewMaintenanceCard,
   SiteHealthCard,
 } from "@mdcz/views/overview";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ export const hasWorkbenchOutput = (input: {
 
 export function OverviewPage() {
   const t = useT();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const maintenancePort = useMemo(() => createWebMaintenanceActionPort(), []);
   const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
@@ -45,6 +47,25 @@ export function OverviewPage() {
     refetchInterval: (query) => (hasActiveActivity(query.state.data?.entries ?? []) ? 3_000 : false),
     retry: false,
   });
+  const clearActivityM = useMutation({
+    mutationFn: () => api.activity.clearCompleted(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.activity.list });
+      toast.success(t.overview.activity.cleared);
+    },
+    onError: (error) => toast.error(toErrorMessage(error)),
+  });
+  const clearActivity = async () => {
+    if (
+      await confirmDialog({
+        title: t.overview.activity.clearCompleted,
+        description: t.overview.activity.clearDescription,
+        confirmLabel: t.common.clear,
+        destructive: true,
+      })
+    )
+      clearActivityM.mutate();
+  };
   const openWorkbench = async (mode: "scrape" | "maintenance") => {
     try {
       await openNewWorkbenchTask(mode, () => maintenancePort.discardSession());
@@ -90,9 +111,12 @@ export function OverviewPage() {
         />
 
         {overviewQ.error && <ErrorBanner>{toErrorMessage(overviewQ.error)}</ErrorBanner>}
+        {activityQ.error && <ErrorBanner>{toErrorMessage(activityQ.error)}</ErrorBanner>}
 
         <ActivityTimelineCard
           entries={activityQ.data?.entries ?? []}
+          onClearCompleted={() => void clearActivity()}
+          isClearing={clearActivityM.isPending}
           onOpenMaintenance={() => {
             void navigate({ to: buildHref("/workbench", { intent: "maintenance" }) });
           }}

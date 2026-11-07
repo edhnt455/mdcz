@@ -336,7 +336,18 @@ export const scrapeConflictResolutions = sqliteTable("scrape_conflict_resolution
   retryRunId: text("retry_run_id"),
 });
 
+export const clearedActivities = sqliteTable(
+  "cleared_activities",
+  {
+    kind: text("kind").notNull(),
+    id: text("id").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.kind, table.id] })],
+);
+
 export const schema = {
+  clearedActivities,
   scrapeConflictResolutions,
   strmCloudBindings,
   embyDeletionEvents,

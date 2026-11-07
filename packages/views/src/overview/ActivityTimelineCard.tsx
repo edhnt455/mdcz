@@ -1,7 +1,15 @@
 import { formatDuration } from "@mdcz/shared/format";
 import type { ActivityEntryDto } from "@mdcz/shared/serverDtos";
-import { cn } from "@mdcz/ui";
-import { CircleAlert, CircleCheck, CircleDashed, CircleStop, LoaderCircle, type LucideIcon } from "lucide-react";
+import { Button, cn } from "@mdcz/ui";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleStop,
+  LoaderCircle,
+  type LucideIcon,
+  Trash2,
+} from "lucide-react";
 import { useT } from "../i18n";
 
 const ACTIVE_STATUSES: ReadonlySet<ActivityEntryDto["status"]> = new Set([
@@ -27,16 +35,36 @@ export interface ActivityTimelineCardProps {
   entries: readonly ActivityEntryDto[];
   /** The maintenance row is the server's current session, so it opens the workbench that shows it. */
   onOpenMaintenance?: () => void;
+  onClearCompleted?: () => void;
+  isClearing?: boolean;
 }
 
 /** One list for scans, scrape runs and maintenance, so what the server did is readable in one place. */
-export function ActivityTimelineCard({ entries, onOpenMaintenance }: ActivityTimelineCardProps) {
+export function ActivityTimelineCard({
+  entries,
+  onOpenMaintenance,
+  onClearCompleted,
+  isClearing = false,
+}: ActivityTimelineCardProps) {
   const t = useT();
   if (entries.length === 0) return null;
 
   return (
     <section className="col-span-12">
-      <h2 className="mb-4 text-xl font-bold tracking-tight">{t.overview.activity.title}</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-bold tracking-tight">{t.overview.activity.title}</h2>
+        {onClearCompleted ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClearCompleted}
+            disabled={isClearing || entries.every((entry) => ACTIVE_STATUSES.has(entry.status))}
+          >
+            {isClearing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {t.overview.activity.clearCompleted}
+          </Button>
+        ) : null}
+      </div>
       <ol className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {entries.map((entry) => {
           const { icon: Icon, className } = statusIcon(entry.status);

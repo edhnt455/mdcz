@@ -12,6 +12,10 @@ export const overview = {
   },
   activity: {
     title: "Recent activity",
+    clearCompleted: "Clear finished activity",
+    clearDescription:
+      "Clear all finished entries from recent activity? Active tasks, task details and media files will be kept.",
+    cleared: "Finished activity cleared",
     kinds: { scan: "Scan", scrape: "Scrape", maintenance: "Maintenance" },
     statuses: {
       queued: "Queued",

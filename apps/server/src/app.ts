@@ -212,7 +212,9 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
           .error(`Failed to refresh libraries: ${error instanceof Error ? error.message : String(error)}`),
       );
   });
-  const activity = options.services?.activity ?? new ActivityService({ libraries, scans, scrape, maintenance });
+  const activity =
+    options.services?.activity ??
+    new ActivityService({ libraries, scans, scrape, maintenance, persistence, taskEvents });
   const automation: AutomationService =
     options.services?.automation ??
     new AutomationService({

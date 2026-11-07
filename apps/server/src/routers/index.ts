@@ -197,6 +197,7 @@ export const appRouter = t.router({
     }),
   }),
   activity: t.router({
+    clearCompleted: protectedProcedure.mutation(({ ctx }) => ctx.services.activity.clearCompleted()),
     list: protectedProcedure
       .input(activityListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.activity.list(input?.limit)),

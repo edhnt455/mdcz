@@ -14,6 +14,7 @@ import {
   PathsSection,
   PathsTopLevelSection,
   ProfileCapsule,
+  ScrapePacingSection,
   SectionAnchor,
   SettingsEditor,
   SettingsEditorAutosaveProvider,
@@ -31,6 +32,21 @@ import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 const noop = vi.fn();
+
+test("saves and disables automatic duplicate source deletion from settings", async () => {
+  const saveConfig = vi.fn(async () => undefined);
+  const screen = await render(
+    <FormHarness values={defaultConfiguration} services={createSettingsServices({ saveConfig })}>
+      <ScrapePacingSection />
+    </FormHarness>,
+  );
+  const toggle = screen.getByRole("switch", { name: "重复时自动保留较大源文件" });
+  await expect.element(toggle).not.toBeChecked();
+  await toggle.click();
+  await expect.poll(() => saveConfig.mock.calls).toContainEqual([{ scrape: { autoResolveDuplicates: true } }]);
+  await toggle.click();
+  await expect.poll(() => saveConfig.mock.calls).toContainEqual([{ scrape: { autoResolveDuplicates: false } }]);
+});
 
 test("edits actor aliases with validation and saves the complete mapping", async () => {
   const saveConfig = vi.fn(async () => undefined);

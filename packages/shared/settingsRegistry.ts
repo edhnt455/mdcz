@@ -64,6 +64,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "scrape.r18MetadataLanguage", anchor: "sites", visibility: "hidden" },
   { key: "scrape.filenameIgnoreTokens", anchor: "scrape" },
   { key: "scrape.aiNumberFallback", anchor: "scrape" },
+  { key: "scrape.autoResolveDuplicates", anchor: "scrape" },
   { key: "scrape.filenameBlacklistTokens", anchor: "scrape" },
   { key: "scrape.subtitleKeywords", anchor: "scrape" },
   { key: "scrape.umrKeywords", anchor: "scrape" },

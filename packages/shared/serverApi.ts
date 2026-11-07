@@ -183,6 +183,7 @@ export interface ServerApiContract {
   };
   activity: {
     list(input?: ActivityListInput): Promise<ActivityListResponse>;
+    clearCompleted(): Promise<{ cleared: number }>;
   };
   library: {
     removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<{ success: true }>;

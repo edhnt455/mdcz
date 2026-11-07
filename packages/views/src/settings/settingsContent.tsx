@@ -173,6 +173,7 @@ export function PathsSection() {
 export function ScrapePacingSection() {
   return (
     <>
+      <BoolField name="scrape.autoResolveDuplicates" />
       <NumberField name="scrape.threadNumber" min={1} max={128} />
       <NumberField name="scrape.javdbDelaySeconds" min={0} max={120} />
       <NumberField name="scrape.restAfterCount" min={1} max={500} />

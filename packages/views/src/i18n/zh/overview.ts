@@ -13,6 +13,9 @@ export const overview: Messages["overview"] = {
   },
   activity: {
     title: "最近活动",
+    clearCompleted: "清空已结束活动",
+    clearDescription: "确定清空最近活动中所有已结束的记录吗？运行中的任务、任务详情和媒体文件将保留。",
+    cleared: "已清空已结束活动",
     kinds: { scan: "扫描", scrape: "刮削", maintenance: "维护" },
     statuses: {
       queued: "排队中",

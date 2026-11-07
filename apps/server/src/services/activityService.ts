@@ -1,11 +1,17 @@
+import { ActivityRepository } from "@mdcz/persistence";
 import type { MediaLibraryService } from "@mdcz/runtime/library";
 import type { ActivityEntryDto, ActivityListResponse } from "@mdcz/shared/serverDtos";
+import type { TaskEventBus } from "../taskEvents";
 import type { MaintenanceService } from "./maintenanceService";
+import type { ServerPersistenceService } from "./persistenceService";
 import type { ScanQueueService } from "./scanQueueService";
 import type { ScrapeService } from "./scrapeService";
 
 const durationBetween = (startedAt: string | null, completedAt: string | null): number | null =>
   startedAt && completedAt ? Date.parse(completedAt) - Date.parse(startedAt) : null;
+
+const isFinished = (entry: ActivityEntryDto): boolean =>
+  ["completed", "failed", "stopped", "interrupted"].includes(entry.status);
 
 /**
  * What the server has been doing, newest first: scans, scrape runs and the current maintenance session.
@@ -18,6 +24,8 @@ export class ActivityService {
       scans: Pick<ScanQueueService, "list">;
       scrape: Pick<ScrapeService, "history" | "liveRuns">;
       maintenance: Pick<MaintenanceService, "automationTask">;
+      persistence: Pick<ServerPersistenceService, "getState">;
+      taskEvents: Pick<TaskEventBus, "invalidate">;
     },
   ) {}
 
@@ -87,6 +95,27 @@ export class ActivityService {
           ]
         : []),
     ];
-    return { entries: entries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, limit) };
+    const { database } = await this.deps.persistence.getState();
+    const cleared = new ActivityRepository(database).listCleared();
+    return {
+      entries: entries
+        .filter(
+          (entry) =>
+            !isFinished(entry) || cleared.get(`${entry.kind}:${entry.id}`) !== (entry.completedAt ?? entry.updatedAt),
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, limit),
+    };
+  }
+
+  async clearCompleted(): Promise<{ cleared: number }> {
+    const { entries } = await this.list(Number.POSITIVE_INFINITY);
+    const finished = entries.filter(isFinished);
+    const { database } = await this.deps.persistence.getState();
+    new ActivityRepository(database).clear(
+      finished.map((entry) => ({ ...entry, updatedAt: entry.completedAt ?? entry.updatedAt })),
+    );
+    this.deps.taskEvents.invalidate("activity");
+    return { cleared: finished.length };
   }
 }

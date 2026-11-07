@@ -213,6 +213,7 @@ export const api: ServerApiContract = {
   },
   activity: {
     list: (input) => trpcQuery("activity.list", input),
+    clearCompleted: () => trpcMutation("activity.clearCompleted"),
   },
   library: {
     removeFile: (input) => trpcMutation("library.removeFile", input),

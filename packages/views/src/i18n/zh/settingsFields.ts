@@ -46,6 +46,12 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["网站优先级", "站点优先级", "排序"],
     },
     "scrape.siteOrder": { label: "站点位置" },
+    "scrape.autoResolveDuplicates": {
+      label: "重复时自动保留较大源文件",
+      description:
+        "复制 STRM 媒体库遇到目标重复时，比较 115 源视频实际大小，保留较大的版本并联动删除较小的 115 原文件及对应 STRM。需先配置 MoviePilot 并保存、核验当前库的来源关联。大小相同或核验失败时仍提示手动选择；关闭后全部手动选择。",
+      aliases: ["重复", "115", "源文件", "大小", "自动删除"],
+    },
     "scrape.r18MetadataLanguage": { label: "R18.dev 元数据语言" },
     "scrape.aiNumberFallback": {
       label: "AI 番号识别兜底",
