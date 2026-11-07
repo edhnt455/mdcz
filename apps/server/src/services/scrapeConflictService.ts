@@ -4,6 +4,7 @@ import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
 import { EmbyDeletionRepository, ScrapeConflictRepository } from "@mdcz/persistence";
 import { type MediaLibraryService, mediaPathOwnership } from "@mdcz/runtime/library";
+import { parseFileInfo } from "@mdcz/runtime/scrape/utils/number";
 import { parseStrmTarget } from "@mdcz/runtime/scrape/utils/strm";
 import type { Configuration } from "@mdcz/shared/config";
 import type { EmbyDeletionConfig } from "@mdcz/shared/embyDeletion";
@@ -202,10 +203,14 @@ export class ScrapeConflictService {
     if (!(await this.deps.config.get()).scrape.autoResolveDuplicates) return null;
     const preview = await this.preview(input);
     if (preview.keep) return null;
-    if (!preview.sameResource && preview.existing.size === preview.incoming.size)
-      throw new Error("115 source sizes are equal; select a version manually");
-    if (!(await this.deps.config.get()).scrape.autoResolveDuplicates) return null;
-    const keep = preview.incoming.size > preview.existing.size ? "incoming" : "existing";
+    const configuration = await this.deps.config.get();
+    if (!configuration.scrape.autoResolveDuplicates) return null;
+    const [existingSubtitled, incomingSubtitled] = [preview.existing, preview.incoming].map(
+      (version) => parseFileInfo(path.posix.basename(version.name), [], {}, configuration.scrape).isSubtitled,
+    );
+    const preferIncoming =
+      existingSubtitled !== incomingSubtitled ? incomingSubtitled : preview.incoming.size > preview.existing.size;
+    const keep = !preview.sameResource && preferIncoming ? "incoming" : "existing";
     return this.resolve({ ...input, token: preview.token, keep }, true);
   }
 

@@ -6,6 +6,8 @@ export const deletions = {
   openWorkbench: "Open deletion workflow",
   back: "Scrape / maintenance",
   refresh: "Refresh tasks",
+  clearCompleted: "Clear finished records",
+  cleared: "Finished records cleared",
   empty: "No deletion tasks",
   emptyPending: "No unfinished deletion tasks",
   select: "Select a movie to inspect its deletion workflow",

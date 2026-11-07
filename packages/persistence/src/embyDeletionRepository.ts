@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
-import { and, asc, desc, eq, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { LibraryRepository } from "./libraryRepository";
 import {
@@ -114,6 +114,18 @@ export class EmbyDeletionRepository {
 
   jobs(): EmbyDeletionEventRow[] {
     return this.database.db.select().from(embyDeletionEvents).orderBy(desc(embyDeletionEvents.receivedAt)).all();
+  }
+
+  clearCompleted(processingId: string | null): number {
+    return this.database.db
+      .delete(embyDeletionEvents)
+      .where(
+        and(
+          inArray(embyDeletionEvents.status, ["completed", "ignored"]),
+          processingId ? ne(embyDeletionEvents.id, processingId) : undefined,
+        ),
+      )
+      .run().changes;
   }
 
   associationCounts(connectionId?: string) {

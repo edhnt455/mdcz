@@ -32,6 +32,13 @@ export class ScrapeConflictRepository {
       .all();
   }
 
+  clearCompleted(): number {
+    return this.database.db
+      .delete(scrapeConflictResolutions)
+      .where(eq(scrapeConflictResolutions.step, "completed"))
+      .run().changes;
+  }
+
   preview(input: typeof scrapeConflictResolutions.$inferInsert): void {
     const existing = this.get(input.itemId);
     if (existing?.keep) throw new Error("A duplicate resolution is already in progress");

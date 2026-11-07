@@ -7,6 +7,8 @@ export const deletions: Messages["deletions"] = {
   openWorkbench: "查看删除流程",
   back: "刮削 / 维护工作台",
   refresh: "刷新任务",
+  clearCompleted: "清除已结束记录",
+  cleared: "已清除已结束记录",
   empty: "暂无删除任务",
   emptyPending: "暂无未完成的删除任务",
   select: "选择影片，查看联动删除流程",

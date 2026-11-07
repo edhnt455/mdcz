@@ -212,44 +212,74 @@ describe("STRM duplicate resolution", () => {
     "unknown size",
     "rejected",
     "disabled during preview",
-  ])("automatically selects by verified source size (%s)", async (scenario) => {
-    const f = await fixture(scenario === "shared");
-    f.configuration.scrape.autoResolveDuplicates = scenario !== "off";
-    if (scenario === "existing") f.remote.files[0].size = 3 * 1024 ** 3;
-    if (scenario === "equal") f.remote.files[1].size = f.remote.files[0].size;
-    if (scenario === "unknown size") f.remote.files[1].size = null;
-    if (scenario === "rejected") f.remote.reject = true;
-    if (scenario === "disabled during preview") {
-      const preview = f.service.preview.bind(f.service);
-      vi.spyOn(f.service, "preview").mockImplementation(async (input) => {
-        const result = await preview(input);
-        f.configuration.scrape.autoResolveDuplicates = false;
-        return result;
-      });
-    }
-    const resolving = f.service.resolveAutomatically(input);
-    if (scenario === "equal" || scenario === "unknown size" || scenario === "rejected") {
-      await expect(resolving).rejects.toThrow(
-        scenario === "equal" ? "sizes are equal" : scenario === "unknown size" ? "size is unavailable" : "unsuccessful",
+  ])("automatically selects by subtitles, size and existing-version priority (%s)", async (scenario) => {
+    const filenames =
+      scenario === "incoming"
+        ? [
+            ["old.mp4", "new.mp4"],
+            ["old.mp4", "new-中文字幕.mp4"],
+            ["old-C-U.mp4", "new-chs.mp4"],
+            ["old-C.mp4", "new-CHS.mp4"],
+          ]
+        : scenario === "existing"
+          ? [
+              ["old.mp4", "new.mp4"],
+              ["old-c.mp4", "new.mp4"],
+              ["old-中文字幕.mp4", "new-C-U.mp4"],
+              ["old-CHS.mp4", "new-C.mp4"],
+              ["old-HANZI.mp4", "new.mp4"],
+            ]
+          : scenario === "equal"
+            ? [
+                ["old.mp4", "new.mp4"],
+                ["old-C.mp4", "new-中文字幕.mp4"],
+              ]
+            : [["old.mp4", "new.mp4"]];
+    for (const [existingName, incomingName] of filenames) {
+      const f = await fixture(scenario === "shared");
+      f.configuration.scrape.autoResolveDuplicates = scenario !== "off";
+      if (existingName.includes("HANZI")) f.configuration.scrape.subtitleKeywords = ["HANZI"];
+      f.remote.files[0].name = existingName;
+      f.remote.files[1].name = incomingName;
+      if (scenario === "existing" && (existingName === "old.mp4" || existingName === "old-CHS.mp4"))
+        f.remote.files[0].size = 3 * 1024 ** 3;
+      if (scenario === "incoming" && existingName === "old.mp4" && incomingName.includes("中文字幕"))
+        f.remote.files[1].size = 512 * 1024 ** 2;
+      if (scenario === "equal") f.remote.files[1].size = f.remote.files[0].size;
+      if (scenario === "unknown size") f.remote.files[1].size = null;
+      if (scenario === "rejected") f.remote.reject = true;
+      if (scenario === "disabled during preview") {
+        const preview = f.service.preview.bind(f.service);
+        vi.spyOn(f.service, "preview").mockImplementation(async (input) => {
+          const result = await preview(input);
+          f.configuration.scrape.autoResolveDuplicates = false;
+          return result;
+        });
+      }
+      const resolving = f.service.resolveAutomatically(input);
+      if (scenario === "unknown size" || scenario === "rejected") {
+        await expect(resolving).rejects.toThrow(scenario === "unknown size" ? "size is unavailable" : "unsuccessful");
+      } else {
+        expect(await resolving).toEqual(
+          scenario === "off" || scenario === "disabled during preview"
+            ? null
+            : { runId: scenario === "incoming" ? "retry" : null },
+        );
+      }
+      expect(f.remote.deletions).toEqual(
+        scenario === "incoming" ? ["old"] : scenario === "existing" || scenario === "equal" ? ["new"] : [],
       );
-    } else {
-      expect(await resolving).toEqual(
-        scenario === "off" || scenario === "disabled during preview"
-          ? null
-          : { runId: scenario === "incoming" ? "retry" : null },
-      );
-    }
-    expect(f.remote.deletions).toEqual(scenario === "incoming" ? ["old"] : scenario === "existing" ? ["new"] : []);
-    expect(f.retry).toHaveBeenCalledTimes(scenario === "incoming" ? 1 : 0);
-    if (scenario === "incoming" || scenario === "existing" || scenario === "shared") {
-      const deleted = scenario === "incoming" ? f.existingNormal : f.incomingNormal;
-      await expect(lstat(deleted)).rejects.toMatchObject({ code: "ENOENT" });
-      expect(f.jobs.get(input.itemId)?.step).toBe("completed");
-    } else {
-      for (const file of [f.existingNormal, f.incomingNormal, f.linkPath])
-        expect((await lstat(file)).isFile()).toBe(true);
-      if (scenario === "off") expect(f.jobs.get(input.itemId)).toBeUndefined();
-      if (scenario === "rejected") expect(f.jobs.get(input.itemId)?.error).toContain("unsuccessful");
+      expect(f.retry).toHaveBeenCalledTimes(scenario === "incoming" ? 1 : 0);
+      if (scenario === "incoming" || scenario === "existing" || scenario === "equal" || scenario === "shared") {
+        const deleted = scenario === "incoming" ? f.existingNormal : f.incomingNormal;
+        await expect(lstat(deleted)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(f.jobs.get(input.itemId)?.step).toBe("completed");
+      } else {
+        for (const file of [f.existingNormal, f.incomingNormal, f.linkPath])
+          expect((await lstat(file)).isFile()).toBe(true);
+        if (scenario === "off") expect(f.jobs.get(input.itemId)).toBeUndefined();
+        if (scenario === "rejected") expect(f.jobs.get(input.itemId)?.error).toContain("unsuccessful");
+      }
     }
   });
 

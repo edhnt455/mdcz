@@ -116,6 +116,7 @@ import type { NamingPreviewItem } from "./types";
 export interface ServerApiContract {
   deletions: {
     list(): Promise<DeletionJobList>;
+    clearCompleted(): Promise<{ cleared: number }>;
     detail(input: DeletionJobInput): Promise<DeletionJob>;
     retry(input: DeletionJobInput): Promise<DeletionRetryResponse>;
   };

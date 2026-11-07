@@ -395,7 +395,7 @@ export class LibraryRepository {
         )
         .get(JSON.stringify(identities), JSON.stringify(identities), JSON.stringify(resources))
     )
-      throw new Error("Publication is suppressed by an Emby STRM deletion");
+      throw new Error("影片已被删除过，不再入库");
   }
 
   inventoryOwnership(refs?: readonly { rootId: string; relativePath: string; entryIdentity?: string }[]) {

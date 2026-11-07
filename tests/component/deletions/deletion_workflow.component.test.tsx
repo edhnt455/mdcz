@@ -63,6 +63,7 @@ test("workbench isolates movie errors, shows persisted steps and retries only th
         onSelect={(id) => setSelected(jobs.find((item) => item.id === id) ?? jobs[0])}
         onRetry={onRetry}
         onRefresh={vi.fn()}
+        onClearCompleted={vi.fn()}
         onOpenScrape={vi.fn()}
       />
     );
@@ -89,10 +90,38 @@ test("workbench isolates movie errors, shows persisted steps and retries only th
       onSelect={vi.fn()}
       onRetry={onRetry}
       onRefresh={vi.fn()}
+      onClearCompleted={vi.fn()}
       onOpenScrape={vi.fn()}
     />,
   );
   await expect.element(screen.getByText("媒体库文件", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("删除 115 源视频", { exact: true })).not.toBeInTheDocument();
   await expect.element(screen.getByText("清理影片记录", { exact: true })).toBeVisible();
+});
+
+test("workbench clears finished records regardless of the filter and disables clearing while busy or empty", async () => {
+  const onClearCompleted = vi.fn();
+  const props = {
+    jobs: [job(), completed, job({ id: "emby/ignored", status: "ignored", name: "Observed" })],
+    selected: null,
+    onSelect: vi.fn(),
+    onRetry: vi.fn(),
+    onRefresh: vi.fn(),
+    onOpenScrape: vi.fn(),
+    onClearCompleted,
+  };
+  const screen = await render(<DeletionWorkbenchView {...props} />);
+  const clear = screen.getByRole("button", { name: "清除已结束记录" });
+  await expect.element(clear).toBeEnabled();
+  await screen.getByRole("button", { name: "未完成", exact: true }).click();
+  await clear.click();
+  expect(onClearCompleted).toHaveBeenCalledOnce();
+  await screen.rerender(<DeletionWorkbenchView {...props} clearing />);
+  await expect.element(clear).toBeDisabled();
+  await screen.rerender(<DeletionWorkbenchView {...props} jobs={[job()]} />);
+  await expect.element(clear).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: /DPMI-080/ })).toBeVisible();
+  await screen.rerender(<DeletionWorkbenchView {...props} jobs={[]} />);
+  await expect.element(clear).toBeDisabled();
+  await expect.element(screen.getByText("暂无删除任务")).toBeVisible();
 });

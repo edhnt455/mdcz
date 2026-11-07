@@ -54,7 +54,7 @@ export const writeLibraryRows = (
             : null,
         )
     )
-      throw new Error("Publication is suppressed by an Emby STRM deletion");
+      throw new Error("影片已被删除过，不再入库");
     if (targetPaths.has(pathKey)) throw new Error(`Duplicate library entry: ${pathKey}`);
     targetPaths.add(pathKey);
   }

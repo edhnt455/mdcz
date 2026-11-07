@@ -605,7 +605,7 @@ describe("copy STRM deep deletion", () => {
     const snapshot = readStrmBinding(f.repository(), "movie-0");
     expect(() =>
       repository.assertNotSuppressed(["/different/source.strm"], [snapshot?.source.resourceIdentity ?? ""]),
-    ).toThrow("suppressed");
+    ).toThrow("影片已被删除过，不再入库");
     expect(() =>
       repository.writeEntry({ id: "reimport" }, [
         {
@@ -616,7 +616,7 @@ describe("copy STRM deep deletion", () => {
           strmSourceJson: JSON.stringify({ resourceIdentity: snapshot?.source.resourceIdentity }),
         },
       ]),
-    ).toThrow("suppressed");
+    ).toThrow("影片已被删除过，不再入库");
     expect(f.count("library_item_files")).toBe(1);
     await expect(readFile(unrelated)).rejects.toMatchObject({ code: "ENOENT" });
     expect(f.repository().event(accepted.id)?.status).toBe("completed");

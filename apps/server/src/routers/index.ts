@@ -203,6 +203,7 @@ export const appRouter = t.router({
       .query(async ({ ctx, input }) => await ctx.services.activity.list(input?.limit)),
   }),
   deletions: t.router({
+    clearCompleted: protectedProcedure.mutation(({ ctx }) => ctx.services.deletions.clearCompleted()),
     list: protectedProcedure.query(({ ctx }) => ctx.services.deletions.list()),
     detail: protectedProcedure
       .input(deletionJobInputSchema)

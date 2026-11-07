@@ -40,7 +40,7 @@ test("saves and disables automatic duplicate source deletion from settings", asy
       <ScrapePacingSection />
     </FormHarness>,
   );
-  const toggle = screen.getByRole("switch", { name: "重复时自动保留较大源文件" });
+  const toggle = screen.getByRole("switch", { name: "自动处理重复版本" });
   await expect.element(toggle).not.toBeChecked();
   await toggle.click();
   await expect.poll(() => saveConfig.mock.calls).toContainEqual([{ scrape: { autoResolveDuplicates: true } }]);

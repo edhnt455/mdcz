@@ -77,10 +77,12 @@ export function DeletionWorkbenchView({
   loading,
   error,
   retrying,
+  clearing,
   actionError,
   onSelect,
   onRetry,
   onRefresh,
+  onClearCompleted,
   onOpenScrape,
 }: {
   jobs: DeletionJob[];
@@ -88,10 +90,12 @@ export function DeletionWorkbenchView({
   loading?: boolean;
   error?: string | null;
   retrying?: boolean;
+  clearing?: boolean;
   actionError?: string | null;
   onSelect: (id: string) => void;
   onRetry: (id: string) => void;
   onRefresh: () => void;
+  onClearCompleted: () => void;
   onOpenScrape: (id: string) => void;
 }) {
   const t = useT();
@@ -115,9 +119,20 @@ export function DeletionWorkbenchView({
           <h1 className="text-lg font-bold">{text.title}</h1>
           <p className="text-xs text-muted-foreground">{text.description}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={onRefresh}>
-          {text.refresh}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClearCompleted}
+            disabled={loading || clearing || !jobs.some((job) => !isOpenDeletionJob(job))}
+          >
+            {clearing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {text.clearCompleted}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onRefresh}>
+            {text.refresh}
+          </Button>
+        </div>
       </header>
       {error ? (
         <p role="alert" className="p-4 text-sm text-destructive">

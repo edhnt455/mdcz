@@ -40,11 +40,14 @@ it.each([
       storage: "u115",
       type: "file" as const,
       path: `/AV/${version}-${number}.mp4`,
-      name: `${version}-${number}.mp4`,
+      name:
+        (scenario === "incoming" && version === "new") || (scenario === "existing" && version === "old")
+          ? `${version}-${number}-中文字幕.mp4`
+          : `${version}-${number}.mp4`,
       fileid: `${version}-${number}`,
       pickcode: `${version}-${number}`,
       parent_fileid: "root",
-      size: version === (scenario === "existing" ? "old" : "new") && scenario !== "equal" ? 2 * 1024 ** 3 : 1024 ** 3,
+      size: version === (scenario === "incoming" ? "old" : "new") && scenario !== "equal" ? 2 * 1024 ** 3 : 1024 ** 3,
     })),
   );
   vi.spyOn(MoviePilotClient.prototype, "test").mockResolvedValue({ storage: "u115" });
@@ -100,9 +103,7 @@ it.each([
   await waitForScrapeRunStatus(fastify, token, duplicate.task.id, "failed");
   await vi.waitFor(() => expect(automatic).toHaveBeenCalledTimes(2), { timeout: 10000 });
   const results = await Promise.allSettled(automatic.mock.results.map((result) => result.value));
-  expect(results.map((result) => result.status)).toEqual(
-    scenario === "equal" ? ["rejected", "rejected"] : ["fulfilled", "fulfilled"],
-  );
+  expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
   if (scenario === "incoming") {
     for (const result of results)
       if (result.status === "fulfilled" && result.value?.runId)
@@ -110,19 +111,17 @@ it.each([
   }
   const keep = scenario === "incoming" ? "new" : "old";
   expect(deleted.sort()).toEqual(
-    scenario === "incoming" || scenario === "existing"
-      ? numbers.map((number) => `${keep === "new" ? "old" : "new"}-${number}`).sort()
-      : [],
+    scenario !== "off" ? numbers.map((number) => `${keep === "new" ? "old" : "new"}-${number}`).sort() : [],
   );
   for (const number of numbers) {
     expect(await readFile(join(output, number, `${number}.strm`), "utf8")).toBe(content(keep, number));
     expect(await readFile(join(source, keep, `${number}.strm`), "utf8")).toBe(content(keep, number));
-    if (scenario === "incoming" || scenario === "existing")
+    if (scenario !== "off")
       await expect(stat(join(source, keep === "new" ? "old" : "new", `${number}.strm`))).rejects.toMatchObject({
         code: "ENOENT",
       });
     else expect((await stat(join(source, "new", `${number}.strm`))).isFile()).toBe(true);
   }
   const pending = await state.repositories.pending.list();
-  expect(pending).toHaveLength(scenario === "off" || scenario === "equal" ? 2 : 0);
+  expect(pending).toHaveLength(scenario === "off" ? 2 : 0);
 });

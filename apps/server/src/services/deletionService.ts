@@ -154,6 +154,15 @@ export class DeletionService {
     return job;
   }
 
+  async clearCompleted(): Promise<{ cleared: number }> {
+    const { database } = await this.deps.persistence.getState();
+    return database.sqlite.transaction(() => ({
+      cleared:
+        new EmbyDeletionRepository(database).clearCompleted(this.deps.emby.processingId) +
+        new ScrapeConflictRepository(database).clearCompleted(),
+    }))();
+  }
+
   async retry(id: string): Promise<DeletionRetryResponse> {
     const job = await this.detail(id);
     if (!job.canRetry) throw new Error("This deletion job cannot be retried in its current state");

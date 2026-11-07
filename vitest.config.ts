@@ -102,6 +102,11 @@ export default defineConfig({
       {
         extends: true,
         optimizeDeps: {
+          entries: [
+            "tests/component/**/*.component.test.tsx",
+            "apps/**/*.component.test.tsx",
+            "packages/**/*.component.test.tsx",
+          ],
           include: ["react/jsx-dev-runtime", "vitest-browser-react"],
         },
         test: {

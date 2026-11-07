@@ -66,9 +66,7 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
           {text.completed}
         </p>
       ) : (
-        <Button variant="outline" onClick={() => void load()}>
-          {text.open}
-        </Button>
+        <Button onClick={() => void load()}>{text.open}</Button>
       )}
       {completed || preview?.keep ? (
         <a
