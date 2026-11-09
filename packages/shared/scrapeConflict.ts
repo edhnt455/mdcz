@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod";
 
 export const scrapeConflictSetupErrors = {
   moviePilotRequired: "scrape_conflict_moviepilot_required",

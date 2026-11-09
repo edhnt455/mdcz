@@ -19,5 +19,5 @@ export const shell: Messages["shell"] = {
   collapseSidebar: "收起侧栏",
   openMenu: "打开导航",
   closeMenu: "关闭导航",
-  switchLanguage: "Switch to English",
+  switchLanguage: "切换为英语",
 };

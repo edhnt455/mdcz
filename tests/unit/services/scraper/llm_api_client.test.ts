@@ -260,7 +260,7 @@ describe("LlmApiClient", () => {
           status: 200,
           headers,
           data,
-          message: expect.stringContaining("LLM response did not contain text"),
+          message: expect.stringContaining("响应不包含文本"),
         });
         expect(postJsonDetailed).toHaveBeenCalledTimes(1);
       }

@@ -66,7 +66,7 @@ export class TemporaryPaths {
         publicationJournal.forget(temporaryPath);
       } catch (error) {
         // The record stays, so the next start removes it.
-        warn(`Failed to remove publication temporary file ${temporaryPath}: ${toErrorMessage(error)}`);
+        warn(`移除发布临时文件 ${temporaryPath} 失败：${toErrorMessage(error)}`);
       }
     }
     this.#paths.clear();

@@ -189,13 +189,13 @@ describe("TranslateService term consistency", () => {
   it("retries typed transient failures until recovery or llmMaxRetries is exhausted", async () => {
     for (const [reason, error] of [
       [
-        "transport error",
+        "传输错误",
         new LlmTransportError(
-          "LLM request failed for https://api.deepseek.com/responses: Error reading response stream: kind: Body",
+          "大模型请求 https://api.deepseek.com/responses 失败：Error reading response stream: kind: Body",
           new Error("body timed out"),
         ),
       ],
-      ["empty response", new LlmEmptyResponseError("LLM response did not contain text", 200, new Headers(), {})],
+      ["空响应", new LlmEmptyResponseError("响应不包含文本", 200, new Headers(), {})],
     ] as const) {
       for (const recover of [true, false]) {
         sleepMock.mockClear();
@@ -213,15 +213,15 @@ describe("TranslateService term consistency", () => {
 
         expect(generateText).toHaveBeenCalledTimes(recover ? 2 : 4);
         expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual(recover ? [1000] : [1000, 2000, 4000]);
-        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(`${reason} (1/3)`));
+        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(`${reason}而重试（1/3）`));
       }
     }
   });
 
   it.each([
-    [null, "engine returned no translation"],
-    [" English plot\r\n", "source echoed"],
-    [" ", "engine returned no translation"],
+    [null, "引擎未返回译文"],
+    [" English plot\r\n", "返回了原文"],
+    [" ", "引擎未返回译文"],
   ])("logs field fallback without response content (%s)", async (plot, reason) => {
     const generateText =
       plot === null
@@ -255,11 +255,9 @@ describe("TranslateService term consistency", () => {
       expect(generateText).toHaveBeenCalledTimes(1);
     }
     if (plot === null || !plot.trim()) {
-      expect(result.error).toContain(plot === null ? "provider failed" : "invalid structured output");
+      expect(result.error).toContain(plot === null ? "provider failed" : "结构化输出无效");
     } else {
-      expect(logger.warn).toHaveBeenCalledWith(
-        `Translation engine failed for plot (HMN-869), returning original text: ${reason}`,
-      );
+      expect(logger.warn).toHaveBeenCalledWith(`翻译引擎未能翻译 plot（HMN-869），将返回原文：${reason}`);
     }
     expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain("English plot");
   });
@@ -419,9 +417,9 @@ describe("TranslateService term consistency", () => {
       [TranslateEngine.GOOGLE, "network", "Google unavailable"],
       [TranslateEngine.OPENAI, "network", "LLM unavailable"],
       [TranslateEngine.DEEPL, "quota", "HTTP 456: quota exhausted"],
-      [TranslateEngine.DEEPL, "count", "DeepL translation result count mismatch"],
-      [TranslateEngine.BAIDU, "rate", "Baidu translate error 54003: Rate limited"],
-      [TranslateEngine.BAIDU, "count", "Baidu translation result count mismatch"],
+      [TranslateEngine.DEEPL, "count", "DeepL 翻译结果数量不匹配"],
+      [TranslateEngine.BAIDU, "rate", "百度翻译错误 54003：Rate limited"],
+      [TranslateEngine.BAIDU, "count", "百度翻译结果数量不匹配"],
     ] as const) {
       const network = new NetworkClient({});
       vi.spyOn(network, "getJson").mockRejectedValue(new Error(message));

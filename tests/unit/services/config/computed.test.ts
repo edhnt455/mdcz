@@ -73,9 +73,9 @@ describe("buildComputedConfiguration", () => {
     const valid = { assetNamingMode: "followVideo", nfoNaming: "filename", downloadSceneImages: false };
     for (const [override, message] of [
       [{}, undefined],
-      [{ assetNamingMode: "fixed" }, "asset naming"],
-      [{ nfoNaming: "movie" }, "NFO naming"],
-      [{ downloadSceneImages: true }, "scene images"],
+      [{ assetNamingMode: "fixed" }, "资源命名"],
+      [{ nfoNaming: "movie" }, "NFO 命名"],
+      [{ downloadSceneImages: true }, "剧照"],
     ] as const) {
       const { assetNamingMode, ...download } = { ...valid, ...override };
       const configuration = configurationSchema.parse({ naming: { assetNamingMode }, download });

@@ -6,7 +6,7 @@ import { acquireDatabaseLease } from "./databaseFiles";
 import { resolveServerRuntimePaths } from "./services/configService";
 
 const usage =
-  "Usage: node server.js doctor | database backup <file> | database verify <file> | database restore <file> --confirm | database rebuild <file> --confirm";
+  "用法：node server.js doctor | database backup <file> | database verify <file> | database restore <file> --confirm | database rebuild <file> --confirm";
 
 export const runMaintenanceCli = async (args: string[]): Promise<void> => {
   const paths = resolveServerRuntimePaths();
@@ -53,7 +53,7 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
     const target = new Database(filePath, { readonly: true, fileMustExist: true });
     try {
       if (!target.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'").get()) {
-        throw new Error(`Not an MDCz database: ${filePath}`);
+        throw new Error(`不是 MDCz 数据库：${filePath}`);
       }
     } finally {
       target.close();
@@ -61,9 +61,7 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
     const lease = acquireDatabaseLease(filePath);
     try {
       const backupPath = moveDatabaseAside(await realpath(filePath));
-      console.log(
-        `Database moved to ${backupPath}. A new database is created on the next start; configuration and profiles were kept.`,
-      );
+      console.log(`数据库已移动到 ${backupPath}。下次启动时将创建新数据库，配置及档案已保留。`);
     } finally {
       lease.close();
     }
@@ -78,9 +76,7 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
       database = new Database(paths.databasePath, { readonly: true, fileMustExist: true });
       await database.backup(filePath);
       await chmod(filePath, 0o600);
-      console.log(
-        `Database backup created: ${filePath}. Back up ${paths.configDir} separately to preserve authentication and profiles.`,
-      );
+      console.log(`数据库备份已创建：${filePath}。请另行备份 ${paths.configDir} 以保留身份验证及档案。`);
     } catch (error) {
       await rm(filePath, { force: true });
       throw error;
@@ -93,15 +89,15 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
   try {
     const integrity = source.prepare("PRAGMA integrity_check").pluck().all();
     if (integrity.length !== 1 || integrity[0] !== "ok" || source.prepare("PRAGMA foreign_key_check").all().length) {
-      throw new Error(`Backup integrity check failed: ${filePath}`);
+      throw new Error(`备份完整性检查失败：${filePath}`);
     }
     for (const table of ["__drizzle_migrations", "media_roots", "scan_tasks", "scrape_runs"]) {
       if (!source.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) {
-        throw new Error(`Not an MDCz database: missing ${table}`);
+        throw new Error(`不是 MDCz 数据库：缺少 ${table}`);
       }
     }
     if (action === "verify") {
-      console.log(`Backup verified: ${filePath}`);
+      console.log(`备份核验通过：${filePath}`);
       return;
     }
 
@@ -113,7 +109,7 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
         (await realpath(filePath)) === destination ||
         (sourceStats.ino !== 0 && sourceStats.ino === destinationStats.ino && sourceStats.dev === destinationStats.dev)
       ) {
-        throw new Error("Restore source must differ from the active database");
+        throw new Error("恢复来源不能与当前数据库相同");
       }
       if (destinationStats.size > 0) {
         const previous = new Database(destination, { readonly: true, fileMustExist: true });
@@ -122,14 +118,14 @@ export const runMaintenanceCli = async (args: string[]): Promise<void> => {
           const reservation = await open(recoveryPath, "wx", 0o600);
           await reservation.close();
           await previous.backup(recoveryPath);
-          console.log(`Pre-restore database saved: ${recoveryPath}`);
+          console.log(`恢复前的数据库已保存：${recoveryPath}`);
         } finally {
           previous.close();
         }
       }
       await source.backup(destination);
       await chmod(destination, 0o600);
-      console.log(`Database restored: ${destination}. Authentication and TOML profiles were not replaced.`);
+      console.log(`数据库已恢复：${destination}。身份验证及 TOML 档案未被替换。`);
     } finally {
       lease.close();
     }

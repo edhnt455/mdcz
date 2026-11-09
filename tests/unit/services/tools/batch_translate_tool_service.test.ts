@@ -499,20 +499,20 @@ describe("BatchNfoTranslator", () => {
       return { ...entry, crawlerData: parseNfoSnapshot(await readFile(entry.nfoPath, "utf8")).crawlerData };
     });
     const failureResponses = {
-      empty: { data: emptyResponse.data, error: "LLM response did not contain text" },
-      invalid: { data: { output_text: '{"translations":["缺少简介"]}' }, error: "batch translation count" },
+      empty: { data: emptyResponse.data, error: "响应不包含文本" },
+      invalid: { data: { output_text: '{"translations":["缺少简介"]}' }, error: "批量翻译数量" },
       unauthorized: { data: { error: { message: "invalid API key" } }, error: "HTTP 401" },
       refusal: { data: { output_text: "抱歉，我无法翻译或处理" }, error: "is not valid JSON" },
       echo: {
         data: { output_text: '{"translations":["Same English Title","Plot 1"]}' },
-        error: "provider returned source text",
+        error: "翻译服务返回了原文",
       },
       truncated: { data: { output_text: '[N] {"translations":["标题"' }, error: "JSON" },
       multiple: {
         data: { output_text: '[N] {"translations":["标题","简介"]}\n{"translations":["另一标题","另一简介"]}' },
         error: "JSON",
       },
-      array: { data: { output_text: '[{"translations":["标题","简介"]}]' }, error: "expected object" },
+      array: { data: { output_text: '[{"translations":["标题","简介"]}]' }, error: "期望 object" },
       extraFields: { data: { output_text: '[N] {"translations":["标题","简介"],"extra":true}' }, error: "extra" },
     };
     for (const [index, [failure, response]] of Object.entries(failureResponses).entries()) {

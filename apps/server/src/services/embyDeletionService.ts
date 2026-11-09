@@ -104,17 +104,16 @@ export class EmbyDeletionService {
       )
         return await this.status();
     }
-    if (parsed.mode !== "off" && !previous.secretHash)
-      throw new Error("Generate the Emby webhook address before enabling deletion sync");
+    if (parsed.mode !== "off" && !previous.secretHash) throw new Error("请先生成 Emby Webhook 地址，再开启删除同步");
     const libraries = await this.deps.libraries.list();
     const bindings: EmbyDeletionLibraryBinding[] = [];
     for (const id of new Set(parsed.libraryIds)) {
       const library = libraries.find(
         (library) => library.id === id && (library.placement === "move" || library.placement === "copy"),
       );
-      if (!library) throw new Error(`Move or copy library not found: ${id}`);
+      if (!library) throw new Error(`未找到移动或复制类型的媒体库：${id}`);
       if (library.placement === "copy" && !previous.moviePilot)
-        throw new Error("Configure MoviePilot before selecting a copy STRM library");
+        throw new Error("选择复制 STRM 媒体库前，请先配置 MoviePilot");
       const outputPath = filesystemPathKey(library.outputPath);
       const resolved = filesystemPathKey(await realpath(outputPath));
       const markerPath = path.join(outputPath, MARKER_NAME);
@@ -124,15 +123,14 @@ export class EmbyDeletionService {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         if (previous.libraries.some((binding) => binding.id === id && binding.outputPath === outputPath))
-          throw new Error(`Library identity marker is missing: ${outputPath}`);
+          throw new Error(`缺少媒体库身份标记：${outputPath}`);
         marker = `mdcz:${randomUUID()}`;
         await writeFile(markerPath, marker, { encoding: "utf8", flag: "wx", mode: 0o600 });
       }
-      if (!/^mdcz:[\da-f-]{36}$/u.test(marker))
-        throw new Error(`Library identity marker does not match: ${outputPath}`);
+      if (!/^mdcz:[\da-f-]{36}$/u.test(marker)) throw new Error(`媒体库身份标记不匹配：${outputPath}`);
       const old = previous.libraries.find((binding) => binding.id === id && binding.outputPath === outputPath);
       if (old && (old.realPath !== resolved || old.marker !== marker))
-        throw new Error(`Library mount identity changed: ${outputPath}`);
+        throw new Error(`媒体库挂载身份已变化：${outputPath}`);
       const binding: EmbyDeletionLibraryBinding = { id, outputPath, realPath: resolved, marker };
       if (library.placement === "copy") {
         const sourcePath = filesystemPathKey(library.sourcePath);
@@ -143,7 +141,7 @@ export class EmbyDeletionService {
           sourceMarker = await readFile(sourceMarkerPath, "utf8");
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          if (old?.source) throw new Error("STRM source identity marker is missing");
+          if (old?.source) throw new Error("缺少 STRM 来源身份标记");
           sourceMarker = `mdcz:${randomUUID()}`;
           await writeFile(sourceMarkerPath, sourceMarker, { encoding: "utf8", flag: "wx", mode: 0o600 });
         }
@@ -154,7 +152,7 @@ export class EmbyDeletionService {
               old.source.realPath !== sourceRealPath ||
               old.source.marker !== sourceMarker))
         )
-          throw new Error("STRM source mount identity changed");
+          throw new Error("STRM 来源挂载身份已变化");
         binding.source = { path: sourcePath, realPath: sourceRealPath, marker: sourceMarker };
       }
       bindings.push(binding);
@@ -167,7 +165,7 @@ export class EmbyDeletionService {
   async configureMoviePilot(input: MoviePilotSettings): Promise<EmbyDeletionStatus> {
     const repository = await this.repository();
     const current = await this.load();
-    if (repository.hasCloudWork()) throw new Error("Resolve unfinished STRM deletions before changing MoviePilot");
+    if (repository.hasCloudWork()) throw new Error("请先处理未完成的 STRM 删除任务，再更改 MoviePilot");
     const moviePilot = await this.strm.configure(current.moviePilot, input);
     await this.commit({ ...this.stored, moviePilot });
     repository.clearUnblockedBindings();
@@ -180,31 +178,30 @@ export class EmbyDeletionService {
   }
 
   async bindSources(): Promise<{ verified: number; unverified: number }> {
-    if (this.deps.maintenance.isBusy) throw new Error("Wait for maintenance tasks before binding STRM sources");
+    if (this.deps.maintenance.isBusy) throw new Error("请等待维护任务结束后再绑定 STRM 来源");
     await this.load();
     return await this.strm.bind(await this.repository());
   }
 
   async retry(id: string): Promise<{ success: true }> {
-    if (this.processingId === id) throw new Error("Deletion job is already running");
+    if (this.processingId === id) throw new Error("删除任务正在运行");
     const repository = await this.repository();
     const event = repository.event(id);
     if (event?.eventType === "deep.delete" && (!event.snapshotJson || event.result === "cloud_binding_unverified")) {
       await this.load();
-      if (!event.fileId || this.deps.maintenance.isBusy)
-        throw new Error("Wait for media tasks before verifying this deletion source");
+      if (!event.fileId || this.deps.maintenance.isBusy) throw new Error("请等待媒体任务结束后再核验此删除来源");
       const file = event.path ? repository.findFile(event.path) : undefined;
       if (!file || file.id !== event.fileId || file.updatedAt.getTime() !== event.fileUpdatedAt)
-        throw new Error("This movie's file record changed; review its deletion request");
+        throw new Error("此影片的文件记录已变化，请检查删除请求");
       if (
         event.eventAt === null ||
         event.eventAt > this.now() + 60_000 ||
         event.eventAt < file.updatedAt.getTime() - 60_000
       )
-        throw new Error("This movie's deletion notification date cannot be verified");
+        throw new Error("无法核验此影片的删除通知日期");
       const result = await this.strm.bind(repository, file.id);
       const binding = readStrmBinding(repository, file.id);
-      if (!result.verified || !binding) throw new Error("This movie's Normal source could not be verified");
+      if (!result.verified || !binding) throw new Error("无法核验此影片的 Normal 来源");
       repository.update(id, { snapshotJson: JSON.stringify(binding) });
     }
     repository.retry(id);
@@ -223,7 +220,7 @@ export class EmbyDeletionService {
     const expected = (await this.load()).secretHash;
     const actual = hash(token);
     if (!expected || expected.length !== actual.length || !timingSafeEqual(Buffer.from(actual), Buffer.from(expected)))
-      throw new AuthenticationError("Invalid Emby webhook credential");
+      throw new AuthenticationError("Emby Webhook 凭证无效");
   }
 
   private logEvent(event: EmbyDeletionEventRow): void {
@@ -245,7 +242,7 @@ export class EmbyDeletionService {
           }
         : {}),
     };
-    const message = `Emby deletion: ${JSON.stringify(details)}`;
+    const message = `Emby 删除：${JSON.stringify(details)}`;
     if (event.status === "needs_review") this.deps.logger.warn(message);
     else this.deps.logger.info(message);
   }
@@ -337,7 +334,7 @@ export class EmbyDeletionService {
   async reconcile(): Promise<{ queued: number }> {
     const repository = await this.repository();
     const settings = await this.load();
-    if (settings.mode === "off") throw new Error("Enable observation or deletion sync first");
+    if (settings.mode === "off") throw new Error("请先启用观察模式或删除同步");
     const eventDate = new Date(this.now()).toISOString();
     let queued = 0;
     for (const { file, path: filePath } of repository.knownFiles(
@@ -358,7 +355,7 @@ export class EmbyDeletionService {
     const tick = () => {
       if (this.closed) return;
       this.inFlight = this.runDue()
-        .catch((error: unknown) => this.deps.logger.error(`Emby deletion worker failed: ${error}`))
+        .catch((error: unknown) => this.deps.logger.error(`Emby 删除任务执行失败：${error}`))
         .finally(() => {
           this.inFlight = undefined;
           if (!this.closed) {
@@ -400,9 +397,7 @@ export class EmbyDeletionService {
       try {
         await this.bindSources();
       } catch (error) {
-        this.deps.logger.warn(
-          `STRM association verification failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        this.deps.logger.warn(`STRM 关联核验失败：${error instanceof Error ? error.message : String(error)}`);
       }
     }
     for (const event of repository.due(this.now())) {
@@ -439,7 +434,7 @@ export class EmbyDeletionService {
             nextAttemptAt: this.now() + Math.min(300_000, CONFIRMATION_MS * 2 ** attempts),
             result: message,
           });
-        this.deps.logger.warn(`Emby deletion ${event.id}: ${message}`);
+        this.deps.logger.warn(`Emby 删除 ${event.id}：${message}`);
         this.deps.taskEvents.invalidate("pending");
       } finally {
         this.processingId = null;
@@ -482,7 +477,7 @@ export class EmbyDeletionService {
       filesystemPathKey(await realpath(binding.outputPath)) !== binding.realPath ||
       (await readFile(path.join(binding.outputPath, MARKER_NAME), "utf8")) !== binding.marker
     )
-      throw new Error("Library mount identity cannot be verified");
+      throw new Error("无法核验媒体库挂载身份");
     const currentFile = repository.findFile(event.path);
     if (!currentFile || currentFile.id !== event.fileId || currentFile.updatedAt.getTime() !== event.fileUpdatedAt) {
       repository.finish(
@@ -513,7 +508,7 @@ export class EmbyDeletionService {
       (await readFile(path.join(binding.outputPath, MARKER_NAME), "utf8")) !== binding.marker ||
       filesystemPathKey(await realpath(binding.outputPath)) !== binding.realPath
     )
-      throw new Error("Library mount identity cannot be verified");
+      throw new Error("无法核验媒体库挂载身份");
     // The final check and transaction run without an await, so a new publication cannot start between them.
     if (this.closed || this.stored.mode === "off") return;
     if (repository.hasLiveScrapes() || this.deps.maintenance.isBusy) {
@@ -541,7 +536,7 @@ export class EmbyDeletionService {
       if (!(await this.strm.process({ repository, event, library: binding, now: this.now, active }))) return;
       try {
         await lstat(event.path);
-        throw new Error("Link STRM reappeared; record cleanup requires review");
+        throw new Error("Link STRM 再次出现，清理记录需要检查");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }

@@ -104,7 +104,7 @@ export function SettingsServicesProvider({ children, notifier, services }: Setti
 export function useSettingsServices(): SettingsServices {
   const services = useContext(SettingsServicesContext);
   if (!services) {
-    throw new Error("Settings views must be wrapped in <SettingsServicesProvider>");
+    throw new Error("设置视图必须位于 SettingsServicesProvider 中");
   }
   return services;
 }
@@ -112,7 +112,7 @@ export function useSettingsServices(): SettingsServices {
 export function useSettingsNotifier(): SettingsNotifier {
   const notifier = useContext(SettingsNotifierContext);
   if (!notifier) {
-    throw new Error("Settings views must be wrapped in <SettingsServicesProvider>");
+    throw new Error("设置视图必须位于 SettingsServicesProvider 中");
   }
   return notifier;
 }

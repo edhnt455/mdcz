@@ -51,7 +51,7 @@ export const downloadCrawlerAssets = async (input: {
   onLog?: (message: string) => void;
   postProcessAssets?: (assets: DownloadedAssets, crawlerData: CrawlerData) => Promise<DownloadedAssets>;
 }): Promise<{ assets: DownloadedAssets; crawlerData: CrawlerData }> => {
-  input.onLog?.(`[${input.fileInfo.number}] Downloading resources...`);
+  input.onLog?.(`[${input.fileInfo.number}] 正在下载资源…`);
   const preparedImageAlternatives = prepareImageAlternativesForDownload(
     input.crawlerData,
     input.imageAlternatives,
@@ -75,7 +75,7 @@ export const downloadCrawlerAssets = async (input: {
         input.callbacks?.onResolvedSceneImageUrls?.(urls);
       },
       onSceneProgress: (downloaded, total) => {
-        input.onLog?.(`[${input.fileInfo.number}] Scene images: ${downloaded}/${total}`);
+        input.onLog?.(`[${input.fileInfo.number}] 剧照：${downloaded}/${total}`);
         input.callbacks?.onSceneProgress?.(downloaded, total);
       },
     },

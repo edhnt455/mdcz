@@ -33,8 +33,17 @@ export class PendingRepository {
 
   get(id: string): PendingItemRecord {
     const row = this.database.db.select().from(pendingItems).where(eq(pendingItems.id, id)).get();
-    if (!row) throw new PersistenceError(persistenceErrorCodes.NotFound, `Pending item not found: ${id}`);
+    if (!row) throw new PersistenceError(persistenceErrorCodes.NotFound, `未找到待处理条目：${id}`);
     return row;
+  }
+
+  saveDeletion(id: string, expectedUpdatedAt: Date, deletionJson: string): void {
+    const result = this.database.db
+      .update(pendingItems)
+      .set({ deletionJson })
+      .where(and(eq(pendingItems.id, id), eq(pendingItems.updatedAt, expectedUpdatedAt)))
+      .run();
+    if (!result.changes) throw new Error("删除期间待处理条目已变化或被移除，请刷新后重试");
   }
 
   updateNumberRecognition(id: string, expectedUpdatedAt: Date, numberRecognitionJson: string): void {
@@ -43,7 +52,7 @@ export class PendingRepository {
       .set({ numberRecognitionJson, updatedAt: new Date() })
       .where(and(eq(pendingItems.id, id), eq(pendingItems.updatedAt, expectedUpdatedAt)))
       .run();
-    if (!result.changes) throw new Error("Pending item changed or was removed during AI extraction; reload and retry");
+    if (!result.changes) throw new Error("AI 提取期间待处理条目已变化或被移除，请刷新后重试");
   }
 
   /** One entry per source file: a newer outcome replaces the previous one. Returns whether the entry is new. */
@@ -111,7 +120,7 @@ export class PendingRepository {
     this.database.sqlite.transaction(() => {
       const pending = this.get(id);
       if (pending.kind !== "uncensored" || pending.movieId !== movie.id)
-        throw new Error("Pending confirmation no longer matches this movie");
+        throw new Error("待处理确认信息已与此影片不匹配");
       writeLibraryRows(this.database, movie, files);
       this.delete([id]);
     })();

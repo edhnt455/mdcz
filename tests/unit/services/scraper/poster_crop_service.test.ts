@@ -74,6 +74,6 @@ describe("PosterCropService", () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-poster-crop-"));
     const videoPath = join(root, "ABC-123.mp4");
     await writeFile(videoPath, "video");
-    await expect(new PosterCropService().prepare(videoPath, "fixed")).rejects.toThrow("No local thumb or poster");
+    await expect(new PosterCropService().prepare(videoPath, "fixed")).rejects.toThrow("没有可编辑的本地封面或海报");
   });
 });

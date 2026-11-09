@@ -44,7 +44,7 @@ export const applyImageWatermarks = async (input: {
   }
 
   throwIfAborted(input.signal);
-  input.signalService?.showLogText(`[${input.fileInfo.number}] Applying image watermarks...`);
+  input.signalService?.showLogText(`[${input.fileInfo.number}] 正在添加图片水印…`);
 
   const watermarkService = input.watermarkService ?? new ImageWatermarkService({ dataDir: input.dataDir });
   for (const imagePath of paths) {
@@ -54,7 +54,7 @@ export const applyImageWatermarks = async (input: {
         input.logger.warn(message),
       );
     } catch (error) {
-      input.logger.warn(`Failed to apply tag badges for ${imagePath}: ${toErrorMessage(error)}`);
+      input.logger.warn(`为 ${imagePath} 添加标签水印失败：${toErrorMessage(error)}`);
     }
   }
 

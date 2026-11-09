@@ -151,7 +151,7 @@ describe("buildServer maintenance integration", () => {
     });
     if (kind === "missing") {
       expect(response.statusCode).toBe(400);
-      expect(response.body).toContain("Directory does not exist or is inaccessible");
+      expect(response.body).toContain("目录不存在或无法访问");
       expect(await services.maintenance.getActiveSession()).toBeNull();
       return;
     }
@@ -543,7 +543,7 @@ describe("buildServer maintenance integration", () => {
         const conflict = await waitForMaintenanceSession(fastify, token, preview.sessionId, "apply", "failed");
         expect(conflict.currentBatch?.items[0]).toMatchObject({
           status: "skipped",
-          error: expect.stringContaining("Another movie still uses this actor photo"),
+          error: expect.stringContaining("其他影片仍在使用此演员照片"),
         });
         expect(await readFile(claimedTarget, "utf8")).toBe("other movie's target photo");
         expect(await readFile(exclusivePhoto, "utf8")).toBe("exclusive photo");
@@ -752,9 +752,7 @@ describe("buildServer maintenance integration", () => {
         status: scenario === "conflict" || scenario === "directory_conflict" ? "skipped" : "failed",
       });
       if (scenario === "directory_conflict")
-        expect(appliedSession.currentBatch?.items[0]?.error).toContain(
-          "Another movie already owns this output directory",
-        );
+        expect(appliedSession.currentBatch?.items[0]?.error).toContain("此输出目录已属于其他影片");
       const remainingFiles = (await readdir(root, { recursive: true, withFileTypes: true }))
         .filter((entry) => entry.isFile())
         .map((entry) => join(entry.parentPath, entry.name));

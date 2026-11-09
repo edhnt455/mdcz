@@ -1,6 +1,6 @@
-import { z } from "zod";
 import { localPathStyle } from "./localPath";
 import { isAbsoluteHostPath } from "./mediaCandidate";
+import { z } from "./zod";
 
 /**
  * How a scraped video reaches the output directory.
@@ -59,10 +59,10 @@ const pathContains = (parent: string, child: string): boolean => {
 /** CloudDrive2 virtual paths are POSIX strings on every platform, never host paths. */
 export const normalizeCloudPath = (value: string): string => {
   const raw = value.trim().replaceAll("\\", "/").normalize("NFC");
-  if (!raw.startsWith("/")) throw new Error("CloudDrive path must start with /");
+  if (!raw.startsWith("/")) throw new Error("CloudDrive 路径必须以 / 开头");
   const segments = raw.split("/").filter(Boolean);
   if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error("CloudDrive path must not contain . or .. segments");
+    throw new Error("CloudDrive 路径不能包含 . 或 .. 路径段");
   }
   return `/${segments.join("/")}`;
 };
@@ -137,10 +137,9 @@ export const mediaLibraryConfigSchema = mediaLibrarySettingsSchema.safeExtend({
 export const mediaLibrariesConfigSchema = z.array(mediaLibraryConfigSchema).superRefine((libraries, ctx) => {
   for (const [index, library] of libraries.entries()) {
     for (const other of libraries.slice(0, index)) {
-      if (other.id === library.id)
-        ctx.addIssue({ code: "custom", path: [index, "id"], message: "Library IDs must be unique" });
+      if (other.id === library.id) ctx.addIssue({ code: "custom", path: [index, "id"], message: "媒体库 ID 必须唯一" });
       if (pathContains(other.sourcePath, library.sourcePath) || pathContains(library.sourcePath, other.sourcePath))
-        ctx.addIssue({ code: "custom", path: [index, "sourcePath"], message: "Library source directories overlap" });
+        ctx.addIssue({ code: "custom", path: [index, "sourcePath"], message: "媒体库来源目录不能重叠" });
     }
   }
 });

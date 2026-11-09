@@ -45,7 +45,7 @@ export const registeredMediaLocations = async (
   );
   const absolute = (ref: RootFileRef) => {
     const root = roots.get(ref.rootId);
-    if (!root) throw new Error(`Resource root not found: ${ref.rootId}`);
+    if (!root) throw new Error(`未找到资源根目录：${ref.rootId}`);
     return resolveRootRelativePath(root, ref.relativePath);
   };
   const byItem = new Map<string, RegisteredMediaLocation>();
@@ -85,7 +85,7 @@ export const registeredOutputPaths = async (
   return new Set(
     assets.map((asset) => {
       const root = roots.get(asset.rootId);
-      if (!root) throw new Error(`Resource root not found: ${asset.rootId}`);
+      if (!root) throw new Error(`未找到资源根目录：${asset.rootId}`);
       return filesystemPathKey(resolveRootRelativePath(root, asset.relativePath));
     }),
   );
@@ -122,7 +122,7 @@ export const writePublishedMovie = async (
   crawlerData?: CrawlerData,
 ): Promise<void> => {
   if (assets.some((asset) => asset.kind === "subtitle")) {
-    throw new Error("Registered tools only write movie assets");
+    throw new Error("已登记工具只能写入影片资源");
   }
   const entry = await library.getEntryById(movieId);
   library.writeEntry(
@@ -171,7 +171,7 @@ export const resolveRegisteredNfoPaths = async (
   );
   const absolute = (ref: RootFileRef) => {
     const root = roots.get(ref.rootId);
-    if (!root) throw new Error(`Resource root not found: ${ref.rootId}`);
+    if (!root) throw new Error(`未找到资源根目录：${ref.rootId}`);
     return resolveRootRelativePath(root, ref.relativePath);
   };
   const target = filesystemPathKey(nfoPath);
@@ -183,13 +183,12 @@ export const resolveRegisteredNfoPaths = async (
   }));
   const owners = new Set(nfos.filter((asset) => asset.key === target && asset.published).map((asset) => asset.itemId));
   if (!owners.size) return undefined;
-  if (owners.size > 1) throw new Error("The same NFO is referenced by multiple movies in the media library");
+  if (owners.size > 1) throw new Error("同一 NFO 被媒体库中的多部影片引用");
   const movieId = [...owners][0];
   const paths = [
     ...new Set(nfos.filter((asset) => asset.published && asset.itemId === movieId).map((asset) => asset.path)),
   ];
-  for (const path of paths)
-    if (!(await stat(path)).isFile()) throw new Error(`Registered NFO output does not exist: ${path}`);
+  for (const path of paths) if (!(await stat(path)).isFile()) throw new Error(`已登记的 NFO 输出不存在：${path}`);
   const mediaPaths = snapshot.files.filter((file) => file.itemId === movieId).map(absolute);
   return {
     movieId,

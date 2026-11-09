@@ -1,5 +1,5 @@
-import { z } from "zod";
 import type { EmbyDeletionStep } from "./moviePilot";
+import { z } from "./zod";
 
 export const deletionJobInputSchema = z.object({ id: z.string().min(1) });
 export type DeletionJobInput = z.infer<typeof deletionJobInputSchema>;

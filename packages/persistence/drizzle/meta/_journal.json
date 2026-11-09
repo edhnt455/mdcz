@@ -113,6 +113,13 @@
       "when": 1793404800000,
       "tag": "0015_cleared_activities",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793491200000,
+      "tag": "0016_pending_deletion",
+      "breakpoints": true
     }
   ]
 }

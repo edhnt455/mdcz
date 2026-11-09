@@ -42,7 +42,7 @@ describe("ServerPersistenceService", () => {
     }
 
     expect(harness.service.initialized).toBe(false);
-    await expect(harness.service.initialize()).rejects.toThrow("Server persistence service is closed");
+    await expect(harness.service.initialize()).rejects.toThrow("服务端持久化服务已关闭");
   });
 
   it("reuses the initialized state", async () => {
@@ -54,7 +54,7 @@ describe("ServerPersistenceService", () => {
 
       expect(second).toBe(first);
       const competing = new ServerPersistenceService({ databasePath: harness.databasePath });
-      await expect(competing.initialize()).rejects.toThrow("Cannot acquire database ownership");
+      await expect(competing.initialize()).rejects.toThrow("无法取得数据库");
       await competing.close();
       await harness.service.close();
       const restarted = new ServerPersistenceService({ databasePath: harness.databasePath });
@@ -81,11 +81,11 @@ describe("ServerPersistenceService", () => {
       await runMaintenanceCli(["database", "verify", backupPath]);
       await expect(runMaintenanceCli(["database", "backup", backupPath])).rejects.toMatchObject({ code: "EEXIST" });
       await expect(runMaintenanceCli(["database", "restore", backupPath, "--confirm"])).rejects.toThrow(
-        "Cannot acquire database ownership",
+        "无法取得数据库",
       );
       database.sqlite.prepare("UPDATE media_roots SET display_name = 'Changed'").run();
       await harness.service.close();
-      await expect(runMaintenanceCli(["database", "restore", backupPath])).rejects.toThrow("Usage:");
+      await expect(runMaintenanceCli(["database", "restore", backupPath])).rejects.toThrow("用法：");
       await runMaintenanceCli(["database", "restore", backupPath, "--confirm"]);
       const restored = new ServerPersistenceService({ databasePath: harness.databasePath });
       try {
@@ -118,7 +118,7 @@ describe("ServerPersistenceService", () => {
       const blocked = new ServerPersistenceService({ databasePath: harness.databasePath });
       await expect(blocked.initialize()).rejects.toThrow(`database rebuild "${harness.databasePath}" --confirm`);
       await blocked.close();
-      await expect(runMaintenanceCli(["database", "rebuild", harness.databasePath])).rejects.toThrow("Usage:");
+      await expect(runMaintenanceCli(["database", "rebuild", harness.databasePath])).rejects.toThrow("用法：");
       await runMaintenanceCli(["database", "rebuild", harness.databasePath, "--confirm"]);
 
       const rebuilt = new ServerPersistenceService({ databasePath: harness.databasePath });

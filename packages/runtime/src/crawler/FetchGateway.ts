@@ -33,7 +33,7 @@ export class FetchGateway {
 
   async fetchContent(url: string, options: FetchOptions = {}): Promise<Uint8Array> {
     if (!this.networkClient.getContent) {
-      throw new Error("Network client does not support binary content fetches");
+      throw new Error("网络客户端不支持获取二进制内容");
     }
 
     return this.networkClient.getContent(url, this.toHttpInit(options));
@@ -54,10 +54,10 @@ export class FetchGateway {
   async fetchGraphQL<T>(endpoint: string, operation: GraphQLOperation, options: FetchOptions = {}): Promise<T> {
     const payload = await this.fetchPost<{ data?: T; errors?: unknown }>(endpoint, operation, options);
     if (payload.errors) {
-      throw new SiteError("http_error", `GraphQL response contains errors for ${endpoint}`);
+      throw new SiteError("http_error", `${endpoint} 的 GraphQL 响应包含错误`);
     }
     if (payload.data === undefined) {
-      throw new SiteError("parse_error", `GraphQL response missing data for ${endpoint}`);
+      throw new SiteError("parse_error", `${endpoint} 的 GraphQL 响应缺少数据`);
     }
     return payload.data;
   }

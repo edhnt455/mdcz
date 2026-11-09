@@ -1262,7 +1262,7 @@ describe("DownloadManager keep flags", () => {
           ...publicationInput,
           downloadedAssets: { downloaded: [undeclared], sceneImages: [undeclared] },
         }),
-      ).rejects.toThrow("Publication asset has no declared destination");
+      ).rejects.toThrow("发布资源未指定目标");
     }
   });
 

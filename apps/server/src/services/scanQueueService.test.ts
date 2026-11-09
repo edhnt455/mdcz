@@ -127,12 +127,12 @@ describe("ScanQueueService", () => {
       expect.objectContaining({
         id: "queued",
         status: "failed",
-        error: expect.stringContaining("Scan backend restarted"),
+        error: expect.stringContaining("扫描服务已重启"),
       }),
       expect.objectContaining({
         id: "running",
         status: "failed",
-        error: expect.stringContaining("Scan backend restarted"),
+        error: expect.stringContaining("扫描服务已重启"),
       }),
     ]);
     expect(lifecycle).toHaveBeenCalledTimes(2);
@@ -182,7 +182,7 @@ describe("ScanQueueService", () => {
 
     await expect(service.start("root-1")).resolves.toMatchObject({ status: "queued" });
     await vi.waitFor(async () => {
-      await expect(service.start("root-1")).rejects.toThrow("Scan queue requires repair: catalog unavailable");
+      await expect(service.start("root-1")).rejects.toThrow("扫描队列需要修复：catalog unavailable");
     });
     await expect(service.retry("created-1")).resolves.toMatchObject({ status: "queued" });
     await expect(service.start("root-1")).resolves.toMatchObject({ status: "queued" });

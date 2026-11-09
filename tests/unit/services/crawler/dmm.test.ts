@@ -181,7 +181,7 @@ describe("DmmCrawler", () => {
         detailHtml: REGION_BLOCKED_HTML,
         expected: {
           reason: "region_blocked",
-          error: "region_blocked page served for https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=dldss00463/",
+          error: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=dldss00463/ 返回 region_blocked 页面",
         },
       },
       {
@@ -189,7 +189,7 @@ describe("DmmCrawler", () => {
         searchUrl: "https://www.dmm.co.jp/search/=/searchstr=dldss00463/sort=ranking/",
         detailUrl: "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=dldss00463/",
         detailHtml: UNRENDERED_SHELL_HTML,
-        expected: { reason: "empty_shell", error: "DMM: unrendered shell" },
+        expected: { reason: "empty_shell", error: "DMM：页面未完成渲染" },
       },
     ];
 
@@ -370,7 +370,7 @@ describe("DmmCrawler", () => {
       throw new Error("expected failure");
     }
     expect(response.result.reason).toBe("region_blocked");
-    expect(response.result.error).toBe(`region_blocked page served for ${searchUrl}`);
+    expect(response.result.error).toBe(`${searchUrl} 返回 region_blocked 页面`);
   });
 
   it("falls back to additional search keywords and parses direct detail anchors", async () => {

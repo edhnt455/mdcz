@@ -24,12 +24,12 @@ export class TaskExecutor<TItem, TResult> {
     },
   ) {
     if (!Number.isInteger(deps.concurrency) || deps.concurrency < 1) {
-      throw new Error("TaskExecutor concurrency must be a positive integer");
+      throw new Error("TaskExecutor 并发数必须是正整数");
     }
   }
 
   execute(items: readonly TItem[], signal?: AbortSignal): Promise<void> {
-    if (this.activeRun) throw new Error("TaskExecutor is already active");
+    if (this.activeRun) throw new Error("TaskExecutor 已在运行");
 
     this.pauseRequested = false;
     this.stopRequested = false;
@@ -58,7 +58,7 @@ export class TaskExecutor<TItem, TResult> {
 
   private async run(items: readonly TItem[], signal?: AbortSignal): Promise<void> {
     const controller = this.controller;
-    if (!controller) throw new Error("TaskExecutor controller was not initialized");
+    if (!controller) throw new Error("TaskExecutor 控制器尚未初始化");
 
     let nextIndex = 0;
     let fatalError: unknown;

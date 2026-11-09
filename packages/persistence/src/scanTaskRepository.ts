@@ -141,7 +141,7 @@ export class ScanTaskRepository {
   async get(id: string): Promise<ScanTask> {
     const row = this.database.db.select().from(scanTasks).where(eq(scanTasks.id, id)).limit(1).get();
     if (!row) {
-      throw new PersistenceError(persistenceErrorCodes.NotFound, `Task not found: ${id}`);
+      throw new PersistenceError(persistenceErrorCodes.NotFound, `未找到任务：${id}`);
     }
     return toScanTask(row);
   }
@@ -298,7 +298,7 @@ export class ScanTaskRepository {
       if (seenPaths.has(result.relativePath)) {
         throw new PersistenceError(
           persistenceErrorCodes.ConstraintViolation,
-          `Duplicate scan result path for task ${input.taskId}: ${result.relativePath}`,
+          `任务 ${input.taskId} 的扫描结果路径重复：${result.relativePath}`,
         );
       }
       seenPaths.add(result.relativePath);

@@ -39,7 +39,7 @@ it.each([false, true])("removes a file index and keeps disk files (last file: %s
     });
 
     library.removeFile("cd2");
-    if (last) await expect(library.getEntryById("movie")).rejects.toThrow("not found");
+    if (last) await expect(library.getEntryById("movie")).rejects.toThrow("未找到");
     else {
       const entry = await library.getEntryById("movie");
       expect(entry.files.map((file) => file.id)).toEqual(["cd1"]);

@@ -119,11 +119,11 @@ export class ScrapeService {
   }
 
   private async runner(): Promise<ScrapeRunner> {
-    if (this.closed) throw new Error("Scrape queue is closing");
+    if (this.closed) throw new Error("刮削队列正在关闭");
     if (this.runnerInstance) return this.runnerInstance;
     this.runnerInitPromise ??= (async () => {
       const state = await this.persistence.initialize();
-      if (this.closed) throw new Error("Scrape queue is closing");
+      if (this.closed) throw new Error("刮削队列正在关闭");
       this.imageWatermarkService ??= new ImageWatermarkService({
         dataDir: this.config.runtimePaths.dataDir,
         builtinDirectory: join(dirname(resolveServerBundledMappingDirectory()), "watermark"),
@@ -190,7 +190,7 @@ export class ScrapeService {
             runId,
             result.status === "success" ? "item-success" : result.status === "skipped" ? "item-skipped" : "item-failed",
             result.status === "success"
-              ? `Generated NFO: ${result.nfo?.relativePath ?? "not generated"}`
+              ? `已生成 NFO：${result.nfo?.relativePath ?? "未生成"}`
               : result.error
                 ? `${result.relativePath}: ${result.error}`
                 : result.relativePath,
@@ -224,8 +224,8 @@ export class ScrapeService {
             run.id,
             terminalStatus,
             terminalStatus === "completed"
-              ? `Scrape completed. Succeeded: ${summary?.successCount ?? 0}, Failed: ${summary?.failedCount ?? 0}`
-              : `Scrape failed. Succeeded: ${summary?.successCount ?? 0}, Failed: ${summary?.failedCount ?? 0}, Skipped: ${summary?.skippedCount ?? 0}`,
+              ? `刮削完成。成功：${summary?.successCount ?? 0}，失败：${summary?.failedCount ?? 0}`
+              : `刮削失败。成功：${summary?.successCount ?? 0}，失败：${summary?.failedCount ?? 0}，跳过：${summary?.skippedCount ?? 0}`,
           );
           this.taskEvents.lifecycle({
             id: run.id,
@@ -256,10 +256,10 @@ export class ScrapeService {
                   const result = await this.conflicts.resolveAutomatically({ taskId: run.id, itemId: item.id });
                   if (result)
                     logger.info(
-                      `Duplicate resolved automatically: ${item.relativePath}${result.runId ? `; replacement scrape: ${result.runId}` : ""}`,
+                      `已自动处理重复版本：${item.relativePath}${result.runId ? `；替换版本刮削任务：${result.runId}` : ""}`,
                     );
                 } catch (error) {
-                  logger.warn(`Duplicate requires manual resolution: ${item.relativePath}: ${toErrorMessage(error)}`);
+                  logger.warn(`重复版本需要人工处理：${item.relativePath}：${toErrorMessage(error)}`);
                 }
               }
             })
@@ -268,7 +268,7 @@ export class ScrapeService {
             });
         },
         onError: async (runId, error) => {
-          runtimeLoggerService.getLogger(`scrape:${runId}`).error(`Scrape execution failed: ${toErrorMessage(error)}`);
+          runtimeLoggerService.getLogger(`scrape:${runId}`).error(`刮削执行失败：${toErrorMessage(error)}`);
         },
       });
       return this.runnerInstance;
@@ -281,7 +281,7 @@ export class ScrapeService {
   async start(input: ScrapeStartInput): Promise<ScrapeRunSnapshotDto> {
     const runner = await this.runner();
     const result = await runner.start(input);
-    this.addEvent(result.taskId, "queued", "Scrape task queued");
+    this.addEvent(result.taskId, "queued", "刮削任务已加入队列");
     return result.snapshot;
   }
 
@@ -295,7 +295,7 @@ export class ScrapeService {
 
   async snapshot(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto> {
     const snapshot = await (await this.runner()).getSnapshot(input.taskId);
-    if (!snapshot) throw new Error(`Scrape task not found: ${input.taskId}`);
+    if (!snapshot) throw new Error(`未找到刮削任务：${input.taskId}`);
     return this.conflicts.restore(snapshot);
   }
 
@@ -305,7 +305,7 @@ export class ScrapeService {
     if (job) {
       const snapshot = await this.snapshot({ taskId: job.taskId });
       const item = snapshot.items.find((candidate) => candidate.id === id);
-      if (!item) throw new Error("Duplicate resolution item is unavailable");
+      if (!item) throw new Error("重复版本处理条目不可用");
       return {
         result: {
           ...item,
@@ -326,27 +326,27 @@ export class ScrapeService {
 
   async pause(input: ScrapeTaskControlInput): Promise<string> {
     await (await this.runner()).pause(input.taskId);
-    this.addEvent(input.taskId, "paused", "Scrape task paused");
+    this.addEvent(input.taskId, "paused", "刮削任务已暂停");
     return input.taskId;
   }
 
   async resume(input: ScrapeTaskControlInput): Promise<string> {
     await (await this.runner()).resume(input.taskId);
-    this.addEvent(input.taskId, "queued", "Scrape task queued");
+    this.addEvent(input.taskId, "queued", "刮削任务已加入队列");
     return input.taskId;
   }
 
   async retry(input: ScrapeTaskControlInput): Promise<ScrapeRunSnapshotDto> {
     const runner = await this.runner();
     const result = await runner.retry(input.taskId, input.itemIds);
-    this.addEvent(result.taskId, "queued", "Scrape retry queued");
+    this.addEvent(result.taskId, "queued", "刮削重试已加入队列");
     return result.snapshot;
   }
 
   async rerunDirectory(input: ScrapeRerunDirectoryInput): Promise<ScrapeRunSnapshotDto> {
     const runner = await this.runner();
     const result = await runner.rerunDirectory(input.taskId);
-    this.addEvent(result.taskId, "queued", "Directory rescan queued");
+    this.addEvent(result.taskId, "queued", "目录重新扫描已加入队列");
     return result.snapshot;
   }
 
@@ -370,13 +370,13 @@ export class ScrapeService {
 
   async removeRecord(input: FileActionInput): Promise<FileActionResponse> {
     const [target] = await this.mediaRoots.canonicalizeFileRefs([input]);
-    if (!target) throw new Error("File ref is required");
+    if (!target) throw new Error("必须提供文件引用");
     const state = await this.persistence.getState();
     const entry = await state.repositories.library.getEntry(target.rootId, target.relativePath);
     const file = entry.files.find(
       (candidate) => candidate.rootId === target.rootId && candidate.rootRelativePath === target.relativePath,
     );
-    if (!file) throw new Error("Library file not found");
+    if (!file) throw new Error("未找到媒体库文件");
     state.repositories.library.removeFile(file.id);
     this.taskEvents.invalidate("scrape-history");
     return { ok: true, ...target };
@@ -407,12 +407,12 @@ export class ScrapeService {
       }
     }
     if (!entry) {
-      throw new Error("Poster editing requires a successful scrape outcome with local output");
+      throw new Error("编辑海报需要刮削成功且存在本地输出");
     }
     const file = entry.files.find((candidate) => candidate.id === id) ?? entry.files[0];
     const nfoAsset = entry.assets.find((asset) => asset.kind === "nfo");
     if (!file?.rootRelativePath) {
-      throw new Error("Poster editing requires a successful scrape outcome with local output");
+      throw new Error("编辑海报需要刮削成功且存在本地输出");
     }
     return {
       rootId: file.rootId,

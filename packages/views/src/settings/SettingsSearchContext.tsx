@@ -189,7 +189,7 @@ export function SettingsSearchProvider({
 export function useSettingsSearch(): SettingsSearchContextValue {
   const context = useContext(SettingsSearchContext);
   if (!context) {
-    throw new Error("useSettingsSearch must be used within <SettingsSearchProvider>");
+    throw new Error("useSettingsSearch 必须在 SettingsSearchProvider 中使用");
   }
   return context;
 }

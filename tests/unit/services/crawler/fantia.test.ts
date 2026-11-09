@@ -202,7 +202,7 @@ describe("FantiaCrawler", () => {
 
     expect(response.result.success).toBe(false);
     if (response.result.success) throw new Error("expected failure");
-    expect(response.result.error).toContain("age verification");
+    expect(response.result.error).toContain("年龄验证");
   });
 
   it("selects the exact Fantia search result instead of the first result", async () => {

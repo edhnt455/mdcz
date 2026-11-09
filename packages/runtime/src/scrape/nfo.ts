@@ -158,7 +158,7 @@ const buildMdczNode = (
 export class NfoGenerator {
   buildXml(data: CrawlerData, options?: NfoOptions): string {
     if (!data.website) {
-      throw new Error("NFO missing website");
+      throw new Error("NFO 缺少来源站点");
     }
 
     const localState = options?.localState;
@@ -347,10 +347,10 @@ const toRecordOrEmpty = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 const mergeEditableNfoDocuments = (existingXml: string, generatedXml: string): string => {
-  const existingRoot = requireXmlRecord(parser.parse(existingXml), "Invalid NFO root");
-  const existingMovie = requireXmlRecord(existingRoot.movie, "Invalid NFO movie node");
-  const generatedRoot = requireXmlRecord(parser.parse(generatedXml), "Invalid generated NFO root");
-  const generatedMovie = requireXmlRecord(generatedRoot.movie, "Invalid generated NFO movie node");
+  const existingRoot = requireXmlRecord(parser.parse(existingXml), "NFO 根节点无效");
+  const existingMovie = requireXmlRecord(existingRoot.movie, "NFO 影片节点无效");
+  const generatedRoot = requireXmlRecord(parser.parse(generatedXml), "生成的 NFO 根节点无效");
+  const generatedMovie = requireXmlRecord(generatedRoot.movie, "生成的 NFO 影片节点无效");
   const existingMdcz = toRecordOrEmpty(existingMovie.mdcz);
   // Editing is not publishing: keeping the fingerprints of what MDCz published makes the changed values read as edits.
   const published = formatFingerprints({
@@ -365,7 +365,7 @@ const mergeEditableNfoDocuments = (existingXml: string, generatedXml: string): s
   existingMovie.actor = mergeActorNodes(existingMovie.actor, generatedMovie.actor);
 
   const generatedMdcz: Record<string, unknown> = {
-    ...requireXmlRecord(generatedMovie.mdcz, "Invalid generated NFO mdcz node"),
+    ...requireXmlRecord(generatedMovie.mdcz, "生成的 NFO mdcz 节点无效"),
     published,
   };
   for (const field of EDITABLE_MDCZ_FIELDS) {
@@ -446,7 +446,7 @@ const replaceExtension = (filePath: string, extension: string): string => {
 };
 
 function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
-  const lines: string[] = ["\n  Aggregation Sources:"];
+  const lines: string[] = ["\n  聚合来源："];
   const fields: Array<{ key: keyof CrawlerData; label: string; detail?: () => string }> = [
     { key: "title", label: "title" },
     { key: "plot", label: "plot", detail: () => `${data.plot?.length ?? 0} chars` },
@@ -466,7 +466,7 @@ function buildSourceComment(data: CrawlerData, sources: SourceMap): string {
       lines.push(`    ${field.label}: ${source}${extra}`);
     }
   }
-  lines.push(`    Crawled: ${new Date().toISOString()}`);
+  lines.push(`    抓取时间：${new Date().toISOString()}`);
   lines.push("  ");
   return lines.join("\n");
 }

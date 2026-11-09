@@ -8,9 +8,9 @@ export class PublicationConflictError extends Error {
   constructor(
     readonly sourcePath: string,
     readonly targetPath: string,
-    readonly reason = "Destination already contains a movie",
+    readonly reason = "目标位置已存在影片",
   ) {
-    super(`${reason}.\nSource: ${sourcePath}\nDestination: ${targetPath}`);
+    super(`${reason}\n源文件：${sourcePath}\n目标路径：${targetPath}`);
     this.name = "PublicationConflictError";
   }
 }
@@ -49,7 +49,7 @@ export const assertMovieDirectoryOwnership = async (input: {
       throw new PublicationConflictError(
         sourcePaths[0] ?? directory,
         directory,
-        "Another movie already owns this output directory. Use a folder template that gives each movie a unique directory, for example one with {number}",
+        "此输出目录已属于其他影片。请使用能为每部影片生成独立目录的文件夹模板，例如包含 {number} 的模板",
       );
     }
   }

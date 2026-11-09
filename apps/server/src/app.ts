@@ -45,6 +45,7 @@ import { LibraryService } from "./services/libraryService";
 import { LibraryWatchService } from "./services/libraryWatchService";
 import { MaintenanceService } from "./services/maintenanceService";
 import { MediaRootService } from "./services/mediaRootService";
+import { PendingDeletionService } from "./services/pendingDeletionService";
 import { ServerPersistenceService } from "./services/persistenceService";
 import { PersonSyncService } from "./services/personSyncService";
 import { QbittorrentService } from "./services/qbittorrentService";
@@ -98,9 +99,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       async () => (await persistence.getState()).repositories.libraryState,
     );
   config.onDiagnostic((event) => {
-    runtimeLogs
-      .getLogger("config")
-      .warn(`Configuration ${event.kind} for profile ${event.profileName}: ${event.message}`);
+    runtimeLogs.getLogger("config").warn(`配置档案 ${event.profileName} 的配置事件 ${event.kind}：${event.message}`);
   });
   runtimeLoggerService.setFactory((name) => runtimeLogs.getLogger(name));
   // libvips keeps cached WebP inputs open, and Windows refuses to rename or delete an open file, failing publication.
@@ -209,7 +208,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       .catch((error) =>
         runtimeLogs
           .getLogger("LibraryWatch")
-          .error(`Failed to refresh libraries: ${error instanceof Error ? error.message : String(error)}`),
+          .error(`刷新媒体库失败：${error instanceof Error ? error.message : String(error)}`),
       );
   });
   const activity =
@@ -235,6 +234,17 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       libraries,
       repositories: async () => (await persistence.getState()).repositories,
       mediaRoots,
+      deleteFile: async (id) =>
+        await new PendingDeletionService({
+          persistence,
+          config,
+          libraries,
+          isBusy: () => maintenance.isBusy,
+          invalidate: () => {
+            library.invalidateAvailability();
+            taskEvents.invalidate("pending", "library");
+          },
+        }).delete(id),
       startScrape: async (input) => ({ taskId: (await scrape.start(input)).task.id }),
       getConfiguration: async () => await config.get(),
       updateConfiguration: async (patch) => await config.update(patch),
@@ -350,7 +360,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     results.push(...(await Promise.allSettled([services.persistence.close()])));
     results.push(...(await Promise.allSettled([runtimeLogs.close()])));
     const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
-    if (errors.length) throw new AggregateError(errors, "Server shutdown failed");
+    if (errors.length) throw new AggregateError(errors, "服务关闭失败");
   });
 
   fastify.addHook("onRequest", async (request, reply) => {
@@ -418,8 +428,8 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       if (!input.success) {
         runtimeLogs
           .getLogger("EmbyDeletion")
-          .warn(`Invalid notification fields: ${input.error.issues.map((issue) => issue.path.join(".")).join(", ")}`);
-        return reply.code(400).send({ error: "Invalid Emby notification" });
+          .warn(`通知字段无效：${input.error.issues.map((issue) => issue.path.join(".")).join(", ")}`);
+        return reply.code(400).send({ error: "Emby 通知无效" });
       }
       const result = await services.embyDeletion.accept(input.data);
       return reply.code(result.duplicate ? 200 : 202).send(result);

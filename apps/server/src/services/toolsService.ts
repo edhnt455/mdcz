@@ -95,16 +95,16 @@ export class ToolsService {
       case "batch-nfo-translator": {
         const config = await this.config.get();
         if (input.action === "scan") {
-          if (!input.directory) throw new Error("Batch NFO translation scan requires a directory");
-          if (!input.mode) throw new Error("Batch NFO translation scan requires a mode");
-          if (input.mode === "ignore") throw new Error("Ignore translation requires selected items");
+          if (!input.directory) throw new Error("批量 NFO 翻译扫描需要指定目录");
+          if (!input.mode) throw new Error("批量 NFO 翻译扫描需要指定模式");
+          if (input.mode === "ignore") throw new Error("忽略翻译需要先选择条目");
           const items = await scanBatchNfoTranslations(input.directory, input.mode, config, {
             localScanService: this.localScanService,
           });
           return { toolId: input.toolId, ok: true, data: { items } };
         }
         if (input.action === "apply") {
-          if (!input.mode) throw new Error("Batch NFO translation apply requires a mode");
+          if (!input.mode) throw new Error("应用批量 NFO 翻译需要指定模式");
           const items = input.items ?? [];
           if (items.length > 0) {
             await this.mediaRoots.ensurePathRecord({
@@ -131,7 +131,7 @@ export class ToolsService {
           );
           return { toolId: input.toolId, ok: results.every((item) => item.success), data: { results } };
         }
-        if (!input.text) throw new Error("Text translation requires text");
+        if (!input.text) throw new Error("请输入要翻译的文本");
         const translated = await this.translate.translateText(
           input.text,
           toTarget(config.translate.targetLanguage),
@@ -141,7 +141,7 @@ export class ToolsService {
       }
       case "amazon-poster": {
         if (input.action === "lookup") {
-          if (!input.nfoPath || !input.title) throw new Error("Amazon poster lookup requires an NFO path and title");
+          if (!input.nfoPath || !input.title) throw new Error("查找 Amazon 海报需要 NFO 路径和标题");
           const result = await lookupAmazonPoster(this.networkClient, input.nfoPath, input.title, {
             logger: runtimeLoggerService.getLogger("AmazonJpImageService"),
           });
@@ -162,7 +162,7 @@ export class ToolsService {
           });
           return { toolId: input.toolId, ok: results.every((item) => item.success), data: { results } };
         }
-        if (!input.rootDir) throw new Error("Amazon poster scan requires a root directory");
+        if (!input.rootDir) throw new Error("扫描 Amazon 海报需要指定根目录");
         const items = await scanAmazonPosters(input.rootDir);
         return { toolId: input.toolId, ok: true, data: { items } };
       }

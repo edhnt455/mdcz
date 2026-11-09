@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { Website } from "./enums";
+import { z } from "./zod";
 
 export const FAILURE_REASONS = [
   "region_blocked",

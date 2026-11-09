@@ -29,7 +29,7 @@ describe("input root", () => {
     const files = [path.join(base, "a", "one.mp4"), path.join(base, "b", "two.mp4")];
     expect(resolveInputRootPath(files, base)).toBe(base);
     expect(resolveInputRootPath(files, path.join(base, "a"))).toBe(base);
-    expect(() => resolveInputRootPath([], base)).toThrow("Cannot create a scrape root without files");
+    expect(() => resolveInputRootPath([], base)).toThrow("没有文件，无法创建刮削根目录");
   });
 
   it.each([
@@ -133,7 +133,7 @@ describe("input root", () => {
       if (selection === "alias") {
         await rm(alias);
         await symlink(outside, alias, directoryLinkType);
-        await expect(service.assertRootIntegrity([admitted.id])).rejects.toThrow("canonical path changed");
+        await expect(service.assertRootIntegrity([admitted.id])).rejects.toThrow("实际路径已变化");
       }
     } finally {
       vi.restoreAllMocks();

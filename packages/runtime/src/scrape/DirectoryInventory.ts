@@ -120,7 +120,7 @@ export class DirectoryInventory {
         observed.size !== current.size ||
         observed.mtimeMs !== current.mtimeMs
       ) {
-        throw new Error(`Local metadata changed; preview again: ${path}`);
+        throw new Error(`本地元数据已变化，请重新预览：${path}`);
       }
     }
   }
@@ -162,7 +162,7 @@ export class DirectoryInventory {
       let identity: string;
       try {
         const observed = await this.observeFileEntry(filePath);
-        if (!observed.stats.isFile()) throw new Error(`Media entry is not a file: ${filePath}`);
+        if (!observed.stats.isFile()) throw new Error(`媒体条目不是文件：${filePath}`);
         identity = filesystemPathKey(observed.entryPath);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;

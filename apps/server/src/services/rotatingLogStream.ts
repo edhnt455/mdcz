@@ -27,7 +27,7 @@ export const createRotatingLogStream = (directory: string): Writable => {
     },
     async write(chunk: Buffer, _encoding, callback) {
       try {
-        if (!file) throw new Error("Log file is not open");
+        if (!file) throw new Error("日志文件未打开");
         if (size > 0 && size + chunk.byteLength > MAX_LOG_BYTES) {
           await closeFile();
           await rm(join(directory, "mdcz2.log"), { force: true });

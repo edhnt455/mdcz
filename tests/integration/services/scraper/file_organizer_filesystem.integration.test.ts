@@ -168,7 +168,7 @@ describe("FileOrganizer filesystem organize", () => {
         createCrawlerData(),
         ...createConfig({ target: { placement: "metadataOnly", outputPath: join(mediaRoot, "metadata") } }),
       ),
-    ).toThrow("The library output directory cannot be the same as or contain the video's directory");
+    ).toThrow("媒体库输出目录不能与视频目录相同，也不能包含视频目录");
     await expect(access(join(mediaRoot, "metadata"))).rejects.toThrow();
   });
 
@@ -246,7 +246,7 @@ describe("FileOrganizer filesystem organize", () => {
       nfoPath: join(multipart.root, "FC2-123456.nfo"),
     });
     await expect((await resolveInPlace(["source.mp4", "another.mkv"], { number: "XYZ-999" })).layout).rejects.toThrow(
-      "Source directory contains multiple movies; scrape it into a library that writes metadata to its own folder",
+      "来源目录包含多部影片，请刮削到为每部影片单独保存元数据的媒体库",
     );
   });
 

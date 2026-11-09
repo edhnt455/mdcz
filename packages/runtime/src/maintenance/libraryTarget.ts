@@ -14,10 +14,10 @@ export const resolveMaintenanceTarget = async (
   mediaRoots: Pick<ConfiguredMediaRootService, "prepareOutputDirectory">,
 ): Promise<{ outputRootId: string; outputRelativeDirectory: string; target: PublicationTarget } | undefined> => {
   if (getMaintenancePreset(presetId).output !== "move") return undefined;
-  if (!library) throw new Error("Choose the library to organize into");
+  if (!library) throw new Error("请选择整理目标媒体库");
   const target = toPublicationTarget(library);
   if (!["move", "hardlink", "copy"].includes(target.placement))
-    throw new Error(`Library "${library.name}" keeps videos at their source, so it cannot be organized`);
+    throw new Error(`媒体库“${library.name}”将视频保留在来源位置，无法执行整理`);
   const output = await mediaRoots.prepareOutputDirectory({ hostPath: target.outputPath });
   return { outputRootId: output.id, outputRelativeDirectory: output.relativeDirectory, target };
 };

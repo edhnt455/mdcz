@@ -22,9 +22,8 @@ export const acquireDatabaseLease = (databasePath: string): Database.Database =>
     return lease;
   } catch (error) {
     lease.close();
-    throw new Error(
-      `Cannot acquire database ownership for ${canonicalPath}; stop other MDCz instances before starting or restoring.`,
-      { cause: error },
-    );
+    throw new Error(`无法取得数据库 ${canonicalPath} 的独占访问权，请先停止其他 MDCz 实例再启动或恢复。`, {
+      cause: error,
+    });
   }
 };

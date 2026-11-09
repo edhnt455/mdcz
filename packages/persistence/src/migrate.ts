@@ -31,11 +31,11 @@ export const runMigrations = (database: PersistenceDatabase, config: RunMigratio
     migrate(database.db, { migrationsFolder });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    const cause = error instanceof Error && error.cause instanceof Error ? ` | Caused by: ${error.cause.message}` : "";
+    const cause = error instanceof Error && error.cause instanceof Error ? ` | 原因：${error.cause.message}` : "";
 
     throw new PersistenceError(
       persistenceErrorCodes.MigrationFailed,
-      `Failed to migrate persistence database "${database.sqlite.name}" from "${migrationsFolder}": ${reason}${cause}`,
+      `无法将持久化数据库“${database.sqlite.name}”从“${migrationsFolder}”迁移：${reason}${cause}`,
       error,
     );
   }

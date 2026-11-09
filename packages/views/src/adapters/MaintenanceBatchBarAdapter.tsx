@@ -117,7 +117,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
       toast.info(t.maintenance.previewStarted);
     } catch (error) {
       useMaintenanceStore.getState().setPending(false);
-      if (toErrorMessage(error) === "Operation aborted") {
+      if (toErrorMessage(error) === "操作已中止") {
         return;
       }
       useMaintenanceStore.getState().setError(toErrorMessage(error));
@@ -142,7 +142,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
     const executableEntries = executionViewModel.executableEntries;
     const selections = executableEntries.map((entry) => {
       const preview = effectivePreviewResults[entry.fileId];
-      if (!preview?.previewId) throw new Error(`Maintenance preview is missing an ID: ${entry.fileInfo.filePath}`);
+      if (!preview?.previewId) throw new Error(`维护预览缺少 ID：${entry.fileInfo.filePath}`);
       return { previewId: preview.previewId, fieldSelections: fieldSelections[entry.fileId] };
     });
 

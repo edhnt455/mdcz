@@ -198,7 +198,7 @@ class FetchLlmApiTransport implements LlmApiTransport {
     const timeoutMs = Math.max(1, Math.trunc(timeout));
     const onAbort = () => controller.abort(signal?.reason);
     const timeoutId = globalThis.setTimeout(() => {
-      controller.abort(new Error(`Request timeout (${timeoutMs} ms)`));
+      controller.abort(new Error(`请求超时（${timeoutMs} 毫秒）`));
     }, timeoutMs);
 
     if (signal?.aborted) {
@@ -222,12 +222,10 @@ export class LlmApiClient {
 
   async generateText(request: LlmTextRequest, signal?: AbortSignal): Promise<string | null> {
     if (request.reasoning === "enabled" && request.serviceType !== "deepseek") {
-      throw new Error(
-        "Explicitly enabling with default effort is only supported for DeepSeek; please use server default or specify effort",
-      );
+      throw new Error("仅 DeepSeek 支持使用默认推理强度显式开启推理，请使用服务端默认值或指定推理强度");
     }
     if (request.serviceType === "google" && request.reasoning === "max") {
-      throw new Error("Google OpenAI-compatible endpoint does not support max reasoning effort");
+      throw new Error("Google 的 OpenAI 兼容端点不支持最高推理强度");
     }
     const baseUrl = normalizeLlmBaseUrl(request.baseUrl);
     const headers = this.buildHeaders(request.apiKey);
@@ -310,12 +308,12 @@ export class LlmApiClient {
   private buildOutputFormat(request: LlmTextRequest, apiFormat: LlmApiFormat): Record<string, unknown> {
     if (request.outputFormat === "none") return {};
     if (request.serviceType === "deepseek" && request.outputFormat === "json_schema") {
-      throw new Error("DeepSeek does not support JSON Schema output; select prompt JSON or JSON Object");
+      throw new Error("DeepSeek 不支持 JSON Schema 输出，请选择提示词 JSON 或 JSON Object");
     }
     const useJsonObject = request.outputFormat === "json_object";
     if (apiFormat === "chat-completions") {
       if (useJsonObject) return { response_format: { type: "json_object" } };
-      if (!request.outputSchema) throw new Error("JSON schema output requires an explicit schema");
+      if (!request.outputSchema) throw new Error("JSON Schema 输出需要明确提供结构定义");
       return {
         response_format: {
           type: "json_schema",
@@ -324,7 +322,7 @@ export class LlmApiClient {
       };
     }
     if (useJsonObject) return { text: { format: { type: "json_object" } } };
-    if (!request.outputSchema) throw new Error("JSON schema output requires an explicit schema");
+    if (!request.outputSchema) throw new Error("JSON Schema 输出需要明确提供结构定义");
     return {
       text: {
         format: { type: "json_schema", ...request.outputSchema, strict: true },
@@ -348,7 +346,7 @@ export class LlmApiClient {
     try {
       return await this.transport.postJsonDetailed<TResponse>(url, payload, init);
     } catch (error) {
-      throw new LlmTransportError(`LLM request failed for ${url}: ${toErrorMessage(error)}`, error);
+      throw new LlmTransportError(`大模型请求 ${url} 失败：${toErrorMessage(error)}`, error);
     }
   }
 
@@ -362,7 +360,7 @@ export class LlmApiClient {
     }
 
     throw new LlmEmptyResponseError(
-      `LLM response did not contain text for ${url}: ${this.summarizeResponseData(response.data)}`,
+      `大模型对 ${url} 的响应不包含文本：${this.summarizeResponseData(response.data)}`,
       response.status,
       response.headers,
       response.data,
@@ -372,7 +370,7 @@ export class LlmApiClient {
   private summarizeResponseData(data: unknown): string {
     const text = typeof data === "string" ? data : JSON.stringify(data);
     if (!text || text.trim().length === 0) {
-      return "(empty body)";
+      return "（响应体为空）";
     }
     return text.length > 500 ? `${text.slice(0, 500)}...` : text;
   }

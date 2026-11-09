@@ -171,7 +171,7 @@ export class AggregationService {
     const key = this.buildKey(number, options?.manualScrape);
     const cached = this.cache.get(key);
     if (cached) {
-      this.logger.info(`Cache hit for ${number}`);
+      this.logger.info(`${number} 命中缓存`);
     }
 
     let pending = cached ? Promise.resolve(cached) : this.inFlight.get(key);
@@ -243,7 +243,7 @@ export class AggregationService {
     for (const result of rejected) reportSiteResult(result);
     if (rejected.length > 0) {
       this.logger.info(
-        `${number} admitted ${admitted.length} sites; skipped: ${rejected
+        `${number} 可用站点 ${admitted.length} 个；跳过：${rejected
           .map(
             ({ site, skipReason, reason, detail }) =>
               `${site}(${[skipReason, reason, detail].filter(Boolean).join(" ")})`,
@@ -255,12 +255,12 @@ export class AggregationService {
       await this.recordSiteResults?.(number, rejected);
       // Sites whose number patterns exclude this number are not recorded, so an empty list means none applies.
       const message =
-        rejected.length > 0 ? summarizeFailedSiteResults(number, rejected) : `No configured site handles ${number}`;
+        rejected.length > 0 ? summarizeFailedSiteResults(number, rejected) : `已配置的站点均不支持 ${number}`;
       this.logger.warn(message);
       throw new ScrapeFailureError("not_found", message);
     }
 
-    this.logger.info(`Aggregating ${number} from ${admitted.length} sites: ${admitted.join(", ")}`);
+    this.logger.info(`正在从 ${admitted.length} 个站点聚合 ${number}：${admitted.join(", ")}`);
     const globalStart = Date.now();
     const fieldAggregator = new FieldAggregator(
       this.config.aggregation.fieldPriorities,
@@ -270,7 +270,7 @@ export class AggregationService {
     throwIfAborted(this.signal);
     const isAmbiguous = (result: { reason?: string }) => result.reason === "ambiguous";
     if (deferred.length > 0 && !crawled.some((result) => result.status === "success" || isAmbiguous(result))) {
-      this.logger.info(`${number} found on no admitted site; trying other content types: ${deferred.join(", ")}`);
+      this.logger.info(`所有可用站点均未找到 ${number}，正在尝试其他内容类型：${deferred.join(", ")}`);
       crawled.push(...(await this.executeCrawlers(deferred, number, fieldAggregator, manualScrape)));
       throwIfAborted(this.signal);
     } else {
@@ -305,7 +305,7 @@ export class AggregationService {
     const skippedCount = siteResults.filter((result) => result.status === "skipped").length;
     const totalElapsedMs = Date.now() - globalStart;
     this.logger.info(
-      `Crawl complete for ${number}: ${successes.size} succeeded, ${failedCount} failed, ${skippedCount} skipped in ${totalElapsedMs}ms`,
+      `${number} 抓取完成：成功 ${successes.size}，失败 ${failedCount}，跳过 ${skippedCount}，耗时 ${totalElapsedMs} 毫秒`,
     );
 
     if (successes.size === 0) {
@@ -330,9 +330,9 @@ export class AggregationService {
     const { data, sources, imageAlternatives } = mergeSiteData(successes, this.config);
     if (!this.meetsMinimumThreshold(data)) {
       this.logger.warn(
-        `Aggregated data for ${number} does not meet minimum threshold (number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url})`,
+        `${number} 的聚合数据未达到最低要求（number=${!!data.number}, title=${!!data.title}, thumb=${!!data.thumb_url}, poster=${!!data.poster_url}）`,
       );
-      throw new Error(`Aggregated data for ${number} does not meet minimum threshold`);
+      throw new Error(`${number} 的聚合数据未达到最低要求`);
     }
 
     return { data, sources, imageAlternatives, stats };
@@ -364,7 +364,7 @@ export class AggregationService {
       nextIndex: 0,
     };
     const globalTimer = setTimeout(() => {
-      this.logger.warn(`Global timeout (${globalTimeoutMs}ms) reached for ${number}`);
+      this.logger.warn(`${number} 已达到全局超时时限（${globalTimeoutMs} 毫秒）`);
       context.stop("global_timeout");
     }, globalTimeoutMs);
 
@@ -411,9 +411,7 @@ export class AggregationService {
 
       const pendingSites = [...context.inFlightSites, ...context.sites.slice(context.nextIndex)];
       if (this.shouldStopEarly(context.successes, pendingSites, context.fieldAggregator)) {
-        this.logger.info(
-          `Early stop triggered for ${context.number} after ${context.successes.size} successful site(s)`,
-        );
+        this.logger.info(`${context.number} 已有 ${context.successes.size} 个站点成功，触发提前停止`);
         context.stop("early_stop");
       }
     }
@@ -424,9 +422,7 @@ export class AggregationService {
     const start = Date.now();
     const siteTimeoutController = new AbortController();
     const budget = new PausableBudget(perCrawlerTimeoutMs, () =>
-      siteTimeoutController.abort(
-        new SiteError("timeout", `${site} exceeded crawler budget (${perCrawlerTimeoutMs}ms)`),
-      ),
+      siteTimeoutController.abort(new SiteError("timeout", `${site} 超出抓取时限（${perCrawlerTimeoutMs} 毫秒）`)),
     );
     const options = buildCrawlerOptions({
       site,
@@ -452,7 +448,7 @@ export class AggregationService {
         .catch(toCrawlerErrorResult);
       const elapsedMs = Date.now() - start;
       if (result.success) {
-        this.logger.info(`${site} succeeded for ${number} in ${elapsedMs}ms`);
+        this.logger.info(`${site} 成功抓取 ${number}，耗时 ${elapsedMs} 毫秒`);
         return {
           site,
           status: "success",
@@ -467,7 +463,7 @@ export class AggregationService {
       const budgetExceeded = siteTimeoutController.signal.reason instanceof SiteError;
       const reason = budgetExceeded ? "timeout" : result.reason;
       const detail = budgetExceeded ? siteTimeoutController.signal.reason.message : result.error;
-      this.logger.warn(`${site} failed for ${number}: ${reason}: ${detail} (${elapsedMs}ms)`);
+      this.logger.warn(`${site} 抓取 ${number} 失败：${reason}：${detail}（${elapsedMs} 毫秒）`);
       return {
         site,
         status: "failed",

@@ -13,21 +13,21 @@ export const settingsFields: Messages["settingsFields"] = {
     mediaServer: { label: "媒体服务器", aliases: ["媒体服务器", "Jellyfin", "Emby", "人物", "演员"] },
     automation: {
       label: "集成",
-      aliases: ["集成", "自动化", "下载器", "qBittorrent", "CloudDrive", "API Key", "通知", "推送"],
+      aliases: ["集成", "自动化", "下载器", "qBittorrent", "CloudDrive", "API 密钥", "通知", "推送"],
     },
   },
   fields: {
     "translate.deeplApiKey": {
-      label: "DeepL API Key",
+      label: "DeepL API 密钥",
       description: "以 :fx 结尾的 Free Key 使用 Free 接口，其余使用 Pro 接口。",
     },
     "translate.baiduService": {
       label: "百度翻译服务",
-      description: "需在百度翻译开放平台开通对应服务；通用文本翻译使用密钥，大模型文本翻译使用 API Key。",
+      description: "需在百度翻译开放平台开通对应服务；通用文本翻译使用密钥，大模型文本翻译使用 API 密钥。",
     },
     "translate.baiduAppId": { label: "百度翻译 APPID", description: "在百度翻译开放平台「开发者信息」页面查看。" },
     "translate.baiduSecretKey": { label: "百度翻译密钥", description: "在「开发者信息」页面查看。" },
-    "translate.baiduApiKey": { label: "百度翻译 API Key", description: "在管理控制台「API Key 管理」页面创建。" },
+    "translate.baiduApiKey": { label: "百度翻译 API 密钥", description: "在管理控制台「API 密钥 管理」页面创建。" },
     "paths.defaultScanExcludeDirs": {
       label: "排除目录",
       description: "扫描媒体库时自动跳过这些文件夹。",
@@ -414,7 +414,7 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["演员名称", "别名"],
     },
     "jellyfin.url": { label: "Jellyfin 服务器地址" },
-    "jellyfin.apiKey": { label: "Jellyfin API Key" },
+    "jellyfin.apiKey": { label: "Jellyfin API 密钥" },
     "jellyfin.userId": {
       label: "Jellyfin 用户 ID",
       description: "必须是 UUID。用于人物列表读取，留空则按服务端默认处理。",
@@ -424,7 +424,7 @@ export const settingsFields: Messages["settingsFields"] = {
       description: "写入简介后把 Overview 加入 LockedFields，降低被 Jellyfin 元数据刷新覆盖的概率。",
     },
     "emby.url": { label: "Emby 服务器地址" },
-    "emby.apiKey": { label: "Emby API Key" },
+    "emby.apiKey": { label: "Emby API 密钥" },
     "emby.userId": { label: "Emby 用户 ID", description: "用于人物列表读取，留空则按服务端默认处理。" },
     "emby.autoSyncActorPhotos": {
       label: "自动同步演员头像",
@@ -455,7 +455,7 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["下载器", "种子"],
     },
     "automation.qbittorrent.apiKey": {
-      label: "qBittorrent API Key",
+      label: "qBittorrent API 密钥",
       description: "qBittorrent 5.2 及以上可用，优先于用户名和密码。",
     },
     "automation.qbittorrent.username": {
@@ -474,8 +474,8 @@ export const settingsFields: Messages["settingsFields"] = {
       label: "通知渠道",
       description: "刮削完成时发送通知消息；开启每日摘要后也通过这些渠道发送。",
     },
-    "notifications.telegramBotToken": { label: "Telegram Bot Token" },
-    "notifications.telegramChatId": { label: "Telegram Chat ID" },
+    "notifications.telegramBotToken": { label: "Telegram 机器人令牌" },
+    "notifications.telegramChatId": { label: "Telegram 会话 ID" },
     "notifications.barkUrl": { label: "Bark 地址", description: "包含设备 Key 的 Bark 推送地址。" },
     "notifications.ntfyUrl": { label: "ntfy 主题地址", description: "例如 https://ntfy.sh/your-topic。" },
     "notifications.ntfyToken": { label: "ntfy 访问令牌", description: "公开主题可留空。" },

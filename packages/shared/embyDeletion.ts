@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { type MoviePilotConnection, moviePilotFileSchema } from "./moviePilot";
+import { z } from "./zod";
 
 export const embyDeletionSettingsSchema = z
   .object({
@@ -9,7 +9,7 @@ export const embyDeletionSettingsSchema = z
   })
   .refine(
     (settings) => settings.mode === "off" || (Boolean(settings.serverId) && settings.libraryIds.length > 0),
-    "Select an Emby server and at least one library",
+    "请选择 Emby 服务器及至少一个媒体库",
   );
 
 export const embyDeletionNotificationSchema = z.object({

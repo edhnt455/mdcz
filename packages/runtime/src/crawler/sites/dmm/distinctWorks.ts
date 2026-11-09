@@ -56,7 +56,7 @@ export const addDistinctWork = (works: DmmWork[], work: DmmWork): boolean => {
 };
 
 export const ambiguousWorksError = (site: Website, number: string, works: readonly DmmWork[]): SiteError =>
-  new SiteError("ambiguous", `${site} lists ${works.length} works under ${number}`, {
+  new SiteError("ambiguous", `${site} 在 ${number} 下列出 ${works.length} 部作品`, {
     candidates: works.map(({ data, detailUrl }) => ({
       site,
       detailUrl,

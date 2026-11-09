@@ -3,7 +3,7 @@ export class CandidatePreview {
   private readonly cancelled = new Set<string>();
 
   async run<T>(id: string, scan: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    if (this.scans.has(id)) throw new Error(`Preview is already running: ${id}`);
+    if (this.scans.has(id)) throw new Error(`预览已在运行：${id}`);
     const controller = new AbortController();
     if (this.cancelled.has(id)) controller.abort();
     const completion = Promise.resolve().then(() => {

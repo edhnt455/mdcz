@@ -31,7 +31,7 @@ export const classifyDmmDetailFailure = (
   title: string | undefined,
   siteLabel: "DMM" | "DMM_TV",
 ): SiteError | null => {
-  if (isDmmLoginWallHtml(html, title)) return new SiteError("login_wall", `${siteLabel}: login wall`);
-  if (isDmmUnrenderedShellHtml(html)) return new SiteError("empty_shell", `${siteLabel}: unrendered shell`);
+  if (isDmmLoginWallHtml(html, title)) return new SiteError("login_wall", `${siteLabel}：需要登录`);
+  if (isDmmUnrenderedShellHtml(html)) return new SiteError("empty_shell", `${siteLabel}：页面未完成渲染`);
   return null;
 };

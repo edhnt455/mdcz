@@ -19,9 +19,9 @@ export const writeLibraryRows = (
   movie: LibraryMovieInput,
   inputs: readonly LibraryFileInput[],
 ): string => {
-  if (!movie.id) throw new Error("Library write requires a declared movie ID");
+  if (!movie.id) throw new Error("写入媒体库需要指定影片 ID");
   if (!inputs.length && !database.db.select().from(libraryItems).where(eq(libraryItems.id, movie.id)).get()) {
-    throw new Error("Asset-only library write requires an existing movie");
+    throw new Error("仅写入资源时需要已有影片");
   }
 
   const targetPaths = new Set<string>();
@@ -33,9 +33,9 @@ export const writeLibraryRows = (
       .map((root) => [root.id, root]),
   );
   for (const input of inputs) {
-    if (!input.fileId) throw new Error("Library write requires a declared file ID");
+    if (!input.fileId) throw new Error("写入媒体库需要指定文件 ID");
     const root = roots.get(input.rootId);
-    if (!root) throw new Error(`Media root not found: ${input.rootId}`);
+    if (!root) throw new Error(`未找到媒体根目录：${input.rootId}`);
     input.entryIdentity ??= filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, input.rootRelativePath));
     const pathKey = input.entryIdentity;
     const identities = JSON.stringify(
@@ -55,14 +55,14 @@ export const writeLibraryRows = (
         )
     )
       throw new Error("影片已被删除过，不再入库");
-    if (targetPaths.has(pathKey)) throw new Error(`Duplicate library entry: ${pathKey}`);
+    if (targetPaths.has(pathKey)) throw new Error(`媒体库条目重复：${pathKey}`);
     targetPaths.add(pathKey);
   }
 
   const occupants = inputs.map((input) => {
     const fileId = input.fileId;
     const entryIdentity = input.entryIdentity;
-    if (!fileId || !entryIdentity) throw new Error("Library write requires a declared file ID and entry identity");
+    if (!fileId || !entryIdentity) throw new Error("写入媒体库需要指定文件 ID 和条目身份");
     const sourceIdentity = input.sourceEntryIdentity ?? entryIdentity;
     const matches = database.db
       .select()
@@ -74,28 +74,28 @@ export const writeLibraryRows = (
     const declared = matches.find((file) => file.id === fileId);
     const source = matches.find((file) => file.entryIdentity === sourceIdentity);
     const target = matches.find((file) => file.entryIdentity === entryIdentity);
-    if (declared && source && declared.id !== source.id) throw new Error("Library source belongs to another file");
+    if (declared && source && declared.id !== source.id) throw new Error("媒体库来源属于其他文件");
     // A row already registered at the destination whose file is gone from disk is relinked rather than
     // duplicated; the caller verified the destination is unoccupied on disk before committing.
     return { input, occupant: declared ?? source ?? target, target };
   });
 
   const occupantItemIds = new Set(occupants.flatMap(({ occupant }) => (occupant ? [occupant.itemId] : [])));
-  if (occupantItemIds.size > 1) throw new Error("Library paths belong to different movies");
+  if (occupantItemIds.size > 1) throw new Error("媒体库路径属于不同影片");
   const id = occupantItemIds.values().next().value ?? movie.id;
-  if (!id) throw new Error("Library write requires a declared movie ID");
+  if (!id) throw new Error("写入媒体库需要指定影片 ID");
   if (id !== movie.id && database.db.select().from(libraryItems).where(eq(libraryItems.id, movie.id)).get())
-    throw new Error("Library write cannot merge independent movies");
+    throw new Error("写入媒体库时不能合并独立影片");
   const movingFileIds = new Set(occupants.flatMap(({ occupant }) => (occupant ? [occupant.id] : [])));
   for (const { target } of occupants)
-    if (target && !movingFileIds.has(target.id)) throw new Error("Library target belongs to another file");
+    if (target && !movingFileIds.has(target.id)) throw new Error("媒体库目标属于其他文件");
 
   const resolved = occupants.map(({ input, occupant }) => {
     const declaredFileId = input.fileId;
-    if (!declaredFileId) throw new Error("Library write requires a declared file ID");
+    if (!declaredFileId) throw new Error("写入媒体库需要指定文件 ID");
     const fileId = occupant?.id ?? declaredFileId;
     const declaredFile = database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
-    if (declaredFile && declaredFile.itemId !== id) throw new Error("Library file belongs to another movie");
+    if (declaredFile && declaredFile.itemId !== id) throw new Error("媒体库文件属于其他影片");
     input.fileId = fileId;
     return { input, fileId };
   });
@@ -108,8 +108,8 @@ export const writeLibraryRows = (
   for (const scope of scopes) {
     for (const asset of scope.assets ?? []) {
       const fileScoped = asset.kind === "subtitle";
-      if (fileScoped !== (scope.fileId !== null)) throw new Error(`Invalid library asset scope: ${asset.kind}`);
-      if (!asset.uri.trim()) throw new Error("Library asset URI must not be empty");
+      if (fileScoped !== (scope.fileId !== null)) throw new Error(`媒体库资源作用范围无效：${asset.kind}`);
+      if (!asset.uri.trim()) throw new Error("媒体库资源 URI 不能为空");
     }
   }
 

@@ -16,7 +16,7 @@ export const startServer = async (options: BuildServerOptions = {}): Promise<voi
 
   const shutdownForSignal = (): void => {
     const deadline = setTimeout(() => {
-      logger.error("Server shutdown exceeded 25 seconds; interrupted work will be recovered on restart");
+      logger.error("服务关闭超过 25 秒，中断的工作将在重启后恢复");
       process.exit(1);
     }, 25_000);
     deadline.unref();
@@ -39,9 +39,9 @@ export const startServer = async (options: BuildServerOptions = {}): Promise<voi
     try {
       await shutdown();
     } catch (closeError) {
-      throw new AggregateError([error, closeError], "Server startup failed");
+      throw new AggregateError([error, closeError], "服务启动失败");
     }
     throw error;
   }
-  logger.info(`MDCz server listening on http://${host}:${port}`);
+  logger.info(`MDCz 服务正在监听 http://${host}:${port}`);
 };

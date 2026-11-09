@@ -261,7 +261,7 @@ export class DmmCrawler extends BaseDmmCrawler {
         }
       } catch (error) {
         if (isNetworkWideFailure(error)) throw error;
-        this.logger.warn(`DMM search candidate failed for ${candidateSearchUrl}: ${toErrorMessage(error)}`);
+        this.logger.warn(`DMM 搜索候选项 ${candidateSearchUrl} 失败：${toErrorMessage(error)}`);
       }
     }
 
@@ -290,7 +290,7 @@ export class DmmCrawler extends BaseDmmCrawler {
       walked += 1;
       try {
         const data = isDmmVideoLikeUrl(candidateUrl)
-          ? await this.tryDmmVideoDetailUrl(context, candidateUrl, Website.DMM, "DMM video GraphQL candidate")
+          ? await this.tryDmmVideoDetailUrl(context, candidateUrl, Website.DMM, "DMM 视频 GraphQL 候选项")
           : await this.parseDetailDocument(context, load(await this.fetch(candidateUrl, context)), candidateUrl);
         if (data && movieNumbersMatch(data.number, context.number)) {
           addDistinctWork(works, { data, detailUrl: candidateUrl });
@@ -298,7 +298,7 @@ export class DmmCrawler extends BaseDmmCrawler {
         }
       } catch (error) {
         if (isNetworkWideFailure(error)) throw error;
-        this.logger.debug(`DMM candidate failed for ${candidateUrl}: ${toErrorMessage(error)}`);
+        this.logger.debug(`DMM 候选项 ${candidateUrl} 失败：${toErrorMessage(error)}`);
       }
     }
 
@@ -312,7 +312,7 @@ export class DmmCrawler extends BaseDmmCrawler {
     detailUrl: string,
   ): Promise<CrawlerData | null> {
     if (isDmmVideoLikeUrl(detailUrl)) {
-      const videoResult = await this.tryDmmVideoDetailUrl(context, detailUrl, Website.DMM, "DMM video GraphQL");
+      const videoResult = await this.tryDmmVideoDetailUrl(context, detailUrl, Website.DMM, "DMM 视频 GraphQL");
       if (videoResult) {
         return videoResult;
       }

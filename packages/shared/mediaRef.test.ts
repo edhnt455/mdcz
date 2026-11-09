@@ -18,19 +18,15 @@ describe("local-file URL encoding", () => {
   });
 
   it("rejects traversal in the relative path", () => {
-    expect(() => toLocalFileUrl({ rootId: "root-1", relativePath: "../secret.txt" })).toThrow(
-      "Invalid media relative path",
-    );
-    expect(() => parseLocalFileUrl("local-file://root-1/foo/%2e%2e/%2e%2e/secret.txt")).toThrow(
-      "Invalid media relative path",
-    );
-    expect(() => parseLocalFileUrl("local-file://root-1/foo/../secret.txt")).toThrow("Invalid media relative path");
+    expect(() => toLocalFileUrl({ rootId: "root-1", relativePath: "../secret.txt" })).toThrow("媒体相对路径无效");
+    expect(() => parseLocalFileUrl("local-file://root-1/foo/%2e%2e/%2e%2e/secret.txt")).toThrow("媒体相对路径无效");
+    expect(() => parseLocalFileUrl("local-file://root-1/foo/../secret.txt")).toThrow("媒体相对路径无效");
   });
 });
 
 describe("parseWireRelativePath", () => {
   it("rejects traversal that the filesystem contract would normalize", () => {
-    expect(() => parseWireRelativePath("a/../b")).toThrow("Invalid media relative path");
+    expect(() => parseWireRelativePath("a/../b")).toThrow("媒体相对路径无效");
   });
 
   it("treats an empty relative directory as the root itself", () => {

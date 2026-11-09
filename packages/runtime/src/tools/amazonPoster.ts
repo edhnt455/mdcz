@@ -133,7 +133,7 @@ export const scanAmazonPosters = async (
   const validateImageFn = dependencies.validateImage ?? defaultAmazonPosterDependencies.validateImage;
   const logger = dependencies.logger ?? runtimeLoggerService.getLogger("AmazonPoster");
   const normalizedRoot = resolve(rootDirectory.trim());
-  if (!(await stat(normalizedRoot)).isDirectory()) throw new Error(`Directory not found: ${normalizedRoot}`);
+  if (!(await stat(normalizedRoot)).isDirectory()) throw new Error(`未找到目录：${normalizedRoot}`);
   const nfoPaths = await listNfoFiles(normalizedRoot);
   const directoryNamedNfoCounts = new Map<string, number>();
   for (const nfoPath of nfoPaths) {
@@ -151,7 +151,7 @@ export const scanAmazonPosters = async (
       parsed = parseNfoSnapshot(await readFile(nfoPath, "utf8")).crawlerData;
     } catch (error) {
       // Scanned folders may hold NFOs written by other tools; one unreadable file must not abort the scan.
-      logger.warn(`Skipping unreadable NFO ${nfoPath}: ${toErrorText(error)}`);
+      logger.warn(`跳过无法读取的 NFO ${nfoPath}：${toErrorText(error)}`);
       continue;
     }
     const directory = dirname(nfoPath);
@@ -253,12 +253,12 @@ export const applyAmazonPosters = async (
       try {
         await networkClient.download(item.amazonPosterUrl.trim(), tempPosterPath);
         const validation = await validateImageFn(tempPosterPath);
-        if (!validation.valid) throw new Error(`Image validation failed: ${validation.reason ?? "parse_failed"}`);
+        if (!validation.valid) throw new Error(`图片校验失败：${validation.reason ?? "parse_failed"}`);
         const staged = await stat(tempPosterPath);
         const registered = dependencies.outputs
           ? await resolveRegisteredNfoPaths(normalizedNfoPath, dependencies.outputs, async (id) => {
               const root = dependencies.roots.find((root) => root.id === id);
-              if (!root) throw new Error(`Publication root not found: ${id}`);
+              if (!root) throw new Error(`未找到发布根目录：${id}`);
               return root;
             })
           : undefined;
@@ -273,7 +273,7 @@ export const applyAmazonPosters = async (
               protectedMediaFiles: registered?.mediaPaths,
               commit: async () => {
                 if (!registered) return;
-                if (!dependencies.library) throw new Error("Registered poster write requires library updates");
+                if (!dependencies.library) throw new Error("写入已登记的海报需要同步更新媒体库");
                 const ref = toRootFileRef(savedPosterPath, dependencies.roots);
                 await writePublishedMovie(dependencies.library, registered.movieId, [
                   {
@@ -295,7 +295,7 @@ export const applyAmazonPosters = async (
           await rm(tempPosterPath, { force: true });
           publicationJournal.forget(tempPosterPath);
         } catch (error) {
-          logger.warn(`Failed to remove poster staging ${tempPosterPath}: ${toErrorText(error)}`);
+          logger.warn(`移除海报暂存文件 ${tempPosterPath} 失败：${toErrorText(error)}`);
         }
       }
       results.push({

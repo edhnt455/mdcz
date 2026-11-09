@@ -18,7 +18,7 @@ import {
   pendingSiteResultSchema,
 } from "@mdcz/shared/pending";
 import type { ScrapeStartInput } from "@mdcz/shared/serverDtos";
-import { z } from "zod";
+import { z } from "@mdcz/shared/zod";
 import type { MaintenanceRuntime } from "../maintenance/MaintenanceRuntime";
 import { committedMovieRows } from "../publication/committedMovie";
 import type { NumberRecognitionService } from "../scrape/NumberRecognitionService";
@@ -41,6 +41,7 @@ export interface PendingServiceDependencies {
   updateConfiguration: (patch: DeepPartial<Configuration>) => Promise<unknown>;
   maintenanceRuntime: Pick<MaintenanceRuntime, "applyLibraryEntry">;
   recognitionService: Pick<NumberRecognitionService, "recognize">;
+  deleteFile: (id: string) => Promise<void>;
   onChanged?: () => void;
 }
 
@@ -85,11 +86,12 @@ export class PendingService {
   async retry(input: PendingRetryInput): Promise<PendingRetryResponse> {
     const repositories = await this.deps.repositories();
     const item = repositories.pending.get(input.id);
-    if (item.kind === "uncensored") throw new Error("This movie is published; confirm its type instead");
+    if (item.deletionJson) throw new Error("此文件的删除尚未完成，请继续删除");
+    if (item.kind === "uncensored") throw new Error("此影片已发布，请改为确认影片类型");
     const libraryId = input.libraryId ?? item.libraryId;
-    if (!libraryId) throw new Error("Choose a library to scrape this file into");
+    if (!libraryId) throw new Error("请选择刮削此文件的目标媒体库");
     const candidate = input.candidate === undefined ? undefined : this.candidates(item)[input.candidate];
-    if (input.candidate !== undefined && !candidate) throw new Error("The chosen work is not in this entry");
+    if (input.candidate !== undefined && !candidate) throw new Error("此条目中没有选中的作品");
     const manualUrl = candidate?.detailUrl ?? input.manualUrl;
     if (input.rule) await this.saveRule(input.rule, input.number);
     const { taskId } = await this.deps.startScrape({
@@ -105,7 +107,8 @@ export class PendingService {
   async retryNumberRecognition(id: string): Promise<PendingDetailResponse> {
     const repositories = await this.deps.repositories();
     const item = repositories.pending.get(id);
-    if (item.kind === "uncensored") throw new Error("This movie is published; confirm its type instead");
+    if (item.deletionJson) throw new Error("此文件的删除尚未完成，请继续删除");
+    if (item.kind === "uncensored") throw new Error("此影片已发布，请改为确认影片类型");
     const root = await this.deps.mediaRoots.get(item.rootId);
     const configuration = await this.deps.getConfiguration();
     const result = await this.deps.recognitionService.recognize(
@@ -125,17 +128,17 @@ export class PendingService {
   async confirmUncensored(input: PendingConfirmUncensoredInput): Promise<void> {
     const repositories = await this.deps.repositories();
     const item = repositories.pending.get(input.id);
-    if (item.kind !== "uncensored" || !item.movieId) throw new Error("This entry has no uncensored type to confirm");
+    if (item.deletionJson) throw new Error("此文件的删除尚未完成，请继续删除");
+    if (item.kind !== "uncensored" || !item.movieId) throw new Error("此条目没有需要确认的无码类型");
     const configuration = await this.deps.getConfiguration();
-    if (!configuration.download.generateNfo)
-      throw new Error("NFO generation is disabled; cannot confirm uncensored type");
+    if (!configuration.download.generateNfo) throw new Error("NFO 生成已关闭，无法确认无码类型");
     const entry = await repositories.library.getEntryById(item.movieId);
     const library = item.libraryId ? await this.deps.libraries.get(item.libraryId) : undefined;
     // A library that placed the files reorganizes them under the new name; others only rewrite the NFO in place.
     const reorganize = library && ["move", "hardlink", "copy"].includes(library.placement);
     const roots = await this.deps.mediaRoots.listRoots();
     const root = roots.find((candidate) => candidate.id === entry.files[0]?.rootId);
-    if (!root) throw new Error("Movie is missing valid media files");
+    if (!root) throw new Error("影片缺少有效媒体文件");
     await this.deps.mediaRoots.assertRootIntegrity(
       new Set([...entry.files.map((file) => file.rootId), ...entry.assets.flatMap((asset) => asset.rootId ?? [])]),
     );
@@ -175,7 +178,15 @@ export class PendingService {
   }
 
   async ignore(id: string): Promise<void> {
-    (await this.deps.repositories()).pending.delete([id]);
+    const { pending } = await this.deps.repositories();
+    if (pending.list().some((item) => item.id === id && item.deletionJson))
+      throw new Error("此文件的删除尚未完成，请继续删除");
+    pending.delete([id]);
+    this.deps.onChanged?.();
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.deps.deleteFile(id);
     this.deps.onChanged?.();
   }
 
@@ -183,6 +194,8 @@ export class PendingService {
     const repositories = await this.deps.repositories();
     const ids = [...new Set(input.ids)];
     if (input.action === "ignore") {
+      if (repositories.pending.list().some((item) => ids.includes(item.id) && item.deletionJson))
+        throw new Error("所选文件包含未完成的删除，请先继续删除");
       repositories.pending.delete(ids);
       this.deps.onChanged?.();
       return { succeededIds: ids, failures: [] };
@@ -204,10 +217,11 @@ export class PendingService {
     for (const id of ids) {
       try {
         const item = repositories.pending.get(id);
+        if (item.deletionJson) throw new Error("此文件的删除尚未完成，请继续删除");
         if (["uncensored", "ambiguous", "no_number"].includes(item.kind))
-          throw new Error("This entry needs manual input; process it individually");
+          throw new Error("此条目需要手动输入，请单独处理");
         const libraryId = input.libraryId ?? item.libraryId;
-        if (!libraryId) throw new Error("Choose a library to scrape this file into");
+        if (!libraryId) throw new Error("请选择刮削此文件的目标媒体库");
         const group = groups.get(libraryId) ?? [];
         group.push(item);
         groups.set(libraryId, group);
@@ -238,7 +252,7 @@ export class PendingService {
         await this.deps.updateConfiguration({ scrape: { filenameIgnoreTokens: [...tokens, rule.token] } });
       return;
     }
-    if (!number) throw new Error("A number mapping needs the corrected number");
+    if (!number) throw new Error("保存番号映射需要提供修正后的番号");
     await this.deps.updateConfiguration({
       scrape: { numberMappings: { ...configuration.scrape.numberMappings, [rule.match]: number } },
     });
@@ -253,7 +267,7 @@ export class PendingService {
       .flatMap((candidate) => {
         const parsed = ambiguousCandidateSchema.safeParse(candidate);
         if (parsed.success) return [parsed.data];
-        logger.warn(`Dropped an unreadable candidate of pending entry ${item.id}: ${parsed.error.message}`);
+        logger.warn(`已丢弃待处理条目 ${item.id} 中无法读取的候选项：${parsed.error.message}`);
         return [];
       });
   }

@@ -70,11 +70,11 @@ export const groupMovieMembers = <TMember extends MovieMember>(members: readonly
     if (memberError) {
       group.error = memberError;
     } else if (!group.members[0]?.ownerId && parts.length && parts.length !== group.members.length) {
-      group.error = "The same movie contains both multi-part and standalone files; please check manually";
+      group.error = "同一影片同时包含分段和独立视频文件，请人工检查";
     } else if (new Set(parts).size !== parts.length) {
-      group.error = "The same movie contains duplicate part numbers; please check manually";
+      group.error = "同一影片包含重复的分段编号，请人工检查";
     } else if (new Set(group.members.map((member) => JSON.stringify(member.manualScrape ?? null))).size > 1) {
-      group.error = "The same movie contains conflicting manual scrape instructions";
+      group.error = "同一影片的手动刮削指令冲突";
     }
   }
   return [...groups.values()];
@@ -121,7 +121,7 @@ const inspectMember = async (
     fileInfo.extension.toLowerCase() === ".strm" &&
     !primary.some((entry) => entry.name === `${fileInfo.fileName}${fileInfo.extension}`)
   ) {
-    member.error = `Cannot process generated sidecar video file alone: ${filePath}`;
+    member.error = `无法单独处理自动生成的附属视频文件：${filePath}`;
   }
   return member;
 };
@@ -231,8 +231,7 @@ export const admitMaintenanceGroups = async (input: {
   for (const entry of locations) {
     if (entry.kind !== "video") continue;
     const previous = owners.get(entry.identity);
-    if (previous && previous.movieId !== entry.movieId)
-      throw new Error(`Media entry belongs to multiple movies: ${entry.identity}`);
+    if (previous && previous.movieId !== entry.movieId) throw new Error(`媒体条目属于多部影片：${entry.identity}`);
     owners.set(entry.identity, entry);
   }
   const members = await collectMembers({

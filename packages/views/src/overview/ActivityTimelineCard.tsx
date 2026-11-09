@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useT } from "../i18n";
 
+const MAX_VISIBLE_ERRORS = 10;
+
 const ACTIVE_STATUSES: ReadonlySet<ActivityEntryDto["status"]> = new Set([
   "queued",
   "discovering",
@@ -68,6 +70,7 @@ export function ActivityTimelineCard({
       <ol className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {entries.map((entry) => {
           const { icon: Icon, className } = statusIcon(entry.status);
+          const errors = entry.error?.split(/\n\s*\n/).filter((error) => error.trim()) ?? [];
           const duration = entry.durationMs === null ? null : formatDuration(entry.durationMs);
           const details = [
             entry.counts
@@ -95,7 +98,18 @@ export function ActivityTimelineCard({
                 <div className="mt-1 text-xs text-muted-foreground">
                   {[t.overview.activity.statuses[entry.status], ...details].join(" · ")}
                 </div>
-                {entry.error ? <div className="mt-1 break-words text-xs text-destructive">{entry.error}</div> : null}
+                {errors.length > 0 ? (
+                  <div className="mt-1 text-xs text-destructive">
+                    <div className="whitespace-pre-wrap break-words">
+                      {errors.slice(0, MAX_VISIBLE_ERRORS).join("\n\n")}
+                    </div>
+                    {errors.length > MAX_VISIBLE_ERRORS ? (
+                      <div className="mt-1 text-muted-foreground">
+                        {t.overview.activity.hiddenErrors(errors.length - MAX_VISIBLE_ERRORS)}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </>
           );

@@ -464,7 +464,7 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
   const credentials =
     engine === "deepl" ? { deeplApiKey: "edited-key" } : { baiduAppId: "edited-app", baiduSecretKey: "edited-secret" };
   const labels: Record<string, string> = {
-    deeplApiKey: "DeepL API Key",
+    deeplApiKey: "DeepL API 密钥",
     baiduAppId: "百度翻译 APPID",
     baiduSecretKey: "百度翻译密钥",
   };

@@ -4,11 +4,7 @@ import { classifyJavbusPage } from "./javbusPage";
 describe("classifyJavbusPage", () => {
   it.each([
     ["film content", '<a class="movie-box" href="/ABP-123"></a>', "content"],
-    [
-      "age verification",
-      '<title>Age Verification JavBus - JavBus</title><div id="ageVerify"></div>',
-      "verification_required",
-    ],
+    ["年龄验证", '<title>Age Verification JavBus - JavBus</title><div id="ageVerify"></div>', "verification_required"],
     ["region driving quiz", "<h1>Region verification</h1><p>駕駛考試題</p>", "verification_required"],
     ["login wall", '<form><h2>Login</h2><input name="username" /><input type="password" /></form>', "login_wall"],
     [

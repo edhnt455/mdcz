@@ -4,7 +4,7 @@ import { ActivityTimelineCard } from "@mdcz/views/overview";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
-test("activity clearing is available only for finished entries and disabled while pending", async () => {
+test("activity limits error details and allows clearing finished entries only when idle", async () => {
   const onClearCompleted = vi.fn();
   const t = getT();
   const active: ActivityEntryDto = {
@@ -31,6 +31,22 @@ test("activity clearing is available only for finished entries and disabled whil
     <ActivityTimelineCard entries={[active, finished]} onClearCompleted={onClearCompleted} isClearing />,
   );
   await expect.element(clearButton).toBeDisabled();
+  for (const count of [1, 10, 12]) {
+    const errors = Array.from(
+      { length: count },
+      (_, index) => `Conflict ${index + 1}\n待处理文件：/source/${index + 1}.strm\n目标路径：/target/${index + 1}.strm`,
+    );
+    await screen.rerender(<ActivityTimelineCard entries={[{ ...finished, error: errors.join("\n\n") }]} />);
+    const visibleErrors = screen.getByText(errors.slice(0, 10).join("\n\n"), { exact: true });
+    await expect.element(visibleErrors).toBeVisible();
+    expect(visibleErrors.element().textContent).toBe(errors.slice(0, 10).join("\n\n"));
+    if (count > 10) {
+      await expect.element(screen.getByText(t.overview.activity.hiddenErrors(count - 10))).toBeVisible();
+      await expect.element(screen.getByText(/Conflict 11/)).not.toBeInTheDocument();
+    } else {
+      await expect.element(screen.getByText(/条错误未显示/)).not.toBeInTheDocument();
+    }
+  }
   await screen.rerender(<ActivityTimelineCard entries={[]} onClearCompleted={onClearCompleted} />);
   await expect.element(screen.getByRole("heading", { name: t.overview.activity.title })).not.toBeInTheDocument();
 });

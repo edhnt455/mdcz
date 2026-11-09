@@ -107,11 +107,11 @@ export class ImageDownloadService {
         };
       }
 
-      this.logger.warn(`Image invalid (${validation.reason ?? "parse_failed"}): ${url}`);
+      this.logger.warn(`图片无效（${validation.reason ?? "parse_failed"}）：${url}`);
     } catch (error) {
       if (isAbortError(error)) throw error;
       const message = toErrorMessage(error);
-      this.logger.warn(`Image validation failed for ${url}: ${message}`);
+      this.logger.warn(`图片 ${url} 校验失败：${message}`);
     } finally {
       await unlink(temporaryPath).catch((error: NodeJS.ErrnoException) => {
         if (error.code !== "ENOENT") throw error;
@@ -126,7 +126,7 @@ export class ImageDownloadService {
       return targetPath;
     } catch (error) {
       const message = toErrorMessage(error);
-      this.logger.warn(`Failed to derive ${targetLabel} image: ${message}`);
+      this.logger.warn(`生成 ${targetLabel} 图片失败：${message}`);
       return null;
     }
   }
@@ -161,7 +161,7 @@ export class ImageDownloadService {
       }
       const message = toErrorMessage(error);
       this.hostCooldown.recordFailure(url, message);
-      this.logger.warn(`Download failed for ${url}: ${message}`);
+      this.logger.warn(`下载 ${url} 失败：${message}`);
       return { status: "skipped", reason: "download_failed" };
     }
   }
@@ -237,7 +237,7 @@ export class ImageDownloadService {
       await unlink(filePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        this.logger.warn(`Published image but failed to remove stale source ${filePath}: ${toErrorMessage(error)}`);
+        this.logger.warn(`图片已发布，但移除旧来源 ${filePath} 失败：${toErrorMessage(error)}`);
       }
     }
   }

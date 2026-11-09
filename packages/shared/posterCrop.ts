@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod";
 
 export const POSTER_ASPECT_RATIO = 2 / 3;
 
@@ -11,7 +11,7 @@ export const normalizedCropRegionSchema = z
   })
   .superRefine((crop, context) => {
     if (crop.x + crop.width > 1 + Number.EPSILON || crop.y + crop.height > 1 + Number.EPSILON) {
-      context.addIssue({ code: "custom", message: "Crop region exceeds image bounds" });
+      context.addIssue({ code: "custom", message: "裁剪区域超出图片边界" });
     }
   });
 
@@ -59,7 +59,7 @@ export const resolveThumbToPosterCropRegion = (imageWidth: number, imageHeight: 
 
 export const resolvePosterEditorCropRegion = (imageWidth: number, imageHeight: number): NormalizedCropRegion => {
   if (!Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth <= 0 || imageHeight <= 0) {
-    throw new Error("Image dimensions must be positive finite numbers");
+    throw new Error("图片尺寸必须是正的有限数值");
   }
   const derived = resolveThumbToPosterCropRegion(imageWidth, imageHeight);
   const width = Math.min(imageWidth, imageHeight * POSTER_ASPECT_RATIO);
@@ -89,7 +89,7 @@ export const normalizedCropToPixels = (
   const rawWidth = crop.width * imageWidth;
   const rawHeight = crop.height * imageHeight;
   if (Math.abs(rawWidth / rawHeight - POSTER_ASPECT_RATIO) > 0.005) {
-    throw new Error("Poster crop must use a 2:3 aspect ratio");
+    throw new Error("海报裁剪必须使用 2:3 宽高比");
   }
   const left = Math.round(crop.x * imageWidth);
   const top = Math.round(crop.y * imageHeight);

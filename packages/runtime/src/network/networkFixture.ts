@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Website } from "@mdcz/shared/enums";
 import { FAILURE_REASONS } from "@mdcz/shared/siteResults";
-import { z } from "zod";
+import { z } from "@mdcz/shared/zod";
 import type { RawNetworkRequest } from "./NetworkClient";
 
 export const SHARED_NETWORK_FIXTURE_CASE_ID = "shared";
@@ -49,7 +49,7 @@ const interactionSchema = z
     transportError: z.object({ name: z.string().min(1), message: z.string() }).optional(),
   })
   .refine((interaction) => Boolean(interaction.response) !== Boolean(interaction.transportError), {
-    message: "An interaction must contain exactly one response or transportError",
+    message: "每次交互必须且只能包含 response 或 transportError 中的一项",
   });
 
 export const networkFixtureManifestSchema = z.object({
@@ -115,7 +115,7 @@ export const rawRequestBodyToBase64 = async (body: unknown): Promise<string | nu
   if (body instanceof ArrayBuffer) return Buffer.from(body).toString("base64");
   if (ArrayBuffer.isView(body)) return Buffer.from(body.buffer, body.byteOffset, body.byteLength).toString("base64");
   if (body instanceof Blob) return Buffer.from(await body.arrayBuffer()).toString("base64");
-  throw new Error(`Network fixture does not support request body type ${body.constructor?.name ?? typeof body}`);
+  throw new Error(`网络录制不支持此请求体类型：${body.constructor?.name ?? typeof body}`);
 };
 
 export const networkRequestIdentity = async (request: RawNetworkRequest): Promise<NetworkFixtureRequest> => ({
@@ -128,15 +128,13 @@ export const loadNetworkFixture = async (fixturesRoot: string, caseId: string): 
   const manifestPath = path.join(resolveNetworkFixtureDirectory(fixturesRoot, caseId), "manifest.json");
   const manifest = networkFixtureManifestSchema.parse(JSON.parse(await readFile(manifestPath, "utf8")));
   if (manifest.caseId !== caseId) {
-    throw new Error(`Network fixture identity mismatch at ${manifestPath}: expected ${caseId}, got ${manifest.caseId}`);
+    throw new Error(`网络录制身份不匹配：${manifestPath}，预期 ${caseId}，实际 ${manifest.caseId}`);
   }
   const nextSequence = new Map<string, number>();
   for (const interaction of manifest.interactions) {
     const expected = (nextSequence.get(interaction.channel) ?? 0) + 1;
     if (interaction.sequence !== expected) {
-      throw new Error(
-        `Network fixture sequence must be contiguous at ${caseId}/${interaction.channel}: ${interaction.sequence}`,
-      );
+      throw new Error(`网络录制序号必须连续：${caseId}/${interaction.channel}：${interaction.sequence}`);
     }
     nextSequence.set(interaction.channel, expected);
   }

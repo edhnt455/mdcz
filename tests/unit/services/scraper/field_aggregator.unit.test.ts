@@ -187,6 +187,6 @@ describe("FieldAggregator", () => {
   });
 
   it("throws when no results are provided", () => {
-    expect(() => new FieldAggregator({}).aggregate(new Map())).toThrow("No results to aggregate");
+    expect(() => new FieldAggregator({}).aggregate(new Map())).toThrow("没有可聚合的结果");
   });
 });

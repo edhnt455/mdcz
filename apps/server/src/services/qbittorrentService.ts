@@ -110,7 +110,7 @@ export class QbittorrentService {
         { savePath?: string }
       >;
       const category = categories[settings.category];
-      if (!category) throw new Error(`qBittorrent has no category named "${settings.category}"`);
+      if (!category) throw new Error(`qBittorrent 中没有名为“${settings.category}”的分类`);
       // An empty save path means "<default save path>/<category>"; a relative one is resolved against the default.
       const savePath = /^([a-z]:)?[\\/]/iu.test(category.savePath ?? "")
         ? (category.savePath ?? "")
@@ -129,7 +129,7 @@ export class QbittorrentService {
       for (const hash of this.#failures.keys()) if (!current.has(hash)) this.#failures.delete(hash);
       for (const torrent of torrents) {
         if (handled.has(torrent.hash) || torrent.completion_on * 1000 < since) continue;
-        if (!torrent.content_path) throw new Error("qBittorrent 4.3.1 or newer is required");
+        if (!torrent.content_path) throw new Error("需要 qBittorrent 4.3.1 或更新版本");
         try {
           await this.deps.automation.scrapeStart({ path: torrent.content_path });
           downloaders.markHandled(sourceKey, torrent.hash);
@@ -137,7 +137,7 @@ export class QbittorrentService {
         } catch (error) {
           const message = toErrorMessage(error);
           if (this.#failures.get(torrent.hash)?.error !== message)
-            this.deps.logger.warn(`qBittorrent torrent "${torrent.name}" was not scraped: ${message}`);
+            this.deps.logger.warn(`qBittorrent 种子“${torrent.name}”未刮削：${message}`);
           this.#failures.set(torrent.hash, { name: torrent.name, error: message });
         }
       }
@@ -150,7 +150,7 @@ export class QbittorrentService {
       };
     } catch (error) {
       const message = toErrorMessage(error);
-      if (this.#status.error !== message) this.deps.logger.warn(`qBittorrent poll failed: ${message}`);
+      if (this.#status.error !== message) this.deps.logger.warn(`qBittorrent 轮询失败：${message}`);
       this.#status = { ...this.#status, configured: true, lastPollAt, error: message };
     }
   }
@@ -184,8 +184,8 @@ export class QbittorrentService {
       response = await send();
     }
     if (response.status === 401 || response.status === 403)
-      throw new Error(`qBittorrent refused access (HTTP ${response.status}); check the API key or login`);
-    if (!response.ok) throw new Error(`qBittorrent answered HTTP ${response.status} for ${path}`);
+      throw new Error(`qBittorrent 拒绝访问（HTTP ${response.status}），请检查 API 密钥或登录状态`);
+    if (!response.ok) throw new Error(`qBittorrent 访问 ${path} 时返回 HTTP ${response.status}`);
     return response;
   }
 
@@ -196,11 +196,11 @@ export class QbittorrentService {
       body: new URLSearchParams({ username: settings.username, password: settings.password }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (response.status === 403) throw new Error("qBittorrent banned this address after too many failed logins");
+    if (response.status === 403) throw new Error("登录失败次数过多，qBittorrent 已封禁此地址");
     // The cookie name is configurable in newer versions, so the first cookie is taken whatever its name.
     const cookie = response.headers.getSetCookie()[0]?.split(";")[0];
     if (!response.ok || (await response.text()).trim() !== "Ok." || !cookie)
-      throw new Error("qBittorrent rejected the username or password");
+      throw new Error("qBittorrent 用户名或密码错误");
     this.#session = { credentials, cookie };
   }
 }

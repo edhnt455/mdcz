@@ -75,13 +75,13 @@ export class SceneImageDownloader {
 
       if (attemptedUrls.length === 0) {
         this.logger.warn(
-          `Skipping scene image set ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}): all image hosts are cooling down`,
+          `跳过剧照组 ${setIndex + 1}/${input.sceneImageSets.length}（${setDetails}）：所有图片主机均处于冷却期`,
         );
         continue;
       }
 
       this.logger.info(
-        `Trying ${setIndex === 0 ? "preferred" : "fallback"} scene image set ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}) with ${attemptedUrls.length} image(s)`,
+        `正在尝试${setIndex === 0 ? "首选" : "备用"}剧照组 ${setIndex + 1}/${input.sceneImageSets.length}（${setDetails}），共 ${attemptedUrls.length} 张图片`,
       );
 
       const downloadedPaths = await this.downloadSceneImageSet({
@@ -109,7 +109,7 @@ export class SceneImageDownloader {
       }
 
       this.logger.info(
-        `Scene image fallback ${setIndex + 1}/${input.sceneImageSets.length} (${setDetails}) after ${downloadedPaths.length}/${attemptedUrls.length} image(s); trying next set`,
+        `剧照组 ${setIndex + 1}/${input.sceneImageSets.length}（${setDetails}）仅下载 ${downloadedPaths.length}/${attemptedUrls.length} 张，正在尝试下一组`,
       );
     }
 

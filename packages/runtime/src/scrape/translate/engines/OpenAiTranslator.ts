@@ -1,5 +1,5 @@
 import type { Configuration } from "@mdcz/shared/config";
-import { z } from "zod";
+import { z } from "@mdcz/shared/zod";
 import { toErrorMessage } from "../../../shared";
 import { throwIfAborted } from "../../utils/abort";
 import { getTargetLanguageLabel } from "../shared";
@@ -112,7 +112,7 @@ export class OpenAiTranslator {
       structured ? LLM_TEXT_TRANSLATION_SCHEMA : undefined,
     );
     const translation = cleanTranslationOutput(content, config.translate.llmPrompt, text, structured);
-    if (!translation) throw new Error("LLM translation returned invalid output");
+    if (!translation) throw new Error("大模型翻译返回了无效输出");
     return translation;
   }
 
@@ -129,7 +129,7 @@ export class OpenAiTranslator {
       !config.translate.llmModelName.trim() ||
       isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
     ) {
-      throw new Error("LLM metadata translation requires a model and the endpoint's required API key");
+      throw new Error("大模型元数据翻译需要配置模型及端点要求的 API 密钥");
     }
 
     throwIfAborted(signal);
@@ -153,11 +153,11 @@ export class OpenAiTranslator {
         (input.plot === null) !== (parsed.plot === null) ||
         parsed.genres.length !== input.genres.length
       ) {
-        throw new Error("title/plot nullability or genre count does not match the input");
+        throw new Error("标题或简介的空值状态、类别数量与输入不匹配");
       }
       return parsed;
     } catch (error) {
-      throw new Error(`LLM metadata translation returned invalid structured output: ${toErrorMessage(error)}`, {
+      throw new Error(`大模型元数据翻译返回的结构化输出无效：${toErrorMessage(error)}`, {
         cause: error,
       });
     }

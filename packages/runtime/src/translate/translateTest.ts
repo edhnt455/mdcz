@@ -41,19 +41,19 @@ export const testTranslation = async (
     );
     const { title, plot } = translated;
     if (!title?.trim() || title === source.title) {
-      throw new Error("Translation engine returned no translated title");
+      throw new Error("翻译引擎未返回译后标题");
     }
     if (!plot?.trim() || plot === source.plot) {
-      throw new Error("Translation engine returned no translated plot");
+      throw new Error("翻译引擎未返回译后简介");
     }
     if (translated.genres.length !== source.genres.length || translated.genres.some((genre) => !genre?.trim())) {
-      throw new Error("Translation engine returned invalid translated genres");
+      throw new Error("翻译引擎返回的译后类别无效");
     }
-    options.logger?.info(`Translation verification succeeded: engine=${settings.engine}`);
+    options.logger?.info(`翻译验证成功：engine=${settings.engine}`);
     return { status: "ok", sample: title };
   } catch (error) {
     const message = toErrorMessage(error);
-    options.logger?.error(`Translation verification failed: ${message}`);
+    options.logger?.error(`翻译验证失败：${message}`);
     return { status: "failed", error: message };
   }
 };

@@ -91,7 +91,7 @@ export abstract class BaseDmmCrawler extends BaseCrawler {
         }
       } catch (error) {
         const message = toErrorMessage(error);
-        this.logger.debug(`${logLabel} miss for ${contentId}: ${message}`);
+        this.logger.debug(`${logLabel} 未找到 ${contentId}：${message}`);
       }
     }
 

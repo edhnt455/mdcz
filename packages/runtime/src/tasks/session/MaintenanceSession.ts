@@ -105,7 +105,7 @@ export class MaintenanceSession {
 
   assertActive(statuses?: readonly MaintenanceSessionStatus[]): void {
     if (statuses && !statuses.includes(this.statusValue)) {
-      throw new InactiveMaintenanceSessionError(`Inactive maintenance result for ${this.id}`);
+      throw new InactiveMaintenanceSessionError(`维护结果已失效：${this.id}`);
     }
   }
 
@@ -136,7 +136,7 @@ export class MaintenanceSession {
 
   fixDiscoveredRefs(refs: readonly MaintenanceSessionRef[]): void {
     this.assertActive(["discovering"]);
-    if (this.manifestFixed) throw new Error("Maintenance file manifest is already fixed");
+    if (this.manifestFixed) throw new Error("维护文件清单已固定");
     this.refsValue = refs.map((ref) => ({ ...ref }));
     this.manifestFixed = true;
     this.statusValue = "running";
@@ -153,16 +153,14 @@ export class MaintenanceSession {
 
   beginApply(selections: readonly MaintenanceApplySelection[]): { batchId: string } {
     if (this.statusValue !== "completed" && this.statusValue !== "failed") {
-      throw new Error("Maintenance previews must be generated before applying");
+      throw new Error("请先生成维护预览再应用");
     }
     const previewIds = selections.map((selection) => selection.previewId);
-    if (new Set(previewIds).size !== previewIds.length) throw new Error("Duplicate maintenance preview IDs");
+    if (new Set(previewIds).size !== previewIds.length) throw new Error("维护预览 ID 重复");
     for (const previewId of previewIds) {
       const preview = this.previews.get(previewId);
       if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
-        throw new Error(
-          "Some maintenance previews do not exist, are already submitted, or do not belong to the current session",
-        );
+        throw new Error("部分维护预览不存在、已提交或不属于当前会话");
       }
     }
 
@@ -245,7 +243,7 @@ export class MaintenanceSession {
 
   initializeEntries(entries: readonly LocalScanEntry[]): void {
     this.assertActive(["running"]);
-    if (this.previews.size) throw new Error("Maintenance file manifest is already initialized");
+    if (this.previews.size) throw new Error("维护文件清单已初始化");
     this.populateInitialEntries(entries, new Date());
   }
 
@@ -310,7 +308,7 @@ export class MaintenanceSession {
   ): void {
     const preview = this.previews.get(previewId);
     if (!preview || (preview.status !== "ready" && preview.status !== "blocked")) {
-      throw new Error("Maintenance preview does not exist or is already submitted");
+      throw new Error("维护预览不存在或已提交");
     }
     if (fieldSelections) this.draft.fieldSelections[previewId] = { ...fieldSelections };
     if (paths) {
@@ -328,7 +326,7 @@ export class MaintenanceSession {
     this.assertActive(["running"]);
     const current = this.currentBatch?.items.get(item.selection.previewId);
     if (!current || current.id !== item.id || current.status !== "pending") {
-      throw new InactiveMaintenanceSessionError(`Inactive maintenance item for ${this.id}`);
+      throw new InactiveMaintenanceSessionError(`维护条目已失效：${this.id}`);
     }
     current.status = "processing";
     current.error = null;

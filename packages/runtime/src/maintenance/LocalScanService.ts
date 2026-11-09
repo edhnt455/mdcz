@@ -156,7 +156,7 @@ export class LocalScanService {
         : rootOrPath;
     const dirPath = root.hostPath;
     throwIfAborted(signal);
-    this.logger.info(`Scanning directory: ${dirPath}`);
+    this.logger.info(`正在扫描目录：${dirPath}`);
 
     const candidates = await listVideoFiles(dirPath, true, undefined, signal);
     metadata ??= this.registeredOutputs ? { registeredOutputs: await this.registeredOutputs(candidates) } : undefined;
@@ -164,7 +164,7 @@ export class LocalScanService {
       candidates.filter((videoPath) => !isGeneratedSidecarVideo(videoPath)),
       (videoPath) => videoPath,
     );
-    this.logger.info(`Found ${videoFiles.length} video file(s)`);
+    this.logger.info(`找到 ${videoFiles.length} 个视频文件`);
 
     const entries: LocalScanEntry[] = [];
     const inventory = metadata?.inventory ?? new DirectoryInventory();
@@ -179,11 +179,11 @@ export class LocalScanService {
           throw error;
         }
         const message = toErrorMessage(error);
-        this.logger.warn(`Failed to scan ${videoPath}: ${message}`);
+        this.logger.warn(`扫描 ${videoPath} 失败：${message}`);
       }
     }
 
-    this.logger.info(`Scan complete: ${entries.length} entries`);
+    this.logger.info(`扫描完成：${entries.length} 个条目`);
     return entries;
   }
 
@@ -210,7 +210,7 @@ export class LocalScanService {
     const root: MediaRoot = Array.isArray(rootOrPaths)
       ? {
           id: deterministicMediaRootId(filePaths[0] ? dirname(filePaths[0]) : "."),
-          displayName: "Scanned files",
+          displayName: "已扫描的文件",
           hostPath: dirname(filePaths[0] ?? "."),
           realPath: null,
           createdAt: new Date(),
@@ -228,7 +228,7 @@ export class LocalScanService {
     for (const videoPath of uniqueFilePaths) {
       throwIfAborted(signal);
       if (!DEFAULT_VIDEO_EXTENSIONS.has(extname(videoPath).toLowerCase())) {
-        throw new Error(`Unsupported maintenance video file: ${videoPath}`);
+        throw new Error(`不支持维护此视频文件：${videoPath}`);
       }
 
       if (
@@ -236,13 +236,13 @@ export class LocalScanService {
         (extname(videoPath).toLowerCase() === ".strm" &&
           !(await inventory.mediaEntries(dirname(videoPath))).some((entry) => entry.name === basename(videoPath)))
       ) {
-        throw new Error(`Cannot maintain generated sidecar video file alone: ${videoPath}`);
+        throw new Error(`无法单独维护自动生成的附属视频文件：${videoPath}`);
       }
 
       try {
         const fileStats = await inventory.stats(videoPath);
         if (!fileStats.isFile()) {
-          throw new Error("Path is not a file");
+          throw new Error("此路径不是文件");
         }
 
         const entry = await this.scanVideo(root, videoPath, sceneImagesFolder, signal, metadata, inventory);
@@ -252,11 +252,11 @@ export class LocalScanService {
           throw error;
         }
         const message = toErrorMessage(error);
-        throw new Error(`Maintenance scan failed: ${videoPath}: ${message}`, { cause: error });
+        throw new Error(`维护扫描失败：${videoPath}：${message}`, { cause: error });
       }
     }
 
-    this.logger.info(`Selected-file scan complete: ${entries.length} entries`);
+    this.logger.info(`所选文件扫描完成：${entries.length} 个条目`);
     return entries;
   }
 
@@ -289,22 +289,21 @@ export class LocalScanService {
     let crawlerData: CrawlerData | undefined;
     let nfoLocalState: LocalScanEntry["nfoLocalState"];
     let scanError: string | undefined =
-      !nfoPath && registeredNfos.length ? `NFO recorded in library does not exist: ${registeredNfos[0]}` : undefined;
+      !nfoPath && registeredNfos.length ? `媒体库记录中的 NFO 不存在：${registeredNfos[0]}` : undefined;
 
     if (nfoPath) {
       try {
         await inventory.stats(nfoPath);
         const snapshot = await inventory.loadNfo(nfoPath);
-        if (!snapshot)
-          scanError = [scanError, `NFO recorded in library does not exist: ${nfoPath}`].filter(Boolean).join("; ");
+        if (!snapshot) scanError = [scanError, `媒体库记录中的 NFO 不存在：${nfoPath}`].filter(Boolean).join("; ");
         else {
           crawlerData = snapshot.crawlerData;
           nfoLocalState = snapshot.localState;
         }
       } catch (error) {
         const message = toErrorMessage(error);
-        scanError = `Failed to parse NFO: ${message}`;
-        this.logger.warn(`Failed to parse NFO at ${nfoPath}: ${message}`);
+        scanError = `解析 NFO 失败：${message}`;
+        this.logger.warn(`解析 ${nfoPath} 的 NFO 失败：${message}`);
       }
     }
 
@@ -332,7 +331,7 @@ export class LocalScanService {
       ...assets.actorPhotos,
     ]) {
       if (path && !(await fileExists(path, inventory)))
-        scanError = [scanError, `File recorded in library does not exist: ${path}`].filter(Boolean).join("; ");
+        scanError = [scanError, `媒体库记录中的文件不存在：${path}`].filter(Boolean).join("; ");
     }
 
     return {

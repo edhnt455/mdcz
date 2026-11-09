@@ -133,7 +133,7 @@ export const prepareMovieArtifacts = async (input: {
     nfoPath?: string;
   }
 > => {
-  if (!input.members.length) throw new Error("Publication requires at least one media file");
+  if (!input.members.length) throw new Error("发布至少需要一个媒体文件");
   const toRef = (absolutePath: string) => toRootFileRef(absolutePath, input.roots);
   const artifacts: WriteArtifact[] = [];
   const moves: SourceMove[] = [];
@@ -146,7 +146,7 @@ export const prepareMovieArtifacts = async (input: {
   const downloaded = input.downloadedAssets;
   const sourcePathOf = (file: MovieOutputMember) => {
     const root = input.roots.find((root) => root.id === file.source.rootId);
-    if (!root) throw new Error(`Publication root not found: ${file.source.rootId}`);
+    if (!root) throw new Error(`未找到发布根目录：${file.source.rootId}`);
     return resolveRootRelativePath(root, file.source.relativePath);
   };
   const mediaSources = new Set(input.members.map((file) => resolve(sourcePathOf(file))));
@@ -157,7 +157,7 @@ export const prepareMovieArtifacts = async (input: {
     const transfer = layout.transfer ?? "move";
     const sourcePath = sourcePathOf(file);
     const source = await input.inventory.stats(sourcePath);
-    if (!source.isFile()) throw new Error("Publication source is not a file");
+    if (!source.isFile()) throw new Error("发布来源不是文件");
     const fileAssets: AssetRef[] = [];
     let size = source.size;
     let modifiedAt = source.mtime;
@@ -197,7 +197,7 @@ export const prepareMovieArtifacts = async (input: {
     const keepsSource = layout.link !== undefined || transfer !== "move";
     for (const sidecar of layout.sidecars) {
       const sidecarSource = await input.inventory.stats(sidecar.sourcePath);
-      if (!sidecarSource.isFile()) throw new Error("Publication sidecar source is not a file");
+      if (!sidecarSource.isFile()) throw new Error("发布附属来源不是文件");
       const moving = resolve(sidecar.targetPath) !== resolve(sidecar.sourcePath);
       if (sidecar.kind === "subtitle") {
         fileAssets.push({ type: "local", kind: "subtitle", file: toRef(sidecar.targetPath) });
@@ -324,7 +324,7 @@ export const prepareMovieArtifacts = async (input: {
         if (!targetPath) {
           const stagedName = input.stagingDir ? within(input.stagingDir, sourcePath) : undefined;
           targetPath = stagedName ? file.assetLayout.staged.get(stagedName) : file.assetLayout.retained.get(sourcePath);
-          if (!targetPath) throw new Error(`Publication asset has no declared destination: ${sourcePath}`);
+          if (!targetPath) throw new Error(`发布资源未指定目标：${sourcePath}`);
           if (stagedName || sourcePath !== targetPath) {
             const target = toRef(targetPath);
             artifacts.push({
@@ -358,8 +358,7 @@ export const prepareMovieArtifacts = async (input: {
   );
   const existingNfoPath = first.existingNfoPath;
   let nfoPath = await input.writeNfo({ ...assets, downloaded: [...downloadedTargets] }, async (targetPath, data) => {
-    if (!allowedNfoPaths.has(resolve(targetPath)))
-      throw new Error(`NFO writer selected an undeclared layout destination: ${targetPath}`);
+    if (!allowedNfoPaths.has(resolve(targetPath))) throw new Error(`NFO 写入器选择了未声明的输出路径：${targetPath}`);
     const target = toRef(targetPath);
     artifacts.push({ targetPath, data });
     publishedTargets.push(target);
@@ -386,7 +385,7 @@ export const prepareMovieArtifacts = async (input: {
     const paths = getNfoWritePaths(first.layout.nfoPath, input.nfoNaming);
     nfoPath = paths.canonicalPath;
     let content = await input.inventory.readNfo(existingNfoPath);
-    if (content === undefined) throw new Error(`NFO source is missing: ${existingNfoPath}`);
+    if (content === undefined) throw new Error(`NFO 来源不存在：${existingNfoPath}`);
     const relativeLayoutChanged =
       resolve(first.layout.existingMetadataDir) !== resolve(first.layout.metadataDir) ||
       [...mapped].some(([source, target]) => source !== target);
@@ -472,7 +471,7 @@ export const prepareMovieArtifacts = async (input: {
   }
   for (const artifact of artifacts) {
     if (mediaSources.has(resolve(artifact.targetPath)))
-      throw new Error(`Artifact target cannot overwrite a source media file: ${artifact.targetPath}`);
+      throw new Error(`资源目标不能覆盖源媒体文件：${artifact.targetPath}`);
   }
   return {
     metadataDirectories: [...new Set(input.members.map((member) => member.layout.metadataDir))],

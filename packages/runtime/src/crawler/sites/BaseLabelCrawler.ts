@@ -32,9 +32,9 @@ export abstract class BaseLabelCrawler implements SiteAdapter {
         `${this.baseUrl}/wp-json/wp/v2/works?slug=${encodeURIComponent(slug)}`,
         { timeout: input.options?.timeoutMs, signal: input.options?.signal, cookies: input.options?.cookies },
       );
-      if (!Array.isArray(posts)) throw new SiteError("parse_error", "Expected a WordPress works array");
+      if (!Array.isArray(posts)) throw new SiteError("parse_error", "返回结果应为 WordPress 作品数组");
       const post = posts.find((entry) => entry.slug === slug);
-      if (!post) throw new SiteError("not_found", `No exact works slug for ${input.number}`);
+      if (!post) throw new SiteError("not_found", `未找到与 ${input.number} 完全匹配的作品标识`);
       const number = post.slug.replace(/^([a-z]+)(\d+)/u, "$1-$2").toUpperCase();
       verifyMovieNumber(number, input.number);
       const fields = post.acf ?? {};
@@ -45,7 +45,7 @@ export abstract class BaseLabelCrawler implements SiteAdapter {
           .trim(),
         actors,
       );
-      if (!title) throw new SiteError("parse_error", `Missing works title for ${number}`);
+      if (!title) throw new SiteError("parse_error", `缺少 ${number} 的作品标题`);
       const minutes = Number.parseInt(fields.収録時間 ?? "", 10);
       const images = post.acf_custom_images;
       return {

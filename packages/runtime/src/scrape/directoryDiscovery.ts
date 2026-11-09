@@ -116,7 +116,7 @@ export const discoverDirectoryFiles = async (input: {
     },
     onFile: (file, facts) => {
       const directory = canonicalDirectories.get(dirname(file));
-      if (!directory) throw new Error(`Discovery directory was not inventoried: ${file}`);
+      if (!directory) throw new Error(`待扫描目录未建立清单：${file}`);
       inventory.observeFile(file, facts, join(directory, basename(file)));
       found.push(file);
     },

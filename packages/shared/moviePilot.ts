@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod";
 
 export const strmReferenceErrors = {
   missingSource: "strm_missing_source_record",
@@ -10,7 +10,7 @@ export const moviePilotSettingsSchema = z.object({
   baseUrl: z.url().refine((value) => {
     const url = new URL(value);
     return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash;
-  }, "Use an HTTP(S) MoviePilot address without credentials or query parameters"),
+  }, "请使用不含凭证和查询参数的 HTTP(S) MoviePilot 地址"),
   token: z.string().trim().min(1).max(4096).optional(),
   storage: z.literal("u115"),
   rootPath: z
@@ -20,7 +20,7 @@ export const moviePilotSettingsSchema = z.object({
     .refine(
       (value) =>
         value.startsWith("/") && !value.includes("\\") && !value.includes("\0") && !value.split("/").includes(".."),
-      "Use an absolute cloud directory below the storage root",
+      "请使用云盘根目录下的绝对目录路径",
     ),
 });
 

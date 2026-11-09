@@ -53,7 +53,7 @@ export class PosterImageDerivationService {
 
     const thumbPath = await options.resolveThumbPath();
     if (!thumbPath) {
-      this.logger.warn(`Cannot derive poster from thumb: thumb asset is missing for ${options.targetPath}`);
+      this.logger.warn(`无法从封面生成海报：${options.targetPath} 缺少封面资源`);
       return { status: "skipped", reason: "missing_thumb" };
     }
 
@@ -65,7 +65,7 @@ export class PosterImageDerivationService {
       const width = metadata.width ?? 0;
       const height = metadata.height ?? 0;
       if (width <= 0 || height <= 0) {
-        throw new Error(`Unable to read thumb dimensions for ${thumbPath}`);
+        throw new Error(`无法读取封面尺寸：${thumbPath}`);
       }
 
       // A portrait cover is already poster-shaped and is used whole.
@@ -87,7 +87,7 @@ export class PosterImageDerivationService {
 
       return { status: "derived", path: outputPath };
     } catch (error) {
-      this.logger.warn(`Failed to derive poster from thumb ${thumbPath}: ${toErrorMessage(error)}`);
+      this.logger.warn(`从封面 ${thumbPath} 生成海报失败：${toErrorMessage(error)}`);
       return { status: "skipped", reason: options.posterPath ? "unreadable_poster" : "missing_thumb" };
     }
   }
@@ -97,7 +97,7 @@ export class PosterImageDerivationService {
       const posterStat = await stat(posterPath);
       return posterStat.size < SMALL_POSTER_THRESHOLD_BYTES;
     } catch (error) {
-      this.logger.warn(`Cannot inspect poster size for ${posterPath}: ${toErrorMessage(error)}`);
+      this.logger.warn(`无法检查海报 ${posterPath} 的尺寸：${toErrorMessage(error)}`);
       return null;
     }
   }

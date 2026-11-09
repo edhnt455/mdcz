@@ -112,7 +112,7 @@ export const runParallel = async <K extends string, TTask extends { key: K; path
           throw error;
         }
 
-        options.warn?.(`Parallel task failed for ${task.path}: ${toErrorMessage(error)}`);
+        options.warn?.(`并行任务 ${task.path} 失败：${toErrorMessage(error)}`);
         results[taskIndex] = { key: task.key, path: task.path, success: false };
       } finally {
         options.onItemComplete?.();

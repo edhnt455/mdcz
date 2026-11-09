@@ -59,7 +59,7 @@ describe("task events SSE stream", () => {
       expect(stalled.raw.end).toHaveBeenCalledOnce();
       expect(taskEvents.listenerCount()).toBe(0);
       expect(logs.list().logs).toEqual([
-        expect.objectContaining({ source: "runtime", message: expect.stringContaining("backpressured") }),
+        expect.objectContaining({ source: "runtime", message: expect.stringContaining("输出阻塞") }),
       ]);
     } finally {
       stopStalled.abort();

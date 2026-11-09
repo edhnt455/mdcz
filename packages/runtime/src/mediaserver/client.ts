@@ -29,7 +29,7 @@ export const buildMediaServerUrl = (
   const baseUrl = normalizeMediaServerBaseUrl(getMediaServerConfig(configuration, serverKey).url);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   if (!baseUrl) {
-    throw new Error(`${serverKey} URL is not configured`);
+    throw new Error(`尚未配置 ${serverKey} 地址`);
   }
 
   const url = new URL(`${baseUrl}${normalizedPath}`);

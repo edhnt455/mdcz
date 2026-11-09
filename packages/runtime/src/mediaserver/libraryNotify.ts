@@ -31,7 +31,7 @@ export const notifyMediaServersOfPublish = async (
           headers: buildMediaServerHeaders(configuration, key, { "content-type": "application/json" }),
         });
       } catch (error) {
-        logger.warn(`Could not ask ${key} to scan ${directories.join(", ")}: ${toErrorMessage(error)}`);
+        logger.warn(`无法通知 ${key} 扫描 ${directories.join(", ")}：${toErrorMessage(error)}`);
       }
     }),
   );

@@ -50,7 +50,7 @@ const readExistingNfo = async (
 
 const requireRootRelativeAssetPath = (root: Pick<MediaRoot, "id" | "hostPath">, assetPath: string): string => {
   const relativePath = toRootRelativePath(root, assetPath);
-  if (!relativePath) throw new Error(`Poster asset is outside the active media root: ${assetPath}`);
+  if (!relativePath) throw new Error(`海报资源不在当前媒体根目录内：${assetPath}`);
   return relativePath;
 };
 

@@ -143,6 +143,6 @@ describe("H0930Crawler", () => {
     }
 
     expect(response.result.reason).toBe("not_found");
-    expect(response.result.error).toContain("Detail URL not found");
+    expect(response.result.error).toContain("详情网址");
   });
 });

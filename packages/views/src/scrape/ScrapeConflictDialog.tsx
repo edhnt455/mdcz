@@ -150,12 +150,12 @@ export function ScrapeConflictDialog({ input, port }: { input: ScrapeConflictInp
                           <dd>{version.cloudPath}</dd>
                         </div>
                         <div>
-                          <dt>Normal STRM</dt>
+                          <dt>来源 STRM（Normal）</dt>
                           <dd>{version.normalPath}</dd>
                         </div>
                         {version.linkPath ? (
                           <div>
-                            <dt>Link STRM</dt>
+                            <dt>输出 STRM（Link）</dt>
                             <dd>{version.linkPath}</dd>
                           </div>
                         ) : null}

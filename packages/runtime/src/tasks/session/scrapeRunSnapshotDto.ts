@@ -20,7 +20,7 @@ const isTerminalStatus = (status: ScrapeRunSnapshot["status"]): boolean =>
 
 const liveItemToDto = (manifest: ScrapeSnapshotManifest, item: ScrapeRunItemSnapshot): ScrapeLiveItemDto => {
   const manifestItem = manifest.items.find((candidate) => candidate.id === item.id);
-  if (!manifestItem) throw new Error(`Scrape item not found in manifest: ${item.id}`);
+  if (!manifestItem) throw new Error(`文件清单中未找到刮削条目：${item.id}`);
   const result = item.result;
   return {
     id: item.id,

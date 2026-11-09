@@ -52,7 +52,7 @@ describe("buildServer HTTP integration", () => {
     });
 
     expect(response.statusCode).toBe(401);
-    expect(response.json().error.message).toContain("Incorrect administrator password");
+    expect(response.json().error.message).toContain("管理员密码错误");
   });
 
   it("exposes server and Web build metadata through system.about", async () => {

@@ -11,7 +11,7 @@ import type {
   BatchTranslateScanItem,
 } from "@mdcz/shared/toolTypes";
 import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
-import { z } from "zod";
+import { z } from "@mdcz/shared/zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
 import { buildMovieTags } from "../maintenance/movieTags";
 import { runWithNetworkChannel } from "../network";
@@ -269,8 +269,8 @@ const assertLlmConfiguration = (config: Configuration): void => {
   const apiKey = config.translate.llmApiKey.trim();
   const baseUrl = normalizeLlmBaseUrl(config.translate.llmBaseUrl);
 
-  if (!model) throw new Error("Configure LLM model name first");
-  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("Configure LLM API key first");
+  if (!model) throw new Error("请先配置大模型名称");
+  if (isMissingRequiredLlmApiKey(baseUrl, apiKey)) throw new Error("请先配置大模型 API 密钥");
 };
 
 const translatePendingTexts = async (
@@ -281,7 +281,7 @@ const translatePendingTexts = async (
   logger: RuntimeLogger,
   options: Pick<BatchNfoTranslatorApplyOptions, "maxBatchItems">,
 ): Promise<PendingTranslationResult> => {
-  if (!llmApiClient) throw new Error("Batch NFO translation apply requires an llmApiClient dependency");
+  if (!llmApiClient) throw new Error("应用批量 NFO 翻译需要 llmApiClient 服务");
   assertLlmConfiguration(config);
   const translatedByKey = new Map<string, string>();
   const failedReasonByKey = new Map<string, string>();
@@ -311,23 +311,22 @@ const translatePendingTexts = async (
           },
         ),
       );
-      if (!content) throw new Error("LLM returned an empty response");
+      if (!content) throw new Error("大模型返回了空响应");
       const json = content
         .trim()
         .replace(/^<think>[\s\S]*?<\/think>\s*/iu, "")
         .replace(/^\[[\p{L}\p{N}_ -]+\]\s*(?=\{|```)/u, "")
         .replace(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/iu, "$1");
       const { translations } = batchTranslationSchema.parse(JSON.parse(json));
-      if (translations.length !== chunk.length)
-        throw new Error("LLM returned a batch translation count that does not match input");
+      if (translations.length !== chunk.length) throw new Error("大模型返回的批量翻译数量与输入不匹配");
       chunk.forEach((item, index) => {
         const value = translations[index]?.trim();
         if (value) translatedByKey.set(item.key, ensureTargetChinese(value, target));
-        else failedReasonByKey.set(item.key, "LLM returned an empty translation result");
+        else failedReasonByKey.set(item.key, "大模型返回了空翻译结果");
       });
     } catch (error) {
       const message = toErrorMessage(error);
-      logger.warn(`Batch translation chunk failed: ${message}`);
+      logger.warn(`批量翻译分块失败：${message}`);
       for (const item of chunk) {
         failedReasonByKey.set(item.key, message);
       }
@@ -344,7 +343,7 @@ export const scanBatchNfoTranslations = async (
   dependencies: BatchNfoTranslatorDependencies = {},
 ): Promise<BatchTranslateScanItem[]> => {
   if (!dependencies.localScanService) {
-    throw new Error("Batch NFO translation scan requires a localScanService dependency");
+    throw new Error("批量 NFO 翻译扫描需要 localScanService 服务");
   }
 
   const entries = await dependencies.localScanService.scan(resolve(directory.trim()), config.paths.sceneImagesFolder);
@@ -362,10 +361,10 @@ export const applyBatchNfoTranslations = async (
 ): Promise<BatchTranslateApplyResultItem[]> => {
   if (items.length === 0) return [];
   if (!dependencies.localScanService) {
-    throw new Error("Batch NFO translation apply requires a localScanService dependency");
+    throw new Error("应用批量 NFO 翻译需要 localScanService 服务");
   }
   const publication = dependencies.publication;
-  if (!publication) throw new Error("Batch NFO translation requires registered roots");
+  if (!publication) throw new Error("批量 NFO 翻译需要已注册的根目录");
 
   const logger = dependencies.logger ?? runtimeLoggerService.getLogger("BatchNfoTranslator");
   const nfoGenerator = dependencies.nfoGenerator ?? new NfoGenerator();
@@ -466,7 +465,7 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: false,
         translatedFields: [],
-        error: "Missing writable NFO or metadata",
+        error: "缺少可写入的 NFO 或元数据",
       });
       continue;
     }
@@ -500,8 +499,8 @@ export const applyBatchNfoTranslations = async (
         else nextCrawlerData[translatedKey] = translated;
         if (!translatedFields.includes(action.field)) translatedFields.push(action.field);
       } else {
-        const reason = translated ? "provider returned source text" : failedReasonByKey.get(action.key);
-        const message = `${action.field} translation failed${reason ? `: ${reason}` : ""}`;
+        const reason = translated ? "翻译服务返回了原文" : failedReasonByKey.get(action.key);
+        const message = `${action.field} 翻译失败${reason ? `：${reason}` : ""}`;
         failures[action.field] = message;
         failedFields.add(action.field);
         errors.push(message);
@@ -523,7 +522,7 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: false,
         translatedFields,
-        error: errors.join("; ") || "No writable translation results generated",
+        error: errors.join("; ") || "未生成可写入的翻译结果",
       });
       continue;
     }
@@ -559,7 +558,7 @@ export const applyBatchNfoTranslations = async (
       const registered = publication.outputs
         ? await resolveRegisteredNfoPaths(entry.nfoPath, publication.outputs, async (id) => {
             const root = publication.roots.find((root) => root.id === id);
-            if (!root) throw new Error(`Publication root not found: ${id}`);
+            if (!root) throw new Error(`未找到发布根目录：${id}`);
             return root;
           })
         : undefined;
@@ -576,7 +575,7 @@ export const applyBatchNfoTranslations = async (
           protectedMediaFiles: registered?.mediaPaths,
           commit: async () => {
             if (!registered) return;
-            if (!publication.library) throw new Error("Registered NFO write requires library updates");
+            if (!publication.library) throw new Error("写入已登记的 NFO 需要同步更新媒体库");
             await writePublishedMovie(
               publication.library,
               registered.movieId,

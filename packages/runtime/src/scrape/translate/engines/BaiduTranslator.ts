@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { z } from "zod";
+import { z } from "@mdcz/shared/zod";
 import type { RuntimeNetworkClient } from "../../../network";
 import { throwIfAborted } from "../../utils/abort";
 import type { MachineTranslator } from "../types";
@@ -47,7 +47,7 @@ export class BaiduTranslator {
     const appid = baiduAppId.trim();
     const credential = (baiduService === "llm" ? baiduApiKey : baiduSecretKey).trim();
     if (!appid || !credential) {
-      throw new Error(`Baidu translation requires an APPID and ${baiduService === "llm" ? "API key" : "secret key"}`);
+      throw new Error(`百度翻译需要 APPID 及${baiduService === "llm" ? "API 密钥" : "密钥"}`);
     }
     const to = target === "zh_tw" ? "cht" : "zh";
     const lines = texts.map((text) => splitLines(text).map(splitChunks));
@@ -89,11 +89,11 @@ export class BaiduTranslator {
             );
       const payload = responseSchema.parse(response);
       if (payload.error_code !== undefined && String(payload.error_code) !== "52000") {
-        throw new Error(`Baidu translate error ${payload.error_code}: ${payload.error_msg ?? "Unknown error"}`);
+        throw new Error(`百度翻译错误 ${payload.error_code}：${payload.error_msg ?? "未知错误"}`);
       }
       // General translation answers per line; the LLM may also return one multi-line result. Both flatten alike.
       const results = (payload.trans_result ?? []).flatMap((result) => splitLines(result.dst));
-      if (results.length !== batch.length) throw new Error("Baidu translation result count mismatch");
+      if (results.length !== batch.length) throw new Error("百度翻译结果数量不匹配");
       translated.push(...results);
     }
     let offset = 0;

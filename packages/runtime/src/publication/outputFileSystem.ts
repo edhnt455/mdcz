@@ -87,7 +87,7 @@ export const removeEmptyDirectory = async (
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOTEMPTY" && code !== "EEXIST" && code !== "ENOENT")
-      warn(`Failed to remove empty directory ${directory}: ${error instanceof Error ? error.message : error}`);
+      warn(`移除空目录 ${directory} 失败：${error instanceof Error ? error.message : error}`);
     return false;
   }
 };
@@ -120,10 +120,7 @@ export const assertSymlinkSupport = async (directory: string): Promise<void> => 
   } catch (error) {
     // Unelevated Windows processes lack SeCreateSymbolicLinkPrivilege unless Developer Mode is on.
     if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM")
-      throw new Error(
-        "The current user's permissions are insufficient to create symlinks. Please right-click the application and select 'Run as administrator'.",
-        { cause: error },
-      );
+      throw new Error("当前用户权限不足，无法创建符号链接。请授予运行账户创建符号链接的权限后重试。", { cause: error });
     throw error;
   }
   await rm(probePath, { force: true });

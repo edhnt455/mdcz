@@ -25,11 +25,11 @@ export const toStorageError = (error: unknown, pathLabel: string): StorageError 
 
   const nodeError = error as NodeJS.ErrnoException;
   if (nodeError?.code === "ENOENT") {
-    return new StorageError(storageErrorCodes.MissingPath, `Path does not exist: ${pathLabel}`, error);
+    return new StorageError(storageErrorCodes.MissingPath, `路径不存在：${pathLabel}`, error);
   }
   if (nodeError?.code === "EACCES" || nodeError?.code === "EPERM") {
-    return new StorageError(storageErrorCodes.PermissionDenied, `Permission denied: ${pathLabel}`, error);
+    return new StorageError(storageErrorCodes.PermissionDenied, `没有访问权限：${pathLabel}`, error);
   }
 
-  return new StorageError(storageErrorCodes.UnsupportedOperation, `Storage operation failed: ${pathLabel}`, error);
+  return new StorageError(storageErrorCodes.UnsupportedOperation, `存储操作失败：${pathLabel}`, error);
 };

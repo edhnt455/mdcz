@@ -56,7 +56,7 @@ describe("CrawlerProvider site pauses", () => {
     // A login wall can cover only some titles, so answers for other titles leave it in place.
     const walled = new StubCrawlerProvider([
       { success: false, error: "sign-in page", reason: "login_wall" },
-      { success: false, error: "not found", reason: "not_found" },
+      { success: false, error: "未找到", reason: "not_found" },
     ]);
     await crawl(walled);
     await crawl(walled);

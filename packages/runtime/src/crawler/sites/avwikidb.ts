@@ -264,7 +264,7 @@ export class AvwikidbCrawler implements SiteAdapter {
           elapsedMs: Date.now() - startedAt,
           result: {
             success: false,
-            error: `Detail URL not found for ${input.number}`,
+            error: `未找到 ${input.number} 的详情网址`,
             reason: "not_found",
           },
         };
@@ -280,7 +280,7 @@ export class AvwikidbCrawler implements SiteAdapter {
         },
       };
     } catch (error) {
-      this.logger.warn(`Crawler failed for ${input.number}: ${toErrorMessage(error)}`);
+      this.logger.warn(`${input.number} 刮削失败：${toErrorMessage(error)}`);
       return { input, elapsedMs: Date.now() - startedAt, result: toCrawlerErrorResult(error) };
     }
   }
@@ -333,7 +333,7 @@ export class AvwikidbCrawler implements SiteAdapter {
       return normalizeNumber(movieNumber);
     }
 
-    this.logger.debug(`No avwikidb redirect found for ${number} with build ${buildId}`);
+    this.logger.debug(`未找到 ${number} 对应构建 ${buildId} 的 avwikidb 跳转地址`);
     return null;
   }
 
@@ -419,13 +419,13 @@ export class AvwikidbCrawler implements SiteAdapter {
     const $ = load(html);
     const nextDataText = $("#__NEXT_DATA__").text().trim();
     if (!nextDataText) {
-      throw new SiteError("parse_error", "avwikidb metadata build id missing");
+      throw new SiteError("parse_error", "avwikidb 元数据缺少构建 ID");
     }
 
     const nextData = JSON.parse(nextDataText) as unknown;
     const buildId = isRecord(nextData) ? asString(nextData.buildId) : undefined;
     if (!buildId) {
-      throw new SiteError("parse_error", "avwikidb metadata build id missing");
+      throw new SiteError("parse_error", "avwikidb 元数据缺少构建 ID");
     }
 
     this.buildId = buildId;
@@ -435,7 +435,7 @@ export class AvwikidbCrawler implements SiteAdapter {
   private buildDataUrl(path: string, query?: Record<string, string>): string {
     const buildId = this.buildId;
     if (!buildId) {
-      throw new SiteError("parse_error", "avwikidb build id not resolved");
+      throw new SiteError("parse_error", "无法确定 avwikidb 构建 ID");
     }
 
     const url = new URL(`/_next/data/${encodeURIComponent(buildId)}/${path}`, AVWIKIDB_BASE_URL);

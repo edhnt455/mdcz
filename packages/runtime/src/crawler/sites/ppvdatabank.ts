@@ -121,7 +121,7 @@ export class PpvDatabankCrawler extends BaseFc2Crawler {
 
   protected override classifyDetailFailure(_context: Context, _detailHtml: string, $: CheerioAPI): SiteError | null {
     if (isNotFoundPage($)) {
-      return new SiteError("not_found", "Product not found on ppvdatabank");
+      return new SiteError("not_found", "ppvdatabank 未找到此作品");
     }
 
     return null;

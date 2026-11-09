@@ -19,7 +19,7 @@ const summarizeImpitError = (message: string): string | null => {
   const detail = nestedError ?? osMessage;
 
   if (/^(?:ConnectError:\s*)?Failed to connect to the server\.?/iu.test(normalized)) {
-    return detail ? `ConnectError: ${detail}` : "ConnectError: failed to connect to the server";
+    return detail ? `ConnectError: ${detail}` : "ConnectError：无法连接服务器";
   }
 
   if (/^impit error:/iu.test(flattened)) {

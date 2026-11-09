@@ -132,7 +132,7 @@ describe("ScrapeCoordinator", () => {
     expect(createExecution).not.toHaveBeenCalled();
     coordinator.recordLog(run.id, { level: "info", message: "discovery log" });
     const discoveryRevision = coordinator.liveRuns()[0].snapshot.revision;
-    await expect(coordinator.pause(run.id)).rejects.toThrow("Pausing is not supported during scanning");
+    await expect(coordinator.pause(run.id)).rejects.toThrow("扫描期间不支持暂停");
     if (outcome === "stopped") {
       vi.mocked(host.create).mockResolvedValueOnce({ ...run, id: "queued-directory" });
       const queued = await coordinator.start("second");
@@ -354,7 +354,7 @@ describe("ScrapeCoordinator", () => {
     expect(coordinator.busy).toBe(true);
     const taskGate = new LibraryTaskGate();
     taskGate.track("scrape", () => coordinator.busy);
-    expect(() => taskGate.assertAvailable("maintenance")).toThrow("A scrape task is running");
+    expect(() => taskGate.assertAvailable("maintenance")).toThrow("刮削任务正在运行");
     registration.resolve(run);
     const snapshot = await pending;
     await started.promise;
@@ -392,7 +392,7 @@ describe("ScrapeCoordinator", () => {
 
     await coordinator.start("start");
     await started.promise;
-    await expect(coordinator.retry(run.id)).rejects.toThrow("Scrape run is already live");
+    await expect(coordinator.retry(run.id)).rejects.toThrow("刮削任务已在运行");
     expect(host.retry).not.toHaveBeenCalled();
     release.resolve();
     await coordinator.waitForIdle();

@@ -507,7 +507,7 @@ export function SettingsEditorAutosaveProvider({
 export function useAutoSaveField(path: string, options: UseAutoSaveFieldOptions = {}): UseAutoSaveFieldResult {
   const autosave = useContext(SettingsEditorAutosaveContext);
   if (!autosave) {
-    throw new Error("useAutoSaveField must be used within <SettingsEditorAutosaveProvider>");
+    throw new Error("useAutoSaveField 必须在 SettingsEditorAutosaveProvider 中使用");
   }
   const { getFieldStatus, registerField, resetFieldToDefault } = autosave;
 

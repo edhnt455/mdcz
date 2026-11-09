@@ -116,7 +116,7 @@ export class LibraryService {
   async removeRecentAcquisition(id: string): Promise<{ success: true }> {
     const normalizedId = id.trim();
     if (!normalizedId) {
-      throw new Error("Library entry id is required");
+      throw new Error("必须提供媒体库条目 ID");
     }
     const state = await this.persistence.getState();
     await state.repositories.library.hideFromRecent(normalizedId);
@@ -126,7 +126,7 @@ export class LibraryService {
   async deleteEntry(id: string): Promise<{ success: true }> {
     const normalizedId = id.trim();
     if (!normalizedId) {
-      throw new Error("Library entry id is required");
+      throw new Error("必须提供媒体库条目 ID");
     }
     const state = await this.persistence.getState();
     state.repositories.library.deleteEntry(normalizedId);
@@ -201,7 +201,7 @@ export class LibraryService {
     const displayFile = entry.files.find((file) => file.id === entry.displayFileId);
     const root = displayFile && rootMap.get(displayFile.rootId);
     if (!root) {
-      throw new Error(`Media root not found for library item: ${entry.id}`);
+      throw new Error(`未找到媒体库条目的媒体根目录：${entry.id}`);
     }
     const dto = toLibraryEntryDto(entry, rootMap);
     if (!includeAvailability) return dto;

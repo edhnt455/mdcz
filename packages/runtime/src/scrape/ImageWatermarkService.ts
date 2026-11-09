@@ -51,7 +51,7 @@ export class ImageWatermarkService {
       settings.tagBadgeDirectory &&
       !(await stat(settings.tagBadgeDirectory)).isDirectory()
     ) {
-      throw new Error("Custom watermark path must be a directory");
+      throw new Error("自定义水印路径必须是目录");
     }
     const sources: Array<{ id: PosterBadgeDefinition["id"]; input: Buffer; width: number; height: number }> = [];
     for (const badge of badges) {
@@ -91,7 +91,7 @@ export class ImageWatermarkService {
     }
     const placements = layoutWatermarkBadges(info.width, info.height, sources, settings);
     if (settings.tagBadgeOffsetX * 2 >= info.width || settings.tagBadgeOffsetY * 2 >= info.height) {
-      onWarn?.("Watermark margins were reduced to fit the image");
+      onWarn?.("已缩小水印边距以适应图片");
     }
     const overlays = await Promise.all(
       placements.map(async (placement, index) => ({
@@ -115,7 +115,7 @@ export class ImageWatermarkService {
         pipeline = pipeline.jpeg({ quality: 95, chromaSubsampling: "4:4:4" });
         break;
       default:
-        throw new Error(`Unsupported watermark image format: ${metadata.format}`);
+        throw new Error(`不支持的水印图片格式：${metadata.format}`);
     }
     return await pipeline.toBuffer();
   }

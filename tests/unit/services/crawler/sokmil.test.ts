@@ -137,6 +137,6 @@ describe("SokmilCrawler", () => {
     }
 
     expect(response.result.reason).toBe("login_wall");
-    expect(response.result.error).toBe("SOKMIL: login wall");
+    expect(response.result.error).toBe("SOKMIL：需要登录");
   });
 });

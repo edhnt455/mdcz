@@ -106,7 +106,7 @@ test("shows background progress, prevents duplicate writes, and displays actiona
             processedCount: 1,
             failedCount: 1,
             skippedCount: 0,
-            failures: [{ personId: "b", name: "Actor B", stage: "upload photo", message: "Upload failed" }],
+            failures: [{ personId: "b", name: "Actor B", stage: "上传照片", message: "Upload failed" }],
           },
         },
       }}

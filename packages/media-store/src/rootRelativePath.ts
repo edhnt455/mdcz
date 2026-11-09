@@ -14,7 +14,7 @@ export const normalizeRootRelativePath = (input: string): RootRelativePath => {
     return "" as RootRelativePath;
   }
   if (normalized.startsWith("../") || normalized === ".." || path.posix.isAbsolute(normalized)) {
-    throw new StorageError(storageErrorCodes.OutsideRoot, `Path escapes media root: ${input}`);
+    throw new StorageError(storageErrorCodes.OutsideRoot, `路径超出媒体根目录：${input}`);
   }
 
   return normalized.replace(/^\/+/u, "") as RootRelativePath;
@@ -32,7 +32,7 @@ export const assertInsideRoot = (root: Pick<MediaRoot, "hostPath">, candidatePat
     return;
   }
 
-  throw new StorageError(storageErrorCodes.OutsideRoot, `Path is outside media root: ${candidatePath}`);
+  throw new StorageError(storageErrorCodes.OutsideRoot, `路径不在媒体根目录内：${candidatePath}`);
 };
 
 export const toRootRelativePath = (root: Pick<MediaRoot, "hostPath">, candidatePath: string): RootRelativePath => {
@@ -47,7 +47,7 @@ export const resolveRootFile = <T extends Pick<MediaRoot, "id" | "hostPath">>(
 ): { root: T; relativePath: RootRelativePath } => {
   const root = findEnclosingMediaRoot(candidatePath, roots);
   if (!root) {
-    throw new StorageError(storageErrorCodes.OutsideRoot, `Path is outside registered roots: ${candidatePath}`);
+    throw new StorageError(storageErrorCodes.OutsideRoot, `路径不在已注册的根目录内：${candidatePath}`);
   }
   return { root, relativePath: toRootRelativePath(root, candidatePath) };
 };

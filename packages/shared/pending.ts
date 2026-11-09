@@ -1,7 +1,7 @@
-import { z } from "zod";
 import { Website } from "./enums";
 import { rootFileRefSchema } from "./mediaRef";
 import { siteResultSchema } from "./siteResults";
+import { z } from "./zod";
 
 /**
  * Why a file waits for a person:

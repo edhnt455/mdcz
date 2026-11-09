@@ -13,7 +13,7 @@ describe("parseNfo", () => {
         genres: [],
         scene_images: [],
       }),
-    ).toThrow("NFO missing website");
+    ).toThrow("NFO 缺少来源站点");
   });
 
   it("reads poster, thumb, and fanart by aspect", () => {

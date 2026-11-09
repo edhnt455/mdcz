@@ -6,7 +6,7 @@ describe("shared log formatting for web logs", () => {
     const log = {
       id: "log-1",
       createdAt: "2026-05-12T00:00:00.000Z",
-      message: "Scrape completed. Succeeded: 1, Failed: 0",
+      message: "刮削完成。成功：1，失败：0",
       source: "task" as const,
       taskId: "task-1",
       type: "completed",

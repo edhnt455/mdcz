@@ -101,7 +101,7 @@ export class AutomationService {
     const library = input.libraryId
       ? await this.deps.libraries.get(input.libraryId)
       : await this.deps.libraries.findBySourcePath(hostPath);
-    if (!library) throw new Error(`No library's source directory contains ${hostPath}`);
+    if (!library) throw new Error(`所有媒体库的来源目录均不包含 ${hostPath}`);
     const isDirectory = (await stat(hostPath)).isDirectory();
     const refs = isDirectory
       ? (
@@ -126,7 +126,7 @@ export class AutomationService {
             },
           ];
         })();
-    if (!refs.length) throw new Error(`No video files found at ${hostPath}`);
+    if (!refs.length) throw new Error(`在 ${hostPath} 中未找到视频文件`);
     const snapshot = await this.deps.libraryWatch.submitExternal(library.id, refs, (accepted) =>
       this.deps.scrape.start({ executionMode: "batch", libraryId: library.id, refs: [...accepted] }),
     );
@@ -161,10 +161,10 @@ export class AutomationService {
 
   /** Tests the settings as edited, which may not have been saved yet. */
   async testNotification(settings: Configuration["notifications"]): Promise<void> {
-    if (!settings.channels.length) throw new Error("No notification channel is enabled");
+    if (!settings.channels.length) throw new Error("未启用任何通知渠道");
     const results = await Promise.allSettled(
       settings.channels.map(
-        async (channel) => await this.sendToChannel(settings, channel, { title: "MDCz", body: "Test notification" }),
+        async (channel) => await this.sendToChannel(settings, channel, { title: "MDCz", body: "测试通知" }),
       ),
     );
     const failures = results.flatMap((result, index) =>
@@ -201,10 +201,7 @@ export class AutomationService {
     const { success, failed } = task.counts;
     const message = {
       title: "MDCz",
-      body: [
-        `Scrape finished: ${success} succeeded, ${failed} failed`,
-        pending ? `${pending} new in the pending list` : "",
-      ]
+      body: [`刮削结束：成功 ${success} 项，失败 ${failed} 项`, pending ? `待处理列表新增 ${pending} 项` : ""]
         .filter(Boolean)
         .join("; "),
     };
@@ -252,7 +249,7 @@ export class AutomationService {
     const { repositories } = await this.deps.persistence.getState();
     const added = repositories.library.countCreatedSince(new Date(now.getTime() - 24 * 60 * 60 * 1000));
     const pending = repositories.pending.count();
-    const message = { title: "MDCz daily digest", body: `${added} new movies in the last day; ${pending} pending` };
+    const message = { title: "MDCz 每日摘要", body: `过去一天新增 ${added} 部影片，待处理 ${pending} 项` };
     for (const channel of channels)
       this.enqueue(async () => await this.sendToChannel(configuration.notifications, channel, message));
   }
@@ -264,24 +261,24 @@ export class AutomationService {
   ): Promise<void> {
     try {
       if (channel === "telegram") {
-        if (!settings.telegramBotToken || !settings.telegramChatId) throw new Error("Telegram is not configured");
+        if (!settings.telegramBotToken || !settings.telegramChatId) throw new Error("尚未配置 Telegram");
         await this.post(
           `https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`,
           JSON.stringify({ chat_id: settings.telegramChatId, text: `${message.title}\n${message.body}` }),
           { "content-type": "application/json" },
         );
       } else if (channel === "bark") {
-        if (!settings.barkUrl) throw new Error("Bark is not configured");
+        if (!settings.barkUrl) throw new Error("尚未配置 Bark");
         await this.post(settings.barkUrl, JSON.stringify(message), { "content-type": "application/json" });
       } else {
-        if (!settings.ntfyUrl) throw new Error("ntfy is not configured");
+        if (!settings.ntfyUrl) throw new Error("尚未配置 ntfy");
         await this.post(settings.ntfyUrl, message.body, {
           title: message.title,
           ...(settings.ntfyToken ? { authorization: `Bearer ${settings.ntfyToken}` } : {}),
         });
       }
     } catch (error) {
-      this.deps.logger.warn(`Notification via ${channel} failed: ${toErrorMessage(error)}`);
+      this.deps.logger.warn(`通过 ${channel} 发送通知失败：${toErrorMessage(error)}`);
       throw error;
     }
   }
@@ -293,12 +290,12 @@ export class AutomationService {
       body,
       signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).host}`);
+    if (!response.ok) throw new Error(`${new URL(url).host} 返回 HTTP ${response.status}`);
   }
 
   private enqueue(delivery: () => Promise<void>): void {
     if (this.#queue.length >= MAX_QUEUED_DELIVERIES) {
-      this.#deliveryStatus.lastError = "Notification queue is full";
+      this.#deliveryStatus.lastError = "通知队列已满";
       return;
     }
     this.#queue.push(delivery);

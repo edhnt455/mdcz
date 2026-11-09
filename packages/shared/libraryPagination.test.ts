@@ -12,7 +12,7 @@ describe("library page cursors", () => {
   });
 
   it.each(["invalid", "1:%E0%A4%A"])("rejects malformed cursor %s", (cursor) => {
-    expect(() => decodeLibraryPageCursor(cursor)).toThrow("Invalid library page cursor");
+    expect(() => decodeLibraryPageCursor(cursor)).toThrow("媒体库分页游标无效");
   });
 
   it("treats an absent cursor as the first page", () => {

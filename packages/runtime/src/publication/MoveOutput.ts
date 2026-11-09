@@ -35,11 +35,7 @@ export const assertMoveTargetAbsent = async (targetPath: string, fs = outputFile
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
-  throw new PublicationConflictError(
-    targetPath,
-    targetPath,
-    "Target already exists; overwriting media files is prohibited",
-  );
+  throw new PublicationConflictError(targetPath, targetPath, "目标已存在，禁止覆盖媒体文件");
 };
 
 // Uncommitted media is put back where it came from so a retry sees the original source
@@ -70,13 +66,12 @@ export class MoveOutput {
     const warn = (message: string) => this.logger.warn(message);
     const directories = new CreatedDirectories(fs);
     const targets = new Set(input.moves.map((move) => filesystemPathKey(move.targetPath)));
-    if (targets.size !== input.moves.length) throw new Error("Duplicate media move target");
+    if (targets.size !== input.moves.length) throw new Error("媒体移动目标重复");
     const targetEntries = new Map<string, Set<string>>();
     let committed = false;
     const assertSource = async (move: SourceMove, sourcePath: string, observed?: Stats) => {
       const current = observed ?? (await fs.stat(sourcePath));
-      if (!current.isFile() || !sameMediaFile(current, move))
-        throw new Error(`Publication source changed before mutation: ${sourcePath}`);
+      if (!current.isFile() || !sameMediaFile(current, move)) throw new Error(`发布写入前来源已变化：${sourcePath}`);
     };
     const assertTarget = async (move: SourceMove, sourcePath: string) => {
       if (isPrimaryVideoFile(move.targetPath)) {
@@ -95,11 +90,7 @@ export class MoveOutput {
         for (const candidate of entries) {
           if (candidate === filesystemPathKey(sourcePath)) continue;
           if (filesystemPathKey(path.join(directory, path.parse(candidate).name)) === base)
-            throw new PublicationConflictError(
-              move.sourcePath,
-              candidate,
-              "A movie with the same name already exists in target directory",
-            );
+            throw new PublicationConflictError(move.sourcePath, candidate, "目标目录中已存在同名影片");
         }
       }
       await assertMoveTargetAbsent(move.targetPath, fs);
@@ -186,7 +177,7 @@ export class MoveOutput {
               !path.isAbsolute(await readlink(sourcePath)) &&
               path.dirname(sourcePath) !== path.dirname(move.targetPath)
             )
-              throw new Error(`Cannot move a relative file symlink to another directory: ${sourcePath}`);
+              throw new Error(`无法将使用相对路径的文件符号链接移动到其他目录：${sourcePath}`);
             await assertSource(move, sourcePath, link.isSymbolicLink() ? undefined : link);
             if (move.transfer === "hardlink" && move.rewrittenContent === undefined) {
               // Re-publishing a file that already is the library's hardlink only refreshes its metadata.
@@ -202,7 +193,7 @@ export class MoveOutput {
               } catch (error) {
                 if ((error as NodeJS.ErrnoException).code === "EXDEV")
                   throw new Error(
-                    `Hardlinks need the library output on the same volume as the source: ${sourcePath} -> ${move.targetPath}`,
+                    `创建硬链接需要媒体库输出和来源位于同一磁盘分区：${sourcePath} -> ${move.targetPath}`,
                     { cause: error },
                   );
                 throw error;
@@ -223,7 +214,7 @@ export class MoveOutput {
               } catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
                 if (link.isSymbolicLink())
-                  throw new Error(`Cannot copy a file symlink as source media: ${sourcePath}`, { cause: error });
+                  throw new Error(`不能将文件符号链接作为源媒体进行复制：${sourcePath}`, { cause: error });
                 copied = true;
               }
             }
@@ -237,7 +228,7 @@ export class MoveOutput {
               const expectedSize =
                 move.rewrittenContent === undefined ? move.size : Buffer.byteLength(move.rewrittenContent);
               if ((await fs.stat(staging)).size !== expectedSize)
-                throw new Error(`Staged transfer size mismatch: ${move.targetPath}`);
+                throw new Error(`暂存传输文件大小不匹配：${move.targetPath}`);
               await assertSource(move, sourcePath);
               await assertTarget(move, sourcePath);
               await fs.rename(staging, move.targetPath);
@@ -258,11 +249,10 @@ export class MoveOutput {
           committed = true;
           for (const [sourcePath, facts] of retainedSources) {
             try {
-              if (!sameMediaFile(await fs.stat(sourcePath), facts))
-                throw new Error("Source changed after transfer; leaving it intact");
+              if (!sameMediaFile(await fs.stat(sourcePath), facts)) throw new Error("传输后来源已变化，已保留原文件");
               await fs.rm(sourcePath, { force: true });
             } catch (error) {
-              this.logger.warn(`Published media but left source ${sourcePath}: ${toErrorMessage(error)}`);
+              this.logger.warn(`媒体已发布，但来源 ${sourcePath} 未移除：${toErrorMessage(error)}`);
             }
           }
           return value;
@@ -309,7 +299,7 @@ export class MoveOutput {
         else await this.fileSystem.rename(relocation.to, relocation.from);
       } catch (error) {
         this.logger.warn(
-          `Uncommitted media remains at ${relocation.to} (originally ${relocation.from}): ${toErrorMessage(error)}`,
+          `尚未提交的媒体保留在 ${relocation.to}（原路径 ${relocation.from}）：${toErrorMessage(error)}`,
         );
       }
     }

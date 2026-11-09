@@ -11,8 +11,7 @@ import type { Context, SearchPageResolution } from "../base/types";
 import type { CrawlerRegistration } from "../registration";
 import { toAbsoluteUrl } from "./helpers";
 
-const FANTIA_AGE_VERIFICATION_MESSAGE =
-  "Fantia age verification detected; please login first via browser and provide cookies";
+const FANTIA_AGE_VERIFICATION_MESSAGE = "检测到 Fantia 年龄验证，请先通过浏览器登录并提供 Cookie";
 
 const FANTIA_BASE_URL = "https://fantia.jp";
 const FANTIA_SITE_REQUEST_CONFIGS: readonly SiteRequestConfig[] = [
@@ -217,7 +216,7 @@ export class FantiaCrawler extends BaseCrawler {
       if (error instanceof SiteError && error.reason === "login_wall") {
         throw error;
       }
-      this.logger.debug(`Failed to fetch direct URL: ${url}`);
+      this.logger.debug(`获取直达网址失败：${url}`);
     }
     return null;
   }
@@ -242,7 +241,7 @@ export class FantiaCrawler extends BaseCrawler {
         return toAbsoluteUrl(FANTIA_BASE_URL, href) ?? null;
       }
     } catch {
-      this.logger.debug(`Failed to fetch search URL: ${url}`);
+      this.logger.debug(`获取搜索网址失败：${url}`);
     }
     return null;
   }
@@ -275,7 +274,7 @@ export class FantiaCrawler extends BaseCrawler {
         images: [...new Set([...extractImagesFromBlogComment(data), ...extractImagesFromPostContents(data)])],
       };
     } catch (error) {
-      this.logger.debug(`Failed to fetch post API data for ${postId}: ${error}`);
+      this.logger.debug(`获取帖子 ${postId} 的 API 数据失败：${error}`);
       return null;
     }
   }
@@ -318,7 +317,7 @@ export class FantiaCrawler extends BaseCrawler {
   }
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
-    this.logger.debug(`url is ${_detailUrl}`);
+    this.logger.debug(`网址：${_detailUrl}`);
     if (isAgeVerificationPage($)) {
       throw new SiteError("login_wall", FANTIA_AGE_VERIFICATION_MESSAGE);
     }

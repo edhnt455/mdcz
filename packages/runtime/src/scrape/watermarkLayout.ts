@@ -71,7 +71,7 @@ export function layoutWatermarkBadges(
       }));
     const totalWidth = sizes.reduce((sum, badge) => sum + badge.width, 0) + gap * (sizes.length - 1);
     if (totalWidth > widthLimit || sizes.some((badge) => badge.height > heightLimit)) {
-      throw new Error("Image is too small for the selected watermarks and margins");
+      throw new Error("图片太小，无法容纳所选水印和边距");
     }
     const right = position.endsWith("Right");
     const bottom = position.startsWith("bottom");
@@ -85,7 +85,7 @@ export function layoutWatermarkBadges(
   }
   return badges.map((badge) => {
     const placement = placements.get(badge.id);
-    if (!placement) throw new Error(`Missing watermark placement: ${badge.id}`);
+    if (!placement) throw new Error(`缺少水印位置：${badge.id}`);
     return placement;
   });
 }

@@ -39,8 +39,8 @@ interface ScanDirectoryResult {
   directoryCount: number;
 }
 
-const SCAN_BACKEND_INTERRUPTED_MESSAGE = "Scan backend restarted and the task was interrupted; please retry the scan";
-const SCAN_SERVICE_CLOSED_MESSAGE = "Scan service shut down and the task was interrupted; please retry the scan";
+const SCAN_BACKEND_INTERRUPTED_MESSAGE = "扫描服务已重启，任务中断，请重新扫描";
+const SCAN_SERVICE_CLOSED_MESSAGE = "扫描服务已关闭，任务中断，请重新扫描";
 
 const toIso = (value: Date | null): string | null => value?.toISOString() ?? null;
 export class ScanQueueService {
@@ -66,7 +66,7 @@ export class ScanQueueService {
     const state = await this.persistence.getState();
     const task = await state.repositories.scanTasks.create({ rootId });
     try {
-      await this.addEvent(task.id, "queued", "Scan task queued");
+      await this.addEvent(task.id, "queued", "扫描任务已加入队列");
       const queuedTask = await this.toDto(task.id);
       this.publishTask(queuedTask);
       return queuedTask;
@@ -106,7 +106,7 @@ export class ScanQueueService {
   }
 
   async retry(taskId: string): Promise<ScanTaskDto> {
-    if (this.closing) throw new Error("Scan queue is closing");
+    if (this.closing) throw new Error("扫描队列正在关闭");
     const state = await this.persistence.getState();
     let task = await state.repositories.scanTasks.get(taskId);
     if (this.fault) {
@@ -116,13 +116,13 @@ export class ScanQueueService {
       task = await state.repositories.scanTasks.get(taskId);
     }
     if (task.status === "running" || task.status === "queued") {
-      throw new Error("Only completed or failed scan tasks can be retried");
+      throw new Error("只能重试已完成或失败的扫描任务");
     }
     await this.mediaRoots.get(task.rootId);
     const queued = await state.repositories.scanTasks.requeue(taskId);
-    if (!queued) throw new Error(`Failed to requeue scan task: ${taskId}`);
+    if (!queued) throw new Error(`扫描任务重新入队失败：${taskId}`);
     try {
-      await this.addEvent(taskId, "queued", "Scan retry queued");
+      await this.addEvent(taskId, "queued", "扫描重试已加入队列");
       const queuedTask = await this.toDto(taskId);
       this.publishTask(queuedTask);
       return queuedTask;
@@ -143,7 +143,7 @@ export class ScanQueueService {
   }
 
   private async scanCandidates(input: ScanCandidatesInput, signal: AbortSignal): Promise<ScanCandidatesResponse> {
-    if (this.closing) throw new Error("Scan queue is closing");
+    if (this.closing) throw new Error("扫描队列正在关闭");
     const configuration = await this.config.get();
     const excludeDirPaths = input.excludeDirPaths?.map((path) => normalizeHostPath(path)) ?? [];
     const admitted = await this.mediaRoots.admitDirectory({ hostPath: input.scanDir });
@@ -189,7 +189,7 @@ export class ScanQueueService {
     try {
       const state = await this.persistence.getState();
       this.activeScan = { taskId, controller };
-      await this.addEvent(taskId, "running", "Scanning media directory");
+      await this.addEvent(taskId, "running", "正在扫描媒体目录");
       this.publishTask(await this.toDto(taskId));
       const root = await this.mediaRoots.get(rootId);
       const result = await this.scanDirectory(root, controller.signal);
@@ -204,7 +204,7 @@ export class ScanQueueService {
       await this.addEvent(
         taskId,
         "completed",
-        `Scan complete: ${result.videos.length} videos, ${result.directoryCount} directories`,
+        `扫描完成：${result.videos.length} 个视频，${result.directoryCount} 个目录`,
       );
       this.publishTask(await this.toDto(taskId));
     } catch (error) {
@@ -242,7 +242,7 @@ export class ScanQueueService {
       id: task.id,
       kind: "scan",
       rootId: task.rootId,
-      rootDisplayName: root?.displayName ?? "Unknown media directory",
+      rootDisplayName: root?.displayName ?? "未知媒体目录",
       status: task.status,
       createdAt: task.createdAt.toISOString(),
       updatedAt: task.updatedAt.toISOString(),
@@ -310,7 +310,7 @@ export class ScanQueueService {
         id: `scan-queue:${Date.now()}`,
         taskId: "scan-queue",
         type: "failed",
-        message: `Scan queue stopped draining: ${message}`,
+        message: `扫描队列停止处理：${message}`,
         createdAt: new Date().toISOString(),
         source: "task",
       });
@@ -321,8 +321,8 @@ export class ScanQueueService {
   }
 
   private assertAdmittable(): void {
-    if (this.closing) throw new Error("Scan queue is closing");
-    if (this.fault) throw new Error(`Scan queue requires repair: ${this.fault}`);
+    if (this.closing) throw new Error("扫描队列正在关闭");
+    if (this.fault) throw new Error(`扫描队列需要修复：${this.fault}`);
   }
 
   private async claimNext(): Promise<ScanTask | null> {
@@ -350,7 +350,7 @@ export class ScanQueueService {
   }
 
   async recover(): Promise<void> {
-    if (this.closing) throw new Error("Scan queue is closing");
+    if (this.closing) throw new Error("扫描队列正在关闭");
     await this.waitForDrain();
     if (this.failedExecution) {
       await this.failTask(this.failedExecution.taskId, this.failedExecution.error);

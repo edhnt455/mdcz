@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { BAIDU_SERVICE_OPTIONS, type Configuration, type DeepPartial, type notificationsSchema } from "./config";
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
@@ -13,6 +12,7 @@ import { normalizedCropRegionSchema } from "./posterCrop";
 import { scrapeTargetConflictSchema } from "./scrapeConflict";
 import { FAILURE_REASONS, siteHealthSchema } from "./siteResults";
 import type { MediaCandidate } from "./types";
+import { z } from "./zod";
 
 export const maintenancePresetIdSchema = z.enum([
   "import_local",
@@ -1199,7 +1199,7 @@ const profileNameSchema = z
   .string()
   .trim()
   .min(1)
-  .regex(/^[\p{L}\p{N}_-]+$/u, 'Profile name only supports letters, numbers, "_" and "-"');
+  .regex(/^[\p{L}\p{N}_-]+$/u, "档案名称仅支持字母、数字、“_”和“-”");
 
 export const configProfileNameInputSchema = z.object({
   name: profileNameSchema,

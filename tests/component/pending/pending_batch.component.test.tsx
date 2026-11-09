@@ -28,8 +28,42 @@ const props: Omit<PendingViewProps, "onBatch"> = {
   onRetry: vi.fn(),
   onRetryNumberRecognition: vi.fn(),
   onIgnore: vi.fn(),
+  onDelete: vi.fn(),
   onConfirmUncensored: vi.fn(),
 };
+
+test("STRM delete runs immediately and locks actions until the request finishes", async () => {
+  let settle!: () => void;
+  const onDelete = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+  );
+  const item = { ...items[0], fileName: "ABC-001.strm" };
+  const screen = await render(
+    <>
+      <PendingView
+        {...props}
+        onDelete={onDelete}
+        onBatch={vi.fn()}
+        detail={{ item, siteResults: [], numberRecognition: null }}
+      />
+      <ConfirmDialogHost />
+    </>,
+  );
+  await screen.getByRole("button", { name: "删除", exact: true }).click();
+  expect(onDelete).toHaveBeenCalledExactlyOnceWith(item.id);
+  await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "正在删除…" })).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: "忽略", exact: true })).toBeDisabled();
+  settle();
+  await expect.element(screen.getByRole("button", { name: "删除", exact: true })).toBeEnabled();
+  await screen.rerender(
+    <PendingView {...props} onBatch={vi.fn()} detail={{ item: items[0], siteResults: [], numberRecognition: null }} />,
+  );
+  await expect.element(screen.getByRole("button", { name: "删除", exact: true })).not.toBeInTheDocument();
+});
 
 test("batch selection supports select all, locks while processing and retains only failed selections", async () => {
   let settle!: (result: PendingBatchResponse) => void;

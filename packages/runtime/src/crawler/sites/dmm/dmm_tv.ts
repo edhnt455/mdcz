@@ -104,7 +104,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
           }
         } catch (error) {
           const message = toErrorMessage(error);
-          this.logger.debug(`DMM TV GraphQL-first searched detail miss for ${searchedDetailUrl}: ${message}`);
+          this.logger.debug(`DMM TV 优先 GraphQL 搜索详情失败 ${searchedDetailUrl}：${message}`);
         }
       }
     }
@@ -131,7 +131,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
           return await this.gateway.fetchHtml(fallbackUrl, this.createFetchOptions(context));
         } catch (fallbackError) {
           const message = toErrorMessage(fallbackError);
-          this.logger.debug(`DMM TV detail fallback miss for ${fallbackUrl}: ${message}`);
+          this.logger.debug(`DMM TV 备用详情请求失败 ${fallbackUrl}：${message}`);
         }
       }
 
@@ -231,7 +231,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
         }
       } catch (error) {
         const message = toErrorMessage(error);
-        this.logger.debug(`DMM TV detail parse fallback miss for ${fallbackUrl}: ${message}`);
+        this.logger.debug(`DMM TV 备用详情解析失败 ${fallbackUrl}：${message}`);
       }
     }
 
@@ -247,7 +247,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
   }
 
   private async tryDetailUrl(context: DmmTvContext, detailUrl: string): Promise<CrawlerData | null> {
-    const graphQlResult = await this.tryDmmVideoDetailUrl(context, detailUrl, Website.DMM_TV, "DMM TV detail GraphQL");
+    const graphQlResult = await this.tryDmmVideoDetailUrl(context, detailUrl, Website.DMM_TV, "DMM TV 详情 GraphQL");
     if (graphQlResult) {
       return graphQlResult;
     }
@@ -287,7 +287,7 @@ export class DmmTvCrawler extends BaseDmmCrawler {
           }
         } catch (error) {
           const message = toErrorMessage(error);
-          this.logger.debug(`DMM VIDEO search miss for ${strategy.floor}/${term}: ${message}`);
+          this.logger.debug(`DMM VIDEO 搜索未命中 ${strategy.floor}/${term}：${message}`);
         }
       }
     }

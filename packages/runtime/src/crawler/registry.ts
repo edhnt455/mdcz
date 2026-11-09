@@ -32,10 +32,10 @@ const crawlerConstructors = new Map<Website, CrawlerConstructor>();
 
 const registerCrawler = (site: Website, crawler: CrawlerConstructor): void => {
   if (!crawler.numberPattern && !crawler.contentTypes?.length) {
-    throw new Error(`Crawler for site '${site}' declares neither numberPattern nor contentTypes`);
+    throw new Error(`站点“${site}”的刮削器未声明番号规则或内容类型`);
   }
   if (crawlerConstructors.has(site)) {
-    throw new Error(`Crawler for site '${site}' is already registered`);
+    throw new Error(`站点“${site}”的刮削器已注册`);
   }
 
   crawlerConstructors.set(site, crawler);

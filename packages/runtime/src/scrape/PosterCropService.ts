@@ -60,12 +60,12 @@ export class PosterCropService {
     const thumbPath = assets ? assets.thumb : await resolveExistingImageAsset(thumbTargetPath, inventory);
     const posterPath = assets ? assets.poster : await resolveExistingImageAsset(posterTargetPath, inventory);
     const sourcePath = thumbPath ?? posterPath;
-    if (!sourcePath) throw new Error("No local thumb or poster is available for editing");
+    if (!sourcePath) throw new Error("没有可编辑的本地封面或海报");
 
     const metadata = await sharp(sourcePath, { animated: false }).rotate().metadata();
     const width = metadata.width ?? 0;
     const height = metadata.height ?? 0;
-    if (width <= 0 || height <= 0) throw new Error("Unable to read poster source dimensions");
+    if (width <= 0 || height <= 0) throw new Error("无法读取海报来源图片的尺寸");
     return {
       sourcePath,
       targetPath: posterPath ?? posterTargetPath,
@@ -88,7 +88,7 @@ export class PosterCropService {
   ): Promise<PosterCropSession & { revision: string }> {
     const session = await this.prepare(videoPath, assetNamingMode, assets);
     const extension = extname(session.targetPath).toLowerCase() || ".jpg";
-    if (!supportedExtensions.has(extension)) throw new Error(`Unsupported poster format: ${extension}`);
+    if (!supportedExtensions.has(extension)) throw new Error(`不支持的海报格式：${extension}`);
     const pixelCrop = normalizedCropToPixels(crop, session.width, session.height);
     const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
     const data = await encodePoster(source, extension).toBuffer();

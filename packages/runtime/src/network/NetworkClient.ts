@@ -261,7 +261,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
         undefined,
         {
           transformResponse: async (response) => {
-            if (!response.body) throw new Error(`Download response has no body: ${url}`);
+            if (!response.body) throw new Error(`下载响应没有内容：${url}`);
             const handle = await open(temporaryPath, "w");
             try {
               const reader = response.body.getReader();
@@ -273,7 +273,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
                       new Promise<never>((_, reject) => {
                         timer = setTimeout(() => {
                           response.abort();
-                          reject(new Error(`Download body timed out after ${readTimeoutMs}ms: ${url}`));
+                          reject(new Error(`读取下载内容超时（${readTimeoutMs} 毫秒）：${url}`));
                         }, readTimeoutMs);
                       }),
                     ]).finally(() => clearTimeout(timer))
@@ -293,7 +293,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     } catch (error) {
       await rm(temporaryPath, { force: true });
       if (totalTimeoutSignal?.aborted && !requestInit.signal?.aborted) {
-        throw new Error(`Download timed out after ${totalTimeoutMs}ms: ${url}`, { cause: error });
+        throw new Error(`下载超时（${totalTimeoutMs} 毫秒）：${url}`, { cause: error });
       }
       throw error;
     }
@@ -445,7 +445,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
         const text = await response.text();
         const reason = this.classifyBlockedPage(response.url || url, text);
         if (reason) {
-          throw new SiteError(reason, `${reason} page served for ${url}`, { httpStatus: response.status });
+          throw new SiteError(reason, `${url} 返回 ${reason} 页面`, { httpStatus: response.status });
         }
         return text;
       },
@@ -456,7 +456,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     try {
       return JSON.parse(text) as T;
     } catch (error) {
-      throw new SiteError("parse_error", `Invalid JSON from ${url}`, { cause: error });
+      throw new SiteError("parse_error", `${url} 返回的 JSON 无效`, { cause: error });
     }
   }
 
@@ -520,7 +520,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       const delayMs = this.getRetryDelayMsForAttempt(attempt);
       attempt += 1;
       this.logger.warn(
-        `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to transport error: ${error instanceof Error ? error.message : String(error)}`,
+        `发生传输错误，将在 ${delayMs} 毫秒后重试 ${behavior.retryLogPrefix ?? url}（${attempt}/${maxRetries}）：${error instanceof Error ? error.message : String(error)}`,
       );
       await this.waitForRetryDelay(delayMs, init.signal);
     };
@@ -539,7 +539,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
           const delayMs = this.getRetryDelayMs(response, attempt);
           attempt += 1;
           this.logger.warn(
-            `Retrying ${behavior.retryLogPrefix ?? url} (${attempt}/${maxRetries}) after ${delayMs}ms due to HTTP ${response.status}`,
+            `收到 HTTP ${response.status}，将在 ${delayMs} 毫秒后重试 ${behavior.retryLogPrefix ?? url}（${attempt}/${maxRetries}）`,
           );
           await this.waitForRetryDelay(delayMs, init.signal);
           continue;
@@ -622,7 +622,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
     return new SiteError(
       this.classifyBlockedPage(response.url || url, body) ?? failureReasonForStatus(response.status),
-      `HTTP ${response.status} ${response.statusText} for ${url}`,
+      `请求 ${url} 失败：HTTP ${response.status} ${response.statusText}`,
       {
         httpStatus: response.status,
         retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")) ?? undefined,

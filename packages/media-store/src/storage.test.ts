@@ -132,12 +132,12 @@ describe("absolute filesystem publication", () => {
   });
 
   it("rejects relative source and target paths before touching the filesystem", async () => {
-    await expect(atomicWriteFile("relative.nfo", "metadata")).rejects.toThrow("filePath must be an absolute path");
+    await expect(atomicWriteFile("relative.nfo", "metadata")).rejects.toThrow("filePath 必须是绝对路径");
     await expect(atomicCopyFile("relative.bin", path.resolve("target.bin"))).rejects.toThrow(
-      "sourcePath must be an absolute path",
+      "sourcePath 必须是绝对路径",
     );
     await expect(atomicCopyFile(path.resolve("source.bin"), "relative.bin")).rejects.toThrow(
-      "targetPath must be an absolute path",
+      "targetPath 必须是绝对路径",
     );
   });
 

@@ -1,6 +1,6 @@
 export class MediaPathBusyError extends Error {
   constructor(readonly path: string) {
-    super(`Media path is already being modified: ${path}`);
+    super(`媒体路径正在被修改：${path}`);
     this.name = "MediaPathBusyError";
   }
 }
@@ -14,7 +14,7 @@ export class MediaPathOwnership {
 
   acquireAll(paths: readonly string[], owner: string | symbol = Symbol("media-path-owner")): () => void {
     const keys = [...new Set(paths)].sort();
-    if (keys.some((key) => !key.trim())) throw new Error("Media path key is required");
+    if (keys.some((key) => !key.trim())) throw new Error("必须提供媒体路径键");
     const occupied = keys.find((key) => {
       const current = this.#owners.get(key);
       return current && current.owner !== owner;

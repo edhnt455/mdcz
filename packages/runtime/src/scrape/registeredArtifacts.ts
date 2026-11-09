@@ -64,7 +64,7 @@ export async function writeNfoPublication(input: {
   const owned = publication.outputs
     ? await resolveRegisteredNfoPaths(nfoPath, publication.outputs, async (id) => {
         const root = publication.roots.find((root) => root.id === id);
-        if (!root) throw new Error(`Publication root not found: ${id}`);
+        if (!root) throw new Error(`未找到发布根目录：${id}`);
         return root;
       })
     : undefined;
@@ -79,7 +79,7 @@ export async function writeNfoPublication(input: {
       protectedMediaFiles: owned?.mediaPaths ?? (videoPath ? [videoPath] : []),
       commit: async () => {
         if (!owned) return;
-        if (!publication.library) throw new Error("Registered NFO write requires library updates");
+        if (!publication.library) throw new Error("写入已登记的 NFO 需要同步更新媒体库");
         await writePublishedMovie(
           publication.library,
           owned.movieId,
@@ -110,9 +110,8 @@ export async function registeredPosterCropContext(
 ) {
   const snapshot = library.publicationSnapshot({ paths: [videoPath] });
   const owners = [...new Set(snapshot.files.map((file) => file.itemId))];
-  if (owners.length > 1)
-    throw new Error("The same video file is referenced by multiple library movies; cannot determine cover");
-  if (!owners.length) throw new Error("Current video is not in library; cannot retrieve saved cover");
+  if (owners.length > 1) throw new Error("同一视频被多个媒体库影片引用，无法确定封面");
+  if (!owners.length) throw new Error("当前视频未入库，无法读取已保存的封面");
   const movieId = owners[0];
   const entry = await library.getEntryById(movieId);
   const assets: { thumb?: string; poster?: string } = {};

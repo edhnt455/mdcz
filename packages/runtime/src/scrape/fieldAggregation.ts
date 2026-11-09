@@ -81,10 +81,10 @@ export const summarizeFailedSiteResults = (number: string, siteResults: readonly
     );
 
   if (reasons.length === 0) {
-    return `No crawler returned metadata for ${number}`;
+    return `所有刮削器均未返回 ${number} 的元数据`;
   }
 
-  return `No crawler returned metadata for ${number}. ${reasons.join("; ")}`;
+  return `所有刮削器均未返回 ${number} 的元数据。${reasons.join("; ")}`;
 };
 
 export class FieldAggregator {
@@ -107,7 +107,7 @@ export class FieldAggregator {
     const imageAlternatives: ImageAlternatives = { ...EMPTY_IMAGE_ALTERNATIVES, image_sources: imageSources };
     const entries: SourceEntry[] = Array.from(results.entries()).map(([site, data]) => ({ site, data }));
     if (entries.length === 0) {
-      throw new Error("No results to aggregate");
+      throw new Error("没有可聚合的结果");
     }
 
     const firstEntry = entries[0];
@@ -264,7 +264,7 @@ export class FieldAggregator {
   }
 
   private union(field: keyof CrawlerData, entries: SourceEntry[]): ResolvedField {
-    if (field !== "actors") throw new Error(`No union rule for ${field}`);
+    if (field !== "actors") throw new Error(`${field} 没有合并规则`);
     const seen = new Set<string>();
     const merged: string[] = [];
     let source: Website | undefined;

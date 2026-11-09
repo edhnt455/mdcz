@@ -73,7 +73,7 @@ describe("sidecar inventory", () => {
     expect(reads).toHaveBeenCalledOnce();
     await inventory.assertUnchanged([nfoPath]);
     await fs.writeFile(nfoPath, "<movie><title>Changed</title></movie>");
-    await expect(inventory.assertUnchanged([nfoPath])).rejects.toThrow("preview again");
+    await expect(inventory.assertUnchanged([nfoPath])).rejects.toThrow("请重新预览");
     expect(await inventory.loadNfo(nfoPath)).toBe(snapshot);
     expect(reads).toHaveBeenCalledOnce();
   });

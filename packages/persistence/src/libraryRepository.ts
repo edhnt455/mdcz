@@ -260,7 +260,7 @@ const toLibraryEntryRecord = (
 ): LibraryEntryRecord => {
   const primaryFile = selectRepresentativeFile(files);
   if (!primaryFile) {
-    throw new Error(`Library item has no file refs: ${item.id}`);
+    throw new Error(`媒体库条目没有文件引用：${item.id}`);
   }
   const thumbnail =
     assets.find((asset) => asset.kind === "poster" && !isRemoteAssetUri(asset.uri)) ??
@@ -412,7 +412,7 @@ export class LibraryRepository {
           refs.map((ref) => {
             if (ref.entryIdentity) return ref.entryIdentity;
             const root = roots.get(ref.rootId);
-            if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+            if (!root) throw new Error(`未找到媒体根目录：${ref.rootId}`);
             return filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, ref.relativePath));
           }),
         )
@@ -472,9 +472,9 @@ export class LibraryRepository {
     modifiedAt?: Date | null;
   }): Promise<LibraryEntryRecord> {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, input.fileId)).get();
-    if (!file) throw new Error(`Library file not found: ${input.fileId}`);
+    if (!file) throw new Error(`未找到媒体库文件：${input.fileId}`);
     const root = this.database.db.select().from(mediaRoots).where(eq(mediaRoots.id, input.rootId)).get();
-    if (!root) throw new Error(`Media root not found: ${input.rootId}`);
+    if (!root) throw new Error(`未找到媒体根目录：${input.rootId}`);
     if (
       [...new Set([root.hostPath, root.realPath].filter((value): value is string => Boolean(value)))].some((base) =>
         this.findLibraryFilesAtAbsolutePath(path.resolve(base, input.rootRelativePath)).some(
@@ -482,7 +482,7 @@ export class LibraryRepository {
         ),
       )
     )
-      throw new Error("Target path already belongs to another file");
+      throw new Error("目标路径已属于其他文件");
     const occupied = this.database.db
       .select({ id: libraryItemFiles.id })
       .from(libraryItemFiles)
@@ -491,7 +491,7 @@ export class LibraryRepository {
       )
       .get();
     if (occupied && occupied.id !== file.id) {
-      throw new Error(`Library path already belongs to another file: ${input.rootId}:${input.rootRelativePath}`);
+      throw new Error(`媒体库路径已属于其他文件：${input.rootId}:${input.rootRelativePath}`);
     }
     const directory = path.posix.dirname(input.rootRelativePath);
     const now = new Date();
@@ -517,13 +517,13 @@ export class LibraryRepository {
 
   async getEntryByFileId(fileId: string): Promise<LibraryEntryRecord> {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
-    if (!file) throw new Error(`Library file not found: ${fileId}`);
+    if (!file) throw new Error(`未找到媒体库文件：${fileId}`);
     return this.getEntryById(file.itemId);
   }
 
   removeFile(fileId: string): void {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
-    if (!file) throw new Error(`Library file not found: ${fileId}`);
+    if (!file) throw new Error(`未找到媒体库文件：${fileId}`);
     this.database.sqlite.transaction(() => {
       this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.fileId, fileId)).run();
       this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).run();
@@ -534,7 +534,7 @@ export class LibraryRepository {
 
   deleteEntry(id: string): void {
     const item = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
-    if (!item) throw new Error(`Library entry not found: ${id}`);
+    if (!item) throw new Error(`未找到媒体库条目：${id}`);
     this.database.sqlite.transaction(() => {
       this.database.db.delete(libraryItemAssets).where(eq(libraryItemAssets.itemId, id)).run();
       this.database.db.delete(libraryItemFiles).where(eq(libraryItemFiles.itemId, id)).run();
@@ -558,7 +558,7 @@ export class LibraryRepository {
       .limit(1)
       .get();
     if (!row) {
-      throw new Error(`Library entry not found: ${rootId}:${rootRelativePath}`);
+      throw new Error(`未找到媒体库条目：${rootId}:${rootRelativePath}`);
     }
     return await this.getEntryById(row.itemId);
   }
@@ -574,7 +574,7 @@ export class LibraryRepository {
           files: [...entry.files.filter((f) => f.id === file.id), ...entry.files.filter((f) => f.id !== file.id)],
         };
       }
-      throw new Error(`Library entry not found: ${id}`);
+      throw new Error(`未找到媒体库条目：${id}`);
     }
     const [files, assets] = await Promise.all([this.listFilesForItems([id]), this.listAssetsForItems([id])]);
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
@@ -672,7 +672,7 @@ export class LibraryRepository {
       .innerJoin(libraryItemFiles, eq(libraryItemFiles.itemId, libraryItems.id))
       .where(baseWhere)
       .get();
-    if (!totals) throw new Error("Library aggregate query returned no row");
+    if (!totals) throw new Error("媒体库汇总查询未返回结果");
 
     return {
       entries,
@@ -830,7 +830,7 @@ export class LibraryRepository {
   private async getLibraryItem(id: string): Promise<LibraryItemRow> {
     const row = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, id)).limit(1).get();
     if (!row) {
-      throw new Error(`Library entry not found: ${id}`);
+      throw new Error(`未找到媒体库条目：${id}`);
     }
     return row;
   }

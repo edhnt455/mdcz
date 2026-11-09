@@ -121,7 +121,7 @@ describe("NetworkClient retry policy", () => {
   });
 
   it("does not retry abort errors", async () => {
-    const abortError = new Error("Operation aborted");
+    const abortError = new Error("操作已中止");
     abortError.name = "AbortError";
     fetchMock.mockRejectedValue(abortError);
     const client = new NetworkClient({ getRetryCount: () => 3 });

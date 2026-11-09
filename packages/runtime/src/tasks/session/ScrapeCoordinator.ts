@@ -78,14 +78,14 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
 
   async retry(runId: string, itemIds?: readonly string[]): Promise<ScrapeRunSnapshot<TItem>> {
     this.assertOpen();
-    if (this.entries.has(runId)) throw new Error(`Scrape run is already live: ${runId}`);
-    if (!this.host.retry) throw new Error("Scrape host does not support retry");
+    if (this.entries.has(runId)) throw new Error(`刮削任务已在运行：${runId}`);
+    if (!this.host.retry) throw new Error("刮削执行服务不支持重试");
     return await this.register(this.host.retry(runId, itemIds));
   }
 
   async rerunDirectory(runId: string): Promise<ScrapeRunSnapshot<TItem>> {
     this.assertOpen();
-    if (this.entries.has(runId)) throw new Error(`Scrape run is already live: ${runId}`);
+    if (this.entries.has(runId)) throw new Error(`刮削任务已在运行：${runId}`);
     return await this.register(this.host.rerunDirectory(runId));
   }
 
@@ -178,8 +178,8 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
 
   private enqueue(run: TRun): ScrapeRunSnapshot<TItem> {
     const id = this.host.runId(run);
-    if (!id.trim()) throw new Error("Scrape run ID must not be empty");
-    if (this.entries.has(id)) throw new Error(`Scrape run is already live: ${id}`);
+    if (!id.trim()) throw new Error("刮削任务 ID 不能为空");
+    if (this.entries.has(id)) throw new Error(`刮削任务已在运行：${id}`);
     const description = this.host.describe(run);
     const entry: WorkflowEntry<TRun, TItem, TPrepared> = {
       id,
@@ -191,7 +191,7 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
         ...(description.totalItems === null
           ? {
               discover: async (signal: AbortSignal, report: (progress: DiscoveryProgress) => void) => {
-                if (!this.host.discover) throw new Error("Directory discovery is unavailable");
+                if (!this.host.discover) throw new Error("目录发现服务不可用");
                 entry.run = await this.host.discover(entry.run, signal, report);
               },
             }
@@ -253,18 +253,18 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
     snapshot: ScrapeRunSnapshot<TItem>,
   ): Promise<void> {
     if (!["completed", "failed", "stopped", "interrupted"].includes(snapshot.status))
-      throw new Error(`Cannot settle non-terminal scrape run: ${snapshot.status}`);
+      throw new Error(`无法结束非终态的刮削任务：${snapshot.status}`);
     entry.settlement ??= (async () => {
       const disposition = snapshot.status as ScrapeWorkflowDisposition;
       const finalized = await this.store.finalize(this.settlementInput(entry, snapshot, disposition, snapshot.error));
       runtimeLoggerService
         .getLogger("Publication")
-        .info(`[publication] run-finalized operation=${entry.id} status=${disposition}`);
+        .info(`[publication] 任务已结束 operation=${entry.id} status=${disposition}`);
       try {
         await this.host.onTerminal?.(finalized, snapshot);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        runtimeLoggerService.getLogger("Scrape").warn(`Scrape run ${entry.id} terminal callback failed: ${message}`);
+        runtimeLoggerService.getLogger("Scrape").warn(`刮削任务 ${entry.id} 的结束回调失败：${message}`);
       }
     })();
     await entry.settlement;
@@ -311,7 +311,7 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
       } while (!this.closing && this.drainRequested);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      runtimeLoggerService.getLogger("Scrape").warn(`Scrape queue drain failed: ${message}`);
+      runtimeLoggerService.getLogger("Scrape").warn(`刮削队列处理失败：${message}`);
       this.drainRequested = false;
       await this.host.onError?.("scrape-queue", error);
     } finally {
@@ -322,7 +322,7 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
 
   private async recordSettlementFailure(entry: WorkflowEntry<TRun, TItem, TPrepared>, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
-    runtimeLoggerService.getLogger("Scrape").warn(`Scrape run ${entry.id} settlement failed: ${message}`);
+    runtimeLoggerService.getLogger("Scrape").warn(`刮削任务 ${entry.id} 的结束结算失败：${message}`);
     await this.host.onError?.(entry.id, error);
     if (!this.isTerminal(entry.session.snapshot().status)) await entry.session.abortForShutdown();
     const snapshot = entry.session.snapshot();
@@ -331,9 +331,7 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
       .finalize(this.settlementInput(entry, snapshot, disposition, message))
       .catch((recordError: unknown) => {
         const recordMessage = recordError instanceof Error ? recordError.message : String(recordError);
-        runtimeLoggerService
-          .getLogger("Scrape")
-          .warn(`Scrape run ${entry.id} could not record settlement failure: ${recordMessage}`);
+        runtimeLoggerService.getLogger("Scrape").warn(`刮削任务 ${entry.id} 无法记录结束结算失败：${recordMessage}`);
       });
     this.entries.delete(entry.id);
     this.removeReady(entry.id);
@@ -367,12 +365,12 @@ export class ScrapeCoordinator<TStart, TRun, TItem extends ScrapeRunItem = Scrap
   }
 
   private assertOpen(): void {
-    if (this.closing) throw new Error("Scrape queue is closing");
+    if (this.closing) throw new Error("刮削队列正在关闭");
   }
 
   private requireLive(runId: string): WorkflowEntry<TRun, TItem, TPrepared> {
     const entry = this.entries.get(runId);
-    if (!entry) throw new Error(`Scrape run is not live in this backend process: ${runId}`);
+    if (!entry) throw new Error(`此后端进程中没有运行此刮削任务：${runId}`);
     return entry;
   }
 

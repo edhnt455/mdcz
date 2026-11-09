@@ -59,7 +59,7 @@ export class MediaLibraryService {
 
   async get(id: string): Promise<MediaLibrary> {
     const library = (await this.list()).find((library) => library.id === id);
-    if (!library) throw new PersistenceError(persistenceErrorCodes.NotFound, `Library not found: ${id}`);
+    if (!library) throw new PersistenceError(persistenceErrorCodes.NotFound, `未找到媒体库：${id}`);
     return library;
   }
 
@@ -139,7 +139,7 @@ export class MediaLibraryService {
     for (const other of await this.list()) {
       if (other.id === id) continue;
       if (isPathInside(other.sourcePath, settings.sourcePath) || isPathInside(settings.sourcePath, other.sourcePath))
-        throw new MediaLibrarySettingsError(`The source directory overlaps library "${other.name}"`);
+        throw new MediaLibrarySettingsError(`来源目录与媒体库“${other.name}”重叠`);
     }
     // Registering the directories as media roots checks they exist and are reachable now, not at the first scrape.
     await this.mediaRoots.ensurePathRecord({ hostPath: settings.sourcePath });

@@ -207,7 +207,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
         : t.maintenance.previewStarted,
     );
   } catch (error) {
-    if (options.toErrorMessage(error) === "Operation aborted") {
+    if (options.toErrorMessage(error) === "操作已中止") {
       executionStore.setPending(false);
       return;
     }
@@ -229,7 +229,7 @@ export const startHealthFix = async (options: {
 }): Promise<void> => {
   const t = getT();
   const presetId = HEALTH_FIX_PRESETS[options.issue];
-  if (!presetId) throw new Error(`No repair for ${options.issue}`);
+  if (!presetId) throw new Error(`没有针对 ${options.issue} 的修复操作`);
   const refs = options.entries.flatMap((entry) =>
     entry.fileRefs.map((file) => ({ rootId: file.rootId, relativePath: file.relativePath })),
   );

@@ -240,7 +240,7 @@ export const appRouter = t.router({
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
       const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);
-      if (!file) throw new Error("Movie has no display file");
+      if (!file) throw new Error("影片没有可显示的文件");
       return await ctx.services.scans.start(file.rootId);
     }),
   }),
@@ -313,6 +313,10 @@ export const appRouter = t.router({
       }),
     ignore: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
       await ctx.services.pending.ignore(input.id);
+      return { success: true as const };
+    }),
+    delete: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
+      await ctx.services.pending.delete(input.id);
       return { success: true as const };
     }),
   }),

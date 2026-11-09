@@ -12,10 +12,10 @@ describe("parsePort", () => {
   });
 
   it("rejects invalid configured ports", () => {
-    expect(() => parsePort("0")).toThrow("Invalid PORT value: 0");
-    expect(() => parsePort("65536")).toThrow("Invalid PORT value: 65536");
-    expect(() => parsePort("4000abc")).toThrow("Invalid PORT value: 4000abc");
-    expect(() => parsePort("not-a-port")).toThrow("Invalid PORT value: not-a-port");
+    expect(() => parsePort("0")).toThrow("PORT 值无效：0");
+    expect(() => parsePort("65536")).toThrow("PORT 值无效：65536");
+    expect(() => parsePort("4000abc")).toThrow("PORT 值无效：4000abc");
+    expect(() => parsePort("not-a-port")).toThrow("PORT 值无效：not-a-port");
   });
 });
 
@@ -35,9 +35,9 @@ describe("parseHost", () => {
   });
 
   it("rejects malformed hosts", () => {
-    expect(() => parseHost("bad host")).toThrow("Invalid MDCZ_HOST value: bad host");
-    expect(() => parseHost("http://example.com")).toThrow("Invalid MDCZ_HOST value: http://example.com");
-    expect(() => parseHost("[::1]")).toThrow("Invalid MDCZ_HOST value: [::1]");
-    expect(() => parseHost(`${"a".repeat(254)}`)).toThrow(/Invalid MDCZ_HOST value/);
+    expect(() => parseHost("bad host")).toThrow("MDCZ_HOST 值无效：bad host");
+    expect(() => parseHost("http://example.com")).toThrow("MDCZ_HOST 值无效：http://example.com");
+    expect(() => parseHost("[::1]")).toThrow("MDCZ_HOST 值无效：[::1]");
+    expect(() => parseHost(`${"a".repeat(254)}`)).toThrow(/MDCZ_HOST 值无效/);
   });
 });

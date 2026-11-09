@@ -93,7 +93,7 @@ export class SceneImageAssetDownloader implements AssetDownloader {
         await atomicCopyFile(sceneImage.path, finalPath);
         await unlink(sceneImage.path).catch((error: NodeJS.ErrnoException) => {
           if (error.code !== "ENOENT") {
-            logger.warn(`Published scene image but failed to remove temporary source ${sceneImage.path}`);
+            logger.warn(`剧照已发布，但移除临时来源 ${sceneImage.path} 失败`);
           }
         });
       }

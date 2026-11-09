@@ -276,7 +276,7 @@ export class MaintenanceRuntime {
       const { translateService } = this.deps;
       if (preset.dataSource === "online") {
         if (!this.deps.aggregationService || !translateService) {
-          throw new Error("Online preset lacks required aggregation or translation services");
+          throw new Error("在线预设缺少必要的聚合或翻译服务");
         }
         // A manual-URL fix pinned its detail page; refreshing by number would undo it.
         const pin = entry.nfoLocalState?.sourcePin;
@@ -303,7 +303,7 @@ export class MaintenanceRuntime {
         imageAlternatives = prepared.aggregation.imageAlternatives;
       } else if (preset.dataSource === "stored") {
         if (!this.deps.loadSiteResults || !translateService) {
-          throw new Error("Stored preset lacks site result storage or translation services");
+          throw new Error("存储预设缺少站点结果存储或翻译服务");
         }
         // A pinned movie re-merges only what its pinned page returned; a number search may describe another work.
         const pin = entry.nfoLocalState?.sourcePin;
@@ -316,9 +316,7 @@ export class MaintenanceRuntime {
         );
         if (siteData.size === 0) {
           throw new Error(
-            pin
-              ? `No stored result from the pinned page ${pin.url}; refresh it online`
-              : `No stored site results for ${entry.fileInfo.number}`,
+            pin ? `指定页面 ${pin.url} 没有已存储的结果，请在线刷新` : `${entry.fileInfo.number} 没有已存储的站点结果`,
           );
         }
         const merged = mergeSiteData(siteData, config);
@@ -413,7 +411,7 @@ export class MaintenanceRuntime {
     const roots = new Map(input.publication.roots.map((root) => [root.id, root]));
     const resolveRoot = async (id: string) => {
       const root = roots.get(id);
-      if (!root) throw new Error(`Publication root not found: ${id}`);
+      if (!root) throw new Error(`未找到发布根目录：${id}`);
       return root;
     };
     const locations = await registeredMediaLocations(libraryEntry, resolveRoot);
@@ -439,7 +437,7 @@ export class MaintenanceRuntime {
       });
       for (const record of records) {
         const file = scanned.find((candidate) => candidate.ref.relativePath === record.rootRelativePath);
-        if (!file) throw new Error(`Maintenance scan omitted library file: ${record.id}`);
+        if (!file) throw new Error(`维护扫描遗漏了媒体库文件：${record.id}`);
         files.push({
           ...file,
           fileId: record.id,
@@ -448,7 +446,7 @@ export class MaintenanceRuntime {
         });
       }
     }
-    if (!files.length) throw new Error("Library movie has no media files");
+    if (!files.length) throw new Error("媒体库影片没有媒体文件");
     return runtime.applyEntry({ ...input, entry: files[0], files });
   }
 
@@ -459,14 +457,14 @@ export class MaintenanceRuntime {
     throwIfAborted(signal);
 
     const crawlerData = committed?.crawlerData ?? entry.crawlerData;
-    if (!crawlerData) throw new Error("Maintenance output requires movie metadata");
+    if (!crawlerData) throw new Error("维护输出需要影片元数据");
 
     const plans = await this.buildPlans(files, config, preset, crawlerData, signal);
     const sharedPlan = plans[this.memberIndex(files, entry)];
     const members = await Promise.all(
       files.map(async (file, index) => {
         const layout = plans[index].plan;
-        if (!layout) throw new Error(`Maintenance file has no resolved layout: ${file.fileId}`);
+        if (!layout) throw new Error(`维护文件缺少已解析的输出布局：${file.fileId}`);
         const { sourceVideoPath: _sourceVideoPath, ...outputLayout } = layout;
         return {
           source: file.ref,
@@ -518,7 +516,7 @@ export class MaintenanceRuntime {
 
       if (stagingDir && preset.dataSource === "online") {
         if (!this.deps.downloadManager) {
-          throw new Error("Online preset lacks download service");
+          throw new Error("在线预设缺少下载服务");
         }
         const downloaded = await downloadCrawlerAssets({
           config,
@@ -573,7 +571,7 @@ export class MaintenanceRuntime {
             .filter((asset) => asset.published && MANAGED_MOVIE_ASSET_KINDS.has(asset.kind))
             .map(async (asset) => {
               const root = publication.roots.find((root) => root.id === asset.rootId);
-              if (!root) throw new Error(`Publication root not found: ${asset.rootId}`);
+              if (!root) throw new Error(`未找到发布根目录：${asset.rootId}`);
               return resolveRootRelativePath(root, asset.relativePath);
             }),
         ),
@@ -599,9 +597,9 @@ export class MaintenanceRuntime {
       throwIfAborted(signal);
 
       if (!published.files.some((candidate) => candidate.fileId === entry.fileId))
-        throw new Error("Maintenance publication requires the selected media member");
+        throw new Error("维护发布需要选中的媒体成员");
       if (preset.output === "none" && (published.moves.length || published.artifacts.length))
-        throw new Error("Importing local metadata must not change files");
+        throw new Error("导入本地元数据不能修改文件");
 
       const movieAssets = [...published.movieAssets];
       if (preset.output === "none") {
@@ -690,7 +688,7 @@ export class MaintenanceRuntime {
                 .filter((row) => row.itemId !== movie.id)
                 .map(async (row) => {
                   const root = publication.roots.find((candidate) => candidate.id === row.rootId);
-                  if (!root) throw new Error(`Publication root not found: ${row.rootId}`);
+                  if (!root) throw new Error(`未找到发布根目录：${row.rootId}`);
                   return filesystemPathKey(
                     await this.inventory.entryPath(resolveRootRelativePath(root, row.relativePath)),
                   );
@@ -708,11 +706,7 @@ export class MaintenanceRuntime {
               },
             );
             if (exists)
-              throw new PublicationConflictError(
-                copy.sourcePath,
-                copy.targetPath,
-                "Another movie still uses this actor photo",
-              );
+              throw new PublicationConflictError(copy.sourcePath, copy.targetPath, "其他影片仍在使用此演员照片");
           }
           preservedSourcePaths = cleanupPaths.filter(isShared);
           const preserved = new Set(preservedSourcePaths);
@@ -766,7 +760,7 @@ export class MaintenanceRuntime {
           await removeStagingDirectory(stagingDir);
         } catch (error) {
           (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
-            `Failed to remove maintenance staging ${stagingDir}: ${toErrorMessage(error)}`,
+            `移除维护暂存目录 ${stagingDir} 失败：${toErrorMessage(error)}`,
           );
         }
       }
@@ -775,7 +769,7 @@ export class MaintenanceRuntime {
 
   private memberIndex(files: readonly LocalScanEntry[], entry: LocalScanEntry): number {
     const index = files.findIndex((file) => file.fileInfo.filePath === entry.fileInfo.filePath);
-    if (index < 0) throw new Error(`Maintenance movie does not contain the selected file: ${entry.fileInfo.filePath}`);
+    if (index < 0) throw new Error(`维护影片中不包含选中的文件：${entry.fileInfo.filePath}`);
     return index;
   }
 
@@ -807,7 +801,7 @@ export class MaintenanceRuntime {
 
   // Organizing moves files already in the library, whatever transfer first placed them there.
   private planMove(entry: LocalScanEntry, config: Configuration, crawlerData: CrawlerData, versionLabel?: string) {
-    if (!this.target) throw new Error("Organizing needs a library to organize into");
+    if (!this.target) throw new Error("整理需要指定目标媒体库");
     return this.deps.fileOrganizer.plan(
       entry.fileInfo,
       crawlerData,
@@ -832,7 +826,7 @@ export class MaintenanceRuntime {
     throwIfAborted(signal);
 
     if (!crawlerData) {
-      throw new Error("Local NFO does not exist or failed to parse; cannot proceed with subsequent steps");
+      throw new Error("本地 NFO 不存在或解析失败，无法继续后续步骤");
     }
 
     if (preset.output !== "move") {

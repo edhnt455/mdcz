@@ -137,7 +137,7 @@ describe("DmmTvCrawler", () => {
       throw new Error("expected failure");
     }
 
-    expect(response.result.error).toBe("DMM_TV: login wall");
+    expect(response.result.error).toBe("DMM_TV：需要登录");
   });
 
   it("searches GraphQL for a real content id when guessed ids miss", async () => {

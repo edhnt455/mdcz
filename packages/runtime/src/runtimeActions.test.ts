@@ -77,7 +77,7 @@ describe("settings parity runtime helpers", () => {
   // HTML→classification coverage lives in javbusPage.test.ts; here we only
   // verify the classification→status mapping.
   it.each([
-    ["age verification", '<title>Age Verification JavBus</title><div id="ageVerify"></div>', "verification_required"],
+    ["年龄验证", '<title>Age Verification JavBus</title><div id="ageVerify"></div>', "verification_required"],
     ["login wall", '<form><h2>Login</h2><input type="password" /></form>', "login_wall"],
     ["unrecognized page", "<main>temporarily unavailable</main>", "unexpected_page"],
   ] as const)("reports JavBus %s without treating it as a valid Cookie", async (_name, html, status) => {
@@ -201,7 +201,7 @@ describe("settings parity runtime helpers", () => {
       }),
       undefined,
     );
-    expect(logger.info).toHaveBeenCalledWith("Translation verification succeeded: engine=openai");
+    expect(logger.info).toHaveBeenCalledWith("翻译验证成功：engine=openai");
     for (const content of [
       "",
       "ある日の暮方の事である。",
@@ -211,7 +211,7 @@ describe("settings parity runtime helpers", () => {
       vi.mocked(llmApiClient.generateText).mockResolvedValueOnce(content);
       await expect(testTranslation({ llmModelName: "gpt-test" }, config, networkClient, options)).resolves.toEqual({
         status: "failed",
-        error: expect.stringContaining("invalid structured output"),
+        error: expect.stringContaining("结构化输出无效"),
       });
     }
 

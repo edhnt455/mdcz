@@ -124,7 +124,7 @@ const isTerminalItemStatus = (status: ScrapeRunItemStatus): boolean =>
 
 const toTerminalItemStatus = (status: ScrapeResultStatus): ScrapeRunItemStatus => {
   if (status === "success" || status === "failed" || status === "skipped") return status;
-  throw new Error(`Scrape commit returned non-terminal status: ${status}`);
+  throw new Error(`刮削提交返回了非结束状态：${status}`);
 };
 
 const createSkippedResult = <TItem extends ScrapeRunItem>(
@@ -188,12 +188,12 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
   private stopPromise: Promise<ScrapeRunSnapshot<TItem>> | null = null;
 
   constructor(private readonly options: ScrapeRunSessionOptions<TItem, TPrepared>) {
-    if (!options.runId.trim()) throw new Error("Scrape run ID must not be empty");
+    if (!options.runId.trim()) throw new Error("刮削任务 ID 不能为空");
     this.totalItems = options.totalItems;
   }
 
   private get execution(): ScrapeRunExecution<TItem, TPrepared> {
-    if (!this.executionConfig) throw new Error("Scrape execution is not prepared");
+    if (!this.executionConfig) throw new Error("刮削执行尚未准备完成");
     return this.executionConfig;
   }
 
@@ -203,7 +203,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
 
   private mountExecution(options: ScrapeRunExecution<TItem, TPrepared>): void {
     if (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1) {
-      throw new Error("Scrape run concurrency must be a positive integer");
+      throw new Error("刮削并发数必须是正整数");
     }
 
     const ids = new Set<string>();
@@ -214,15 +214,14 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
         error: group.error,
         assets: group.assets ?? [],
         members: group.members.map((member): MutableScrapeRunItem<TItem> => {
-          if (!member.id.trim()) throw new Error("Scrape item ID must not be empty");
-          if (!member.rootId.trim()) throw new Error(`Scrape item root ID must not be empty: ${member.id}`);
-          if (!member.relativePath.trim()) throw new Error(`Scrape item relative path must not be empty: ${member.id}`);
-          if (!member.sourcePath.trim()) throw new Error(`Scrape item source path must not be empty: ${member.id}`);
-          if (ids.has(member.id)) throw new Error(`Duplicate scrape item ID: ${member.id}`);
+          if (!member.id.trim()) throw new Error("刮削条目 ID 不能为空");
+          if (!member.rootId.trim()) throw new Error(`刮削条目的根目录 ID 不能为空：${member.id}`);
+          if (!member.relativePath.trim()) throw new Error(`刮削条目的相对路径不能为空：${member.id}`);
+          if (!member.sourcePath.trim()) throw new Error(`刮削条目的来源路径不能为空：${member.id}`);
+          if (ids.has(member.id)) throw new Error(`刮削条目 ID 重复：${member.id}`);
           ids.add(member.id);
           const pathKey = `${member.rootId}\u0000${member.relativePath}`;
-          if (paths.has(pathKey))
-            throw new Error(`Duplicate scrape item path: ${member.rootId}:${member.relativePath}`);
+          if (paths.has(pathKey)) throw new Error(`刮削条目路径重复：${member.rootId}:${member.relativePath}`);
           paths.add(pathKey);
           return {
             ...member,
@@ -240,17 +239,16 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
   }
 
   async start(): Promise<void> {
-    if (this.status !== "queued") throw new Error(`Cannot start scrape run in ${this.status} state`);
+    if (this.status !== "queued") throw new Error(`无法在 ${this.status} 状态下启动刮削任务`);
     this.setStatus("running");
     this.startDrain();
   }
 
   async pause(): Promise<ScrapeRunSnapshot<TItem>> {
     if (this.status === "paused") return this.snapshot();
-    if (this.status === "discovering")
-      throw new Error("Pausing is not supported during scanning; please stop the task directly");
+    if (this.status === "discovering") throw new Error("扫描期间不支持暂停，请直接停止任务");
     if (this.status !== "queued" && this.status !== "running")
-      throw new Error(`Cannot pause scrape run in ${this.status} state`);
+      throw new Error(`无法在 ${this.status} 状态下暂停刮削任务`);
     this.executor?.pause();
     this.setStatus("paused");
     return this.snapshot();
@@ -258,7 +256,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
 
   async resume(): Promise<void> {
     if (this.status === "queued" || this.status === "running") return;
-    if (this.status !== "paused") throw new Error(`Cannot resume scrape run in ${this.status} state`);
+    if (this.status !== "paused") throw new Error(`无法在 ${this.status} 状态下恢复刮削任务`);
     this.setStatus(this.runPromise ? "running" : "queued");
   }
 
@@ -278,13 +276,10 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       return this.snapshot();
     }
     try {
-      await this.skipOutstandingItems("Scrape stopped");
+      await this.skipOutstandingItems("刮削已停止");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const terminalError = new AggregateError(
-        [error],
-        `Scrape interrupted because terminal outcome persistence failed: ${message}`,
-      );
+      const terminalError = new AggregateError([error], `保存任务结束结果失败，刮削已中断：${message}`);
       this.error = terminalError.message;
       this.recordLog({ level: "error", message: terminalError.message });
       this.setStatus("interrupted");
@@ -304,7 +299,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
     }
     if (this.isTerminalStatus()) return;
     this.setStatus("stopping");
-    this.shutdownController.abort(new Error("Scrape run interrupted by shutdown"));
+    this.shutdownController.abort(new Error("服务关闭导致刮削任务中断"));
     this.discoveryController.abort(this.shutdownController.signal.reason);
     this.executor?.stop();
     await this.waitForIdle();
@@ -538,12 +533,11 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
             execution.results.length + eligibleIds.size !== pendingItems.length ||
             groupedResults.size !== execution.results.length
           ) {
-            throw new Error("Scrape group execution returned an incomplete result set");
+            throw new Error("刮削组执行返回的结果不完整");
           }
           const results = pendingItems.map((item) => {
             const executed = groupedResults.get(item.id);
-            if (!executed && !eligibleIds.has(item.id))
-              throw new Error(`Scrape group execution omitted item: ${item.id}`);
+            if (!executed && !eligibleIds.has(item.id)) throw new Error(`刮削组执行遗漏了条目：${item.id}`);
             return { item, result: executed };
           });
           return {
@@ -557,7 +551,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
           } catch (cleanupError) {
             const message = error instanceof Error ? error.message : String(error);
             const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
-            throw new AggregateError([error, cleanupError], `${message}; resource cleanup failed: ${cleanupMessage}`);
+            throw new AggregateError([error, cleanupError], `${message}；清理资源失败：${cleanupMessage}`);
           }
           throw error;
         }
@@ -566,7 +560,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       onFinalizeError: (group, releaseError) => {
         this.recordLog({
           level: "warn",
-          message: `Staging cleanup failed: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
+          message: `清理暂存资源失败：${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
           itemId: group.members[0]?.id,
         });
       },
@@ -616,11 +610,10 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
     committed: readonly { itemId: string; result: ScrapeResult }[],
   ): void {
     const results = new Map(committed.map(({ itemId, result }) => [itemId, result]));
-    if (committed.length !== items.length || results.size !== items.length)
-      throw new Error("Scrape commit returned an incomplete result set");
+    if (committed.length !== items.length || results.size !== items.length) throw new Error("刮削提交返回的结果不完整");
     for (const item of items) {
       const result = results.get(item.id);
-      if (!result) throw new Error(`Scrape commit omitted item: ${item.id}`);
+      if (!result) throw new Error(`刮削提交遗漏了条目：${item.id}`);
       this.applyCommittedResult(item, result);
     }
   }
@@ -643,7 +636,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
     if (this.items.some((item) => !isTerminalItemStatus(item.status))) return;
     const hasSuccess = this.items.some((item) => item.status === "success");
     if (!hasSuccess && this.items.some((item) => item.status === "skipped")) {
-      this.error ??= "Failed to scrape any files";
+      this.error ??= "所有文件均刮削失败";
     }
     this.setStatus(this.items.every((item) => item.status === "success") ? "completed" : "failed");
   }
@@ -657,13 +650,13 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
       return;
     }
     try {
-      await this.skipOutstandingItems("Task aborted due to an error");
+      await this.skipOutstandingItems("任务因错误而中止");
     } catch (commitError) {
       const commitMessage = commitError instanceof Error ? commitError.message : String(commitError);
       const originalMessage = error instanceof Error ? error.message : String(error);
       const terminalError = new AggregateError(
         [error, commitError],
-        `${originalMessage}; terminal outcome persistence failed: ${commitMessage}`,
+        `${originalMessage}；保存任务结束结果失败：${commitMessage}`,
       );
       this.error = terminalError.message;
       this.recordLog({ level: "error", message: terminalError.message });
@@ -675,7 +668,7 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
 
   private assertActive(allowedStatuses: readonly ScrapeRunLiveStatus[]): void {
     if (!allowedStatuses.includes(this.status)) {
-      throw new InactiveScrapeRunError(`Inactive scrape result for ${this.options.runId}`);
+      throw new InactiveScrapeRunError(`刮削结果已失效：${this.options.runId}`);
     }
   }
 

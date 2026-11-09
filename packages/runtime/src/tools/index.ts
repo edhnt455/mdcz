@@ -122,18 +122,18 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
   const sourceInput = payload.sourceDir.trim();
   const destInput = payload.destDir.trim();
   if (!sourceInput || !destInput) {
-    throw new SymlinkServiceError("VALIDATION_ERROR", "Source and destination directories are required");
+    throw new SymlinkServiceError("VALIDATION_ERROR", "请指定来源目录和目标目录");
   }
 
   const sourceDir = resolve(sourceInput);
   const destDir = resolve(destInput);
   if (sourceDir === destDir) {
-    throw new SymlinkServiceError("VALIDATION_ERROR", "Source and destination directories must be different");
+    throw new SymlinkServiceError("VALIDATION_ERROR", "来源目录和目标目录必须不同");
   }
 
   const sourceStats = await stat(sourceDir).catch(() => null);
   if (!sourceStats?.isDirectory()) {
-    throw new SymlinkServiceError("SOURCE_NOT_FOUND", `Source directory does not exist: ${sourceDir}`);
+    throw new SymlinkServiceError("SOURCE_NOT_FOUND", `来源目录不存在：${sourceDir}`);
   }
 
   if (!payload.dryRun) {
@@ -164,7 +164,7 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
 
     try {
       const strmTarget = extension === ".strm" ? await inspectStrmTarget(sourcePath) : undefined;
-      if (extension === ".strm" && !strmTarget) throw new Error(`STRM file does not contain a target: ${sourcePath}`);
+      if (extension === ".strm" && !strmTarget) throw new Error(`STRM 文件没有目标地址：${sourcePath}`);
       if (copyExtensions.has(extension) && !payload.copyFiles) {
         result.skipped += 1;
         continue;
@@ -173,7 +173,7 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
       if (destinationState === "broken_symlink") await unlink(destinationPath);
       if (strmTarget?.kind === "relative_path") {
         const content = await prepareMovedStrmContent(sourcePath, destinationPath);
-        if (content === undefined) throw new Error(`Cannot relocate STRM target: ${sourcePath}`);
+        if (content === undefined) throw new Error(`无法重新定位 STRM 目标：${sourcePath}`);
         await atomicWriteFile(destinationPath, content);
         result.copied += 1;
         continue;
@@ -196,7 +196,7 @@ export const createSymlinks = async (payload: CreateSymlinkPayload): Promise<Sym
       // Windows refuses unprivileged symlinks without Developer Mode; surface why each file failed.
       runtimeLoggerService
         .getLogger("SymlinkTool")
-        .warn(`Failed to link ${sourcePath} -> ${destinationPath}: ${toErrorMessage(error)}`);
+        .warn(`创建链接 ${sourcePath} -> ${destinationPath} 失败：${toErrorMessage(error)}`);
     }
   }
 

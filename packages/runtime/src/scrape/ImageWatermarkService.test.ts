@@ -132,7 +132,7 @@ describe("image watermark rendering", () => {
       settings({ tagBadgeOffsetX: 1000, tagBadgeOffsetY: 1000 }),
       onWarn,
     );
-    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining("margins"));
+    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining("边距"));
   });
 });
 
@@ -184,7 +184,7 @@ describe("watermark layout", () => {
       }
     }
     expect(layoutWatermarkBadges(400, 600, [], settings())).toEqual([]);
-    expect(() => layoutWatermarkBadges(1, 1, badges, settings())).toThrow("too small");
+    expect(() => layoutWatermarkBadges(1, 1, badges, settings())).toThrow("太小");
   });
 
   it("uses fixed positions before cycling automatic badges in the selected direction", () => {

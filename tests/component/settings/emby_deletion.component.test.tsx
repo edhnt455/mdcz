@@ -51,7 +51,7 @@ test("configures observation with the exact output library and exposes a one-tim
   await expect
     .element(screen.getByRole("textbox", { name: "Emby Webhook 地址" }))
     .toHaveValue("http://nas:3838/api/webhooks/emby/one-time-secret");
-  await screen.getByRole("textbox", { name: "Emby Server ID" }).fill("emby-server");
+  await screen.getByRole("textbox", { name: "Emby 服务器 ID" }).fill("emby-server");
   await screen.getByRole("combobox", { name: "处理模式" }).click();
   await screen.getByRole("option", { name: "观察（只记录）" }).click();
   await screen.getByRole("checkbox", { name: /AV.*Link/ }).click();
@@ -68,12 +68,12 @@ test("saves MP credentials without echoing them and verifies sources after savin
   const service = createService();
   const screen = await render(<EmbyDeletionPanel service={service} />);
   await screen.getByRole("textbox", { name: "MP 地址" }).fill("https://mp.test");
-  await screen.getByLabelText("MP API_TOKEN").fill("test-mp-token");
+  await screen.getByLabelText("MoviePilot API 令牌").fill("test-mp-token");
   await screen.getByRole("button", { name: "保存并验证 MP" }).click();
   await expect
     .poll(() => service.configureMoviePilot.mock.calls)
     .toEqual([[{ baseUrl: "https://mp.test", rootPath: "/Media/AV", storage: "u115", token: "test-mp-token" }]]);
-  await expect.element(screen.getByLabelText("MP API_TOKEN")).toHaveValue("");
+  await expect.element(screen.getByLabelText("MoviePilot API 令牌")).toHaveValue("");
   await screen.getByRole("button", { name: "测试已保存连接" }).click();
   await expect.poll(() => service.testMoviePilot.mock.calls.length).toBe(1);
   await expect.element(screen.getByRole("button", { name: "核验 STRM 来源关联" })).toBeDisabled();
@@ -90,10 +90,10 @@ test("shows configuration failures without discarding edits and recovers after a
   service.configure.mockRejectedValueOnce(new Error("Library mount is offline"));
   const screen = await render(<EmbyDeletionPanel service={service} />);
   await expect.element(screen.getByRole("link", { name: "在工作台查看联动删除任务" })).toBeVisible();
-  await screen.getByRole("textbox", { name: "Emby Server ID" }).fill("emby-server");
+  await screen.getByRole("textbox", { name: "Emby 服务器 ID" }).fill("emby-server");
   await screen.getByRole("button", { name: "保存联动设置" }).click();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("Library mount is offline");
-  await expect.element(screen.getByRole("textbox", { name: "Emby Server ID" })).toHaveValue("emby-server");
+  await expect.element(screen.getByRole("textbox", { name: "Emby 服务器 ID" })).toHaveValue("emby-server");
   await screen.getByRole("button", { name: "保存联动设置" }).click();
   await expect.element(screen.getByRole("status")).toHaveTextContent("联动设置已保存");
   await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();

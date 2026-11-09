@@ -62,6 +62,6 @@ describe("maintenance NFO snapshot identifiers", () => {
           <javdbid>source-id</javdbid>
         </movie>
       `),
-    ).toThrow("NFO missing number");
+    ).toThrow("NFO 缺少番号");
   });
 });

@@ -248,7 +248,7 @@ describe("AggregationService", () => {
 
     const dmmResult = result?.stats.siteResults.find((siteResult) => siteResult.site === Website.DMM);
     expect(dmmResult?.status).toBe("failed");
-    expect(dmmResult?.detail).toContain("exceeded crawler budget");
+    expect(dmmResult?.detail).toContain("超出抓取时限");
     expect(dmmResult?.reason).toBe("timeout");
   });
 

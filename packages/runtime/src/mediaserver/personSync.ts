@@ -60,7 +60,7 @@ export const loadPrimaryImageFromSource = async (
   }
 
   const format = detectImageFormat(content);
-  if (!format || !parseImageDimensions(content)) throw new Error("Invalid actor image content");
+  if (!format || !parseImageDimensions(content)) throw new Error("演员图片内容无效");
 
   return {
     content,

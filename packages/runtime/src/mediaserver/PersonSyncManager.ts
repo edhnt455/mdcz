@@ -98,7 +98,7 @@ export class PersonSyncManager {
       this.#schedule();
     })().catch((error) => {
       if (this.#closed || revision !== this.#revision) return;
-      this.deps.logger.error(`Failed to configure actor photo sync: ${toErrorMessage(error)}`);
+      this.deps.logger.error(`配置演员照片同步失败：${toErrorMessage(error)}`);
       this.#automatic = { ...this.#automatic, status: "blocked", error: toErrorMessage(error) };
       this.#emit();
     });
@@ -130,7 +130,7 @@ export class PersonSyncManager {
   }
 
   start(input: PersonSyncStartInput): PersonSyncJobDto {
-    if (this.#closed) throw new Error("Person sync is closing");
+    if (this.#closed) throw new Error("人物同步正在关闭");
     if (this.#job?.status === "running") return this.#job;
     this.deps.actorSourceProvider.clearCache();
     if (input.server === "emby" && input.kind === "photo") {
@@ -149,11 +149,11 @@ export class PersonSyncManager {
   }
 
   async run(input: PersonSyncStartInput): Promise<PersonSyncResult> {
-    if (this.#running) throw new Error("A person synchronization is already running");
+    if (this.#running) throw new Error("已有正在进行的人物同步");
     this.start(input);
     await this.#running;
     if (this.#job?.error) throw new Error(this.#job.error);
-    if (!this.#job?.result) throw new Error("Person synchronization returned no result");
+    if (!this.#job?.result) throw new Error("人物同步未返回结果");
     return this.#job.result;
   }
 
@@ -255,7 +255,7 @@ export class PersonSyncManager {
     this.#running = this.#automaticRun()
       .catch((error) => {
         if (this.#closed || revision !== this.#revision) return;
-        this.deps.logger.error(`Automatic actor photo sync failed: ${toErrorMessage(error)}`);
+        this.deps.logger.error(`自动同步演员照片失败：${toErrorMessage(error)}`);
         const status = error instanceof MediaServerServiceError ? error.status : getHttpStatus(error);
         const blocked = status === 401 || status === 403;
         this.#automatic = {
@@ -300,9 +300,7 @@ export class PersonSyncManager {
     for (const [key, actor] of pending) {
       if (!unseen.has(key)) continue;
       if (actor.expiresAt <= Date.now()) {
-        this.deps.logger.warn(
-          `Emby did not create actor ${actor.name} within the publication wait; photo sync skipped`,
-        );
+        this.deps.logger.warn(`等待影片发布后 Emby 仍未创建演员 ${actor.name}，已跳过照片同步`);
         continue;
       }
       const incoming = this.#pending.get(key);
@@ -350,7 +348,7 @@ export class PersonSyncManager {
       return result;
     } catch (error) {
       const message = formatPersonSyncError(error, config);
-      this.deps.logger.error(`Person sync failed: ${message}`);
+      this.deps.logger.error(`人物同步失败：${message}`);
       this.#finish({ status: "failed", error: message });
       if (options)
         throw new MediaServerServiceError(

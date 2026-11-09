@@ -223,7 +223,7 @@ describe("buildServer scrape integration", () => {
       expect(partial.statusCode).toBe(200);
       expect(partial.json().result.data.ok).toBe(false);
       expect(parseNfoSnapshot(await readFile(batchNfoPath, "utf8")).crawlerData.translation_failures).toEqual({
-        plot: expect.stringContaining("provider returned source text"),
+        plot: expect.stringContaining("翻译服务返回了原文"),
       });
       expect((await services.scrape.snapshot({ taskId })).task).toMatchObject({
         status: "completed",
@@ -296,7 +296,7 @@ describe("buildServer scrape integration", () => {
     });
     if (kind === "missing") {
       expect(accepted.statusCode).toBe(400);
-      expect(accepted.body).toContain("Directory does not exist or is inaccessible");
+      expect(accepted.body).toContain("目录不存在或无法访问");
       return;
     }
     expect(accepted.statusCode).toBe(200);
@@ -388,7 +388,7 @@ describe("buildServer scrape integration", () => {
     const manifest = await repositories.scrapeRuns.get(unchanged.task.id);
     expect(JSON.parse(manifest.discoveryJson ?? "null")).toMatchObject({ candidates: 0, inLibrary: 3 });
     await expect(services.scrape.retry({ taskId: unchanged.task.id, itemIds: [first.items[0].id] })).rejects.toThrow(
-      "does not belong to run",
+      "不属于任务",
     );
     const [movie] = await repositories.library.listEntries();
     const [file] = movie.files;
@@ -515,7 +515,7 @@ describe("buildServer scrape integration", () => {
       return;
     }
     expect(terminal.task).toMatchObject({ status: "failed", failedCount: 2, skippedCount: 0, successCount: 2 });
-    expect(terminal.task.error).toContain("Target directory already contains a movie with the same name");
+    expect(terminal.task.error).toContain("目标目录中已存在同名影片");
     for (const number of ["ABF-981", "XYZ-222"])
       expect(terminal.task.error).toContain(join(root, `JAV_output/fixed/${number}/${number}.${extension}`));
     expect(aggregate).toHaveBeenCalledTimes(4);
@@ -528,7 +528,7 @@ describe("buildServer scrape integration", () => {
         targetPath: await realpath(join(root, `JAV_output/fixed/${number}/${number}.${extension}`)),
       });
       expect(terminal.items.find((item) => item.relativePath === `${number}.${extension}`)?.error).toBe(
-        `Target directory already contains a movie with the same name\nPending: ${join(root, `${number}.${extension}`)}\nTarget path: ${await realpath(join(root, `JAV_output/fixed/${number}/${number}.${extension}`))}`,
+        `目标目录中已存在同名影片\n待处理文件：${join(root, `${number}.${extension}`)}\n目标路径：${await realpath(join(root, `JAV_output/fixed/${number}/${number}.${extension}`))}`,
       );
       expect(await readFile(join(root, `${number}.${extension}`), "utf8")).toBe(`source ${number}`);
       expect(await readFile(join(root, `JAV_output/fixed/${number}/${number}.${extension}`), "utf8")).toBe(
@@ -548,6 +548,8 @@ describe("buildServer scrape integration", () => {
     for (const [name, content] of [
       ["ABC-123.mp4", "height=800"],
       ["ABC-123-4K.mp4", "height=2160"],
+      ["ABC-123(2).strm", "https://media.example/ABC-123(2).strm"],
+      ["ABC-123(1).strm", "https://media.example/ABC-123(1).strm"],
       ["XYZ-999.mp4", "other movie"],
     ])
       await writeFile(join(root, name), content);
@@ -585,14 +587,18 @@ describe("buildServer scrape integration", () => {
     const output = join(root, relativeOutput);
     const { repositories } = await services.persistence.getState();
 
-    await scrape(["ABC-123.mp4", "ABC-123-4K.mp4"]);
+    await scrape(["ABC-123.mp4", "ABC-123-4K.mp4", "ABC-123(2).strm", "ABC-123(1).strm"]);
     await writeFile(join(root, "ABC-123-1080P.mp4"), "hd");
     await scrape(["ABC-123-1080P.mp4"]);
-    await scrape([`${relativeOutput}/ABC-123.mp4`]);
+    await scrape([
+      `${relativeOutput}/ABC-123.mp4`,
+      `${relativeOutput}/ABC-123 - Version 2.strm`,
+      `${relativeOutput}/ABC-123 - Version 3.strm`,
+    ]);
     const filesBeforeCollision = await readdir(output);
     const nfoBeforeCollision = await readFile(join(output, "movie.nfo"));
     const conflict = await services.scrape.snapshot({ taskId: await scrape(["XYZ-999.mp4"], "failed") });
-    expect(conflict.items[0]?.error).toContain("Another movie already owns this output directory");
+    expect(conflict.items[0]?.error).toContain("此输出目录已属于其他影片");
     expect(conflict.items[0]?.conflict).toBeUndefined();
     expect(await readFile(join(root, "XYZ-999.mp4"), "utf8")).toBe("other movie");
     expect((await readdir(output)).sort()).toEqual(filesBeforeCollision.sort());
@@ -602,6 +608,8 @@ describe("buildServer scrape integration", () => {
       ["ABC-123.mp4", "height=2160"],
       ["ABC-123 - 800p.mp4", "height=800"],
       ["ABC-123 - 1080p.mp4", "hd"],
+      ["ABC-123 - Version 2.strm", "https://media.example/ABC-123(1).strm"],
+      ["ABC-123 - Version 3.strm", "https://media.example/ABC-123(2).strm"],
     ])
       expect(await readFile(join(output, name), "utf8")).toBe(content);
     const [movie, ...others] = await repositories.library.listEntries();
@@ -609,6 +617,8 @@ describe("buildServer scrape integration", () => {
     expect(movie.files.map((file) => file.fileName).sort()).toEqual([
       "ABC-123 - 1080p.mp4",
       "ABC-123 - 800p.mp4",
+      "ABC-123 - Version 2.strm",
+      "ABC-123 - Version 3.strm",
       "ABC-123.mp4",
     ]);
     for (const file of movie.files) {
@@ -981,9 +991,7 @@ describe("buildServer scrape integration", () => {
     if (placement === "strm") {
       // A stub of a stub would point at MDCz's copy of a link, never at the video.
       await waitForScrapeRunStatus(fastify, token, taskId, "failed");
-      expect((await services.scrape.snapshot({ taskId })).items[0]?.error).toContain(
-        "A .strm source is already a link",
-      );
+      expect((await services.scrape.snapshot({ taskId })).items[0]?.error).toContain(".strm 来源本身已是链接");
       return;
     }
     await waitForScrapeRunStatus(fastify, token, taskId, "completed");
@@ -1077,7 +1085,7 @@ describe("buildServer scrape integration", () => {
       const taskId = started.json().result.data.runId;
       await waitForScrapeRunStatus(fastify, token, taskId, "failed");
       const { items } = await services.scrape.snapshot({ taskId });
-      expect(items[0]?.error).toContain("Another movie already owns this output directory");
+      expect(items[0]?.error).toContain("此输出目录已属于其他影片");
       expect(await readFile(join(mediaRoot, "XYZ-999.mp4"), "utf8")).toBe("other movie");
       expect(await readFile(join(metadataRoot, directory, "movie.nfo"))).toEqual(existingNfo);
       expect(await readFile(join(metadataRoot, posterRelativePath))).toEqual(posterContent);
@@ -1223,7 +1231,7 @@ describe("buildServer scrape integration", () => {
       payload: { rootId: confirmed.files[0].rootId, relativePath: confirmed.files[0].rootRelativePath },
     });
     expect(removal.statusCode).toBe(200);
-    await expect(state.repositories.library.getEntryById(entry.id)).rejects.toThrow("not found");
+    await expect(state.repositories.library.getEntryById(entry.id)).rejects.toThrow("未找到");
     for (const file of retained) expect(await readFile(file.path)).toEqual(file.bytes);
     expect(await readFile(join(mediaRoot, "poster.jpg"), "utf8")).toBe("source poster");
     expect(await readFile(join(mediaRoot, "ABC-123.mp4"), "utf8")).toBe("video");
@@ -1298,7 +1306,7 @@ describe("buildServer scrape integration", () => {
 
     if (scenario === "missing" || scenario === "commit_failure") {
       expect(confirmResponse.statusCode).toBe(500);
-      if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("Maintenance scan failed");
+      if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("维护扫描失败");
       expect(await state.repositories.library.getEntryById(originalEntry.id)).toEqual(originalEntry);
       const remainingFiles = (await readdir(root, { recursive: true, withFileTypes: true }))
         .filter((entry) => entry.isFile())
@@ -1312,7 +1320,7 @@ describe("buildServer scrape integration", () => {
     if (scenario === "single") {
       expect(confirmResponse.json().result.data).toEqual({
         succeededIds: [item.id],
-        failures: [{ id: "missing", message: expect.stringContaining("Pending item not found") }],
+        failures: [{ id: "missing", message: expect.stringContaining("未找到待处理条目") }],
       });
     }
     expect(aggregateCount).toBe(1);
@@ -1370,11 +1378,34 @@ describe("buildServer scrape integration", () => {
       ["pending.retry", { id: "missing-item", number: "ABC-123" }],
       ["pending.retryNumberRecognition", { id: "missing-item" }],
       ["pending.ignore", { id: "missing-item" }],
+      ["pending.delete", { id: "missing-item" }],
     ] as const) {
       const response = await fastify.inject({ method: "POST", url: `/trpc/${procedure}`, headers, payload });
       if (procedure === "pending.ignore") expect(response.statusCode).toBe(200);
-      else expect(response.json().error.message).toContain("Pending item not found");
+      else expect(response.json().error.message).toContain("未找到待处理条目");
     }
+    const pending = (await services.persistence.getState()).repositories.pending;
+    const item = pending.list()[0];
+    pending.saveDeletion(item.id, item.updatedAt, JSON.stringify({ step: "verifying_cloud" }));
+    for (const [procedure, payload] of [
+      ["pending.ignore", { id: item.id }],
+      ["pending.retry", { id: item.id }],
+      ["pending.retryNumberRecognition", { id: item.id }],
+      ["pending.confirmUncensored", { id: item.id, choice: "uncensored" }],
+      ["pending.batch", { ids: [item.id], action: "ignore" }],
+    ] as const) {
+      const response = await fastify.inject({ method: "POST", url: `/trpc/${procedure}`, headers, payload });
+      expect(response.statusCode).not.toBe(200);
+      expect(response.json().error.message).toContain("删除");
+    }
+    const batch = await fastify.inject({
+      method: "POST",
+      url: "/trpc/pending.batch",
+      headers,
+      payload: { ids: [item.id], action: "retry" },
+    });
+    expect(batch.json().result.data).toMatchObject({ succeededIds: [], failures: [{ id: item.id }] });
+    expect(pending.get(item.id).deletionJson).toContain("verifying_cloud");
   });
 
   it("batches pending work by library, reports individual failures and ignores only selected records", async () => {
@@ -1514,7 +1545,7 @@ describe("buildServer scrape integration", () => {
     });
 
     expect(startResponse.statusCode).toBe(500);
-    expect(startResponse.json().error.message).toContain("Media root not found");
+    expect(startResponse.json().error.message).toContain("未找到媒体根目录");
   });
 
   it("aborts an in-flight scrape item when the task is stopped", async () => {

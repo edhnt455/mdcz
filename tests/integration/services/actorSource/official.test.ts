@@ -94,7 +94,7 @@ describe("OfficialActorSource", () => {
       expect(await source.lookup(createConfig(), { name })).toEqual({
         source: "official",
         success: false,
-        warnings: ["Failed to load official actor data from life: 403 Forbidden"],
+        warnings: ["从 life 加载官网演员数据失败：403 Forbidden"],
         siteResults: ["tpowers", "cmore", "nax", "mines", "alive", "life"].map((site) => ({
           site,
           success: site !== "life",
@@ -301,7 +301,7 @@ describe("OfficialActorSource", () => {
     expect(conflicting.profile).toMatchObject({ birth_date: "2001-02-03" });
     expect(conflicting.profile?.waist_cm).toBeUndefined();
     expect(conflicting.profile?.description).toBeUndefined();
-    expect(conflicting.warnings).toContain("Conflicting official profile for Actor A; skipped");
+    expect(conflicting.warnings).toContain("Actor A 的官网档案信息冲突，已跳过");
     expect(conflicting.siteResults).toContainEqual({ site: "prestige", success: true, photoFound: false });
   });
 

@@ -81,11 +81,10 @@ export type ScrapeExecutionMode = "single" | "batch";
 export const assertTargetLayout = (config: Configuration, target: PublicationTarget): void => {
   if (!isSharedDirectoryTarget(target)) return;
   if (config.naming.assetNamingMode !== "followVideo")
-    throw new Error("The library folder template has no per-movie field; set asset naming to follow the video");
+    throw new Error("媒体库文件夹模板没有区分影片的字段，请将资源命名设为跟随视频");
   if (config.download.nfoNaming !== "filename")
-    throw new Error("The library folder template has no per-movie field; set NFO naming to the video file name");
-  if (config.download.downloadSceneImages)
-    throw new Error("The library folder template has no per-movie field; turn off scene images");
+    throw new Error("媒体库文件夹模板没有区分影片的字段，请将 NFO 命名设为视频文件名");
+  if (config.download.downloadSceneImages) throw new Error("媒体库文件夹模板没有区分影片的字段，请关闭剧照下载");
 };
 
 export class FileOrganizer {
@@ -121,7 +120,7 @@ export class FileOrganizer {
 
     const outputRoot = resolve(target.outputPath);
     const outputDir = resolve(outputRoot, layout.folderRelativePath);
-    if (!isPathInside(outputRoot, outputDir)) throw new Error("Generated path is outside the library output directory");
+    if (!isPathInside(outputRoot, outputDir)) throw new Error("生成的路径不在媒体库输出目录内");
     const placedName = options.versionLabel
       ? `${parse(layout.targetVideoFileName).name} - ${options.versionLabel}${parse(layout.targetVideoFileName).ext}`
       : layout.targetVideoFileName;
@@ -139,10 +138,10 @@ export class FileOrganizer {
     }
 
     if (target.placement === "strm" && isStrmFile(fileInfo.filePath)) {
-      throw new Error("A .strm source is already a link; use a library that places files in place or moves them");
+      throw new Error(".strm 来源本身已是链接，请使用原地保存或移动文件的媒体库");
     }
     if (isPathInside(sourceDir, outputRoot) || isPathInside(outputRoot, sourceDir)) {
-      throw new Error("The library output directory cannot be the same as or contain the video's directory");
+      throw new Error("媒体库输出目录不能与视频目录相同，也不能包含视频目录");
     }
     const link: MediaLink | undefined =
       target.placement === "symlink"
@@ -209,10 +208,8 @@ export class FileOrganizer {
           !(sourceFileInfo.number && sourceFileInfo.number === inventory.fileInfo(filePath, rules).number),
       );
       if (otherVideos.length > 0) {
-        this.logger.warn(`Cannot organize in place because multiple video files exist in ${sourceDir}`);
-        throw new Error(
-          "Source directory contains multiple movies; scrape it into a library that writes metadata to its own folder",
-        );
+        this.logger.warn(`${sourceDir} 中有多个视频文件，无法原地整理`);
+        throw new Error("来源目录包含多部影片，请刮削到为每部影片单独保存元数据的媒体库");
       }
     }
 

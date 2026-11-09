@@ -24,7 +24,7 @@ export const mergeLibraryAvailability = (
 
 export const chunkLibraryEntryIds = (ids: string[], size = 200): string[][] => {
   if (!Number.isInteger(size) || size < 1) {
-    throw new RangeError("Library availability chunk size must be a positive integer");
+    throw new RangeError("媒体库可用性检查的分块大小必须是正整数");
   }
   const chunks: string[][] = [];
   for (let index = 0; index < ids.length; index += size) {

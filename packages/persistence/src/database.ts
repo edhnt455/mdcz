@@ -21,7 +21,7 @@ export const createPersistenceDatabase = (config: PersistenceDatabaseConfig): Pe
   try {
     if (!config.readonly) {
       const mode = sqlite.pragma("journal_mode = WAL", { simple: true });
-      if (config.path !== ":memory:" && mode !== "wal") throw new Error(`SQLite WAL is unavailable: ${config.path}`);
+      if (config.path !== ":memory:" && mode !== "wal") throw new Error(`SQLite WAL 不可用：${config.path}`);
     }
     sqlite.pragma("foreign_keys = ON");
     sqlite.pragma("busy_timeout = 5000");

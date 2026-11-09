@@ -2,7 +2,7 @@ import { basename, dirname } from "node:path";
 import type { Configuration } from "@mdcz/shared/config";
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { NumberRecognitionResult } from "@mdcz/shared/pending";
-import { z } from "zod";
+import { z } from "@mdcz/shared/zod";
 import { movieNumbersMatch } from "../crawler/base/identity";
 import { isUnrecoverableNetworkError, runWithNetworkChannel } from "../network";
 import { isMissingRequiredLlmApiKey } from "./translate/engines/LlmApiClient";
@@ -61,7 +61,7 @@ export class NumberRecognitionService {
         !config.translate.llmModelName.trim() ||
         isMissingRequiredLlmApiKey(config.translate.llmBaseUrl, config.translate.llmApiKey)
       ) {
-        throw new Error("AI movie code recognition requires a model and the endpoint's required API key");
+        throw new Error("AI 番号识别需要配置模型及端点要求的 API 密钥");
       }
       result.rawResponse = await runWithNetworkChannel("number-recognition", () =>
         this.requests.requestText(config.translate, prompt, signal, {
@@ -83,7 +83,7 @@ export class NumberRecognitionService {
           !Object.values(source).some((value) => value.normalize("NFKC").toUpperCase().includes(evidence)) ||
           !normalizeEvidence(evidence).includes(normalizeEvidence(result.number))
         ) {
-          throw new Error("AI movie code recognition returned a number without valid source evidence");
+          throw new Error("AI 番号识别返回的番号缺少有效来源依据");
         }
         result.status = movieNumbersMatch(result.number, previousNumber) ? "unchanged" : "recognized";
       }

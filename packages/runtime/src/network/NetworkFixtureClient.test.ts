@@ -187,7 +187,7 @@ describe("network fixtures", () => {
       await runWithNetworkChannel("translation", async () => {
         await expect(
           replay.postJson("https://llm.example.com/responses", { model: "model-a", input: "prompt-b" }),
-        ).rejects.toThrow(/closest recorded request differs in body/u);
+        ).rejects.toThrow(/最接近的已录制请求在 body 上存在差异/u);
       });
     });
     expect(replay.missingInteractions).toEqual(["one/translation: POST https://llm.example.com/responses"]);
@@ -196,7 +196,7 @@ describe("network fixtures", () => {
         caseId: "unrecorded",
         execution: {},
       }),
-    ).rejects.toThrow("No network recording for unrecorded");
+    ).rejects.toThrow("unrecorded 没有网络录制");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -220,7 +220,7 @@ describe("network fixtures", () => {
     expect(fetchMock).toHaveBeenCalledTimes(local.length * 4);
     await expect(
       createClient(root, "replay").postText("https://emby.example.com/Library/Media/Updated", "{}"),
-    ).rejects.toThrow("public network fallback is disabled");
+    ).rejects.toThrow("已禁用公网回退");
   });
 
   it("redacts credentials before saving", async () => {

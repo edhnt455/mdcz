@@ -42,7 +42,7 @@ test("clearing reports failures, refreshes records and replaces a cleared select
   vi.spyOn(api.deletions, "list").mockImplementation(async () => ({ jobs }));
   vi.spyOn(api.deletions, "detail").mockImplementation(async ({ id }) => {
     const selected = jobs.find((job) => job.id === id);
-    if (!selected) throw new Error("Deletion job not found");
+    if (!selected) throw new Error("未找到删除任务");
     return selected;
   });
   const clear = vi

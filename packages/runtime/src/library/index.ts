@@ -58,7 +58,7 @@ export const toRuntimeLibraryEntrySummaryInput = (
   },
 ): RuntimeLibraryEntrySummaryInput => {
   const file = entry.files.find((candidate) => candidate.id === entry.displayFileId);
-  if (!file) throw new Error(`Library display file not found: ${entry.id}`);
+  if (!file) throw new Error(`未找到媒体库显示文件：${entry.id}`);
   return { ...entry, fileName: file.fileName, lastKnownPath: file.lastKnownPath };
 };
 

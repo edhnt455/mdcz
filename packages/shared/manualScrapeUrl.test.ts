@@ -36,7 +36,7 @@ describe("manual scrape URL routing", () => {
 
   it("rejects blank input and hosts that are neither official nor configured mirrors", () => {
     expect(resolveManualScrapeRoute(" ", officialOnly)).toBeUndefined();
-    expect(() => resolveManualScrapeRoute("https://example.com/movie", officialOnly)).toThrow("Unsupported site URL");
+    expect(() => resolveManualScrapeRoute("https://example.com/movie", officialOnly)).toThrow("不支持此站点网址");
     for (const [url, network] of [
       ["https://javdb571.com/v/abc", officialOnly],
       ["http://localhost:8083/", localMirrors],

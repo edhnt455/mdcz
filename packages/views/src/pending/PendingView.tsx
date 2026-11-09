@@ -94,6 +94,7 @@ export interface PendingViewProps {
   onRetryNumberRecognition: (id: string) => Promise<void>;
   onConfirmUncensored: (input: PendingConfirmUncensoredInput) => Promise<void>;
   onIgnore: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   onBatch: (input: PendingBatchInput) => Promise<PendingBatchResponse>;
 }
 
@@ -110,6 +111,7 @@ export function PendingView({
   onRetryNumberRecognition,
   onConfirmUncensored,
   onIgnore,
+  onDelete,
   onBatch,
 }: PendingViewProps) {
   const t = useT();
@@ -408,6 +410,7 @@ export function PendingView({
             onRetryNumberRecognition={onRetryNumberRecognition}
             onConfirmUncensored={onConfirmUncensored}
             onIgnore={onIgnore}
+            onDelete={onDelete}
             busy={busy}
             onBusyChange={setDetailBusy}
           />
@@ -435,6 +438,7 @@ function PendingDetail({
   onRetryNumberRecognition,
   onConfirmUncensored,
   onIgnore,
+  onDelete,
   busy,
   onBusyChange,
 }: {
@@ -444,12 +448,14 @@ function PendingDetail({
   onRetryNumberRecognition: PendingViewProps["onRetryNumberRecognition"];
   onConfirmUncensored: PendingViewProps["onConfirmUncensored"];
   onIgnore: PendingViewProps["onIgnore"];
+  onDelete: PendingViewProps["onDelete"];
   busy: boolean;
   onBusyChange: (busy: boolean) => void;
 }) {
   const t = useT();
   const { item, siteResults } = detail;
   const [recognitionRunning, setRecognitionRunning] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
   const [libraryId, setLibraryId] = useState(item.libraryId ?? libraries[0]?.id ?? "");
   useEffect(() => setLibraryId(item.libraryId ?? libraries[0]?.id ?? ""), [item.libraryId, libraries]);
@@ -494,19 +500,42 @@ function PendingDetail({
             <h2 className="break-words text-lg font-bold tracking-tight">{item.fileName}</h2>
             <div className="break-words font-mono text-xs text-muted-foreground">{item.path}</div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-            disabled={busy}
-            onClick={async () => {
-              if (await confirmDialog({ title: t.pending.ignoreConfirm, confirmLabel: t.pending.ignore }))
-                await run(() => onIgnore(item.id));
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t.pending.ignore}
-          </Button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              disabled={busy}
+              onClick={async () => {
+                if (await confirmDialog({ title: t.pending.ignoreConfirm, confirmLabel: t.pending.ignore }))
+                  await run(() => onIgnore(item.id));
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {t.pending.ignore}
+            </Button>
+            {item.fileName.toLowerCase().endsWith(".strm") ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                title={t.pending.deleteHint}
+                disabled={busy}
+                onClick={async () => {
+                  if (busy || deleting) return;
+                  setDeleting(true);
+                  try {
+                    await run(() => onDelete(item.id));
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {deleting ? t.pending.deleting : t.pending.delete}
+              </Button>
+            ) : null}
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">{t.pending.kindDescriptions[item.kind]}</p>
         {item.detail && item.kind !== "ambiguous" ? (

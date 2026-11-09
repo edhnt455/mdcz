@@ -29,7 +29,7 @@ const logActorSourceWarnings = (
   warnings: string[] | undefined,
 ): void => {
   for (const warning of warnings ?? []) {
-    logger.warn(`Actor source warning for ${actorName}: ${warning}`);
+    logger.warn(`演员 ${actorName} 的来源警告：${warning}`);
   }
 };
 
@@ -60,7 +60,7 @@ export const runMediaServerInfoSync = async <TPerson, TDetail>(
 ): Promise<PersonSyncResult> => {
   const persons = await options.fetchPersons();
   if (persons.length === 0) {
-    options.signalService.showLogText(`${options.serviceName} returned no actors to sync`, "warn");
+    options.signalService.showLogText(`${options.serviceName} 未返回可同步的演员`, "warn");
     return createEmptyPersonSyncResult();
   }
 
@@ -84,19 +84,19 @@ export const runMediaServerInfoSync = async <TPerson, TDetail>(
 
       await options.updatePersonInfo(person, detail, synced);
 
-      options.signalService.showLogText(`Updated ${options.serviceName} actor info: ${personName}`);
+      options.signalService.showLogText(`已更新 ${options.serviceName} 演员信息：${personName}`);
       return "processed";
     },
     onError: (person, error) => {
       options.logger.warn(
-        `Failed to update ${options.serviceName} actor info for ${options.getPersonName(person)}: ${formatPersonSyncError(error)}`,
+        `更新 ${options.serviceName} 演员 ${options.getPersonName(person)} 的信息失败：${formatPersonSyncError(error)}`,
       );
     },
   });
 
   options.signalService.showLogText(
     options.buildCompletionMessage?.(result, persons.length) ??
-      `${options.serviceName} actor info sync completed. Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
+      `${options.serviceName} 演员信息同步完成。成功：${result.processedCount}，失败：${result.failedCount}，跳过：${result.skippedCount}`,
   );
 
   return result;

@@ -236,7 +236,7 @@ describe("scrape movie groups", () => {
     execution.commitItems = async (entries) => {
       const movie = entries.filter((entry) => entry.item.id === "one" || entry.item.id === "two");
       if (movie.length > 0 && movie.every((entry) => entry.result?.status === "success") && publishAttempts++ === 0)
-        throw new Error("Hardlinks need the library output on the same volume as the source");
+        throw new Error("创建硬链接需要媒体库输出和来源位于同一磁盘分区");
       return await commit(entries);
     };
     const session = new ScrapeRunSession({
@@ -256,7 +256,7 @@ describe("scrape movie groups", () => {
     await session.waitForIdle();
     // The failing movie's files end failed, never skipped, so the pending list can still offer a repair.
     expect(session.snapshot().items.map((item) => item.status)).toEqual(["failed", "failed", "success"]);
-    expect(session.snapshot().error).toContain("same volume");
+    expect(session.snapshot().error).toContain("同一磁盘分区");
   });
 
   it.each(["stop", "interrupt"] as const)("settles every member when a preparing movie is %s", async (action) => {

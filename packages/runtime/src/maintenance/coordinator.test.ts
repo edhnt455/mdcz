@@ -147,7 +147,7 @@ describe("MaintenanceSessionCoordinator", () => {
         sessionId: preview.session.id,
         selections: [{ previewId: batch.items[0].id }],
       }),
-    ).rejects.toThrow("A scrape task is running");
+    ).rejects.toThrow("刮削任务正在运行");
     scrapeBusy = false;
     expect(batch.items[0].movieGroup?.files[0].fileId).toBe("file-1");
     fixture.library.inventoryOwnership.mockReturnValue([]);
@@ -207,9 +207,7 @@ describe("MaintenanceSessionCoordinator", () => {
       refs: [],
     });
     expect(fixture.runtime.scanRefs).not.toHaveBeenCalled();
-    await expect(fixture.coordinator.pause(handle.session.id)).rejects.toThrow(
-      "Pausing is not supported during scanning",
-    );
+    await expect(fixture.coordinator.pause(handle.session.id)).rejects.toThrow("扫描期间不支持暂停");
     const termination =
       outcome === "stopped"
         ? fixture.coordinator.stop(handle.session.id)
@@ -256,16 +254,14 @@ describe("MaintenanceSessionCoordinator", () => {
     const failed = expect(starting.completion).rejects.toThrow("scan failed");
     await scanning.promise;
     expect(fixture.coordinator.hasUnfinishedSession).toBe(true);
-    expect(() => taskGate.assertAvailable("scrape")).toThrow("A maintenance task is running");
-    await expect(fixture.coordinator.startPreview(input)).rejects.toThrow(
-      "An active maintenance session already exists",
-    );
+    expect(() => taskGate.assertAvailable("scrape")).toThrow("维护任务正在运行");
+    await expect(fixture.coordinator.startPreview(input)).rejects.toThrow("已有进行中的维护会话");
     await expect(
       fixture.coordinator.beginApply({
         sessionId: first.session.id,
         selections: [{ previewId: batch.items[0].id }],
       }),
-    ).rejects.toThrow("Maintenance session not found");
+    ).rejects.toThrow("未找到维护会话");
     scanned.reject(new Error("scan failed"));
     await failed;
     expect(() => taskGate.assertAvailable("scrape")).not.toThrow();
@@ -280,7 +276,7 @@ describe("MaintenanceSessionCoordinator", () => {
     });
     const startingPreview = startingFixture.coordinator.startPreview(input);
     expect(startingFixture.coordinator.hasUnfinishedSession).toBe(true);
-    expect(() => startupGate.assertAvailable("scrape")).toThrow("A maintenance task is running");
+    expect(() => startupGate.assertAvailable("scrape")).toThrow("维护任务正在运行");
     config.resolve(defaultConfiguration);
     await (await startingPreview).completion;
     expect(() => startupGate.assertAvailable("scrape")).not.toThrow();
@@ -471,7 +467,7 @@ describe("MaintenanceSessionCoordinator", () => {
       signal?.addEventListener(
         "abort",
         () => {
-          const error = new Error("Operation aborted");
+          const error = new Error("操作已中止");
           error.name = "AbortError";
           reject(error);
         },
@@ -494,7 +490,7 @@ describe("MaintenanceSessionCoordinator", () => {
     const batch = await apply.completion;
     const snapshot = await fixture.coordinator.getActiveSession();
 
-    expect(batch.session).toMatchObject({ status: "stopped", error: "Maintenance stopped" });
+    expect(batch.session).toMatchObject({ status: "stopped", error: "维护已停止" });
     expect(batch.applied).toHaveLength(3);
     expect(new Set(batch.applied.map((item) => item.previewId)).size).toBe(3);
     expect(batch.applied.every((item) => item.status === "skipped")).toBe(true);
@@ -645,7 +641,7 @@ describe("MaintenanceSessionCoordinator", () => {
         sessionId: previewHandle.session.id,
         selections: [{ previewId: first?.id ?? "", fieldSelections: { title: "old" } }],
       }),
-    ).rejects.toThrow("Field selections have changed the target path");
+    ).rejects.toThrow("字段选择改变了目标路径");
 
     const apply = await fixture.coordinator.beginApply({
       sessionId: previewHandle.session.id,
@@ -785,6 +781,6 @@ describe("MaintenanceSessionCoordinator", () => {
         presetId: "local_organize",
         refs: [selected],
       }),
-    ).rejects.toThrow("duplicate part numbers");
+    ).rejects.toThrow("重复的分段编号");
   });
 });

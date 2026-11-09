@@ -218,6 +218,6 @@ describe("AvwikidbCrawler", () => {
     }
 
     expect(response.result.reason).toBe("parse_error");
-    expect(response.result.error).toContain("metadata build id missing");
+    expect(response.result.error).toContain("元数据缺少构建 ID");
   });
 });

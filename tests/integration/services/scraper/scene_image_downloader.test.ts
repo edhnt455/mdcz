@@ -163,6 +163,6 @@ describe("SceneImageDownloader", () => {
       }),
     ).resolves.toEqual([]);
 
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("all image hosts are cooling down"));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("所有图片主机均处于冷却期"));
   });
 });

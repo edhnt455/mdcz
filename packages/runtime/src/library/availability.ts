@@ -24,17 +24,17 @@ export class LibraryAvailabilityChecker {
     try {
       const stats = await stat(resolveRootRelativePath(root, relativePath));
       available = stats.isFile();
-      if (!available) error = "Path is not a file";
+      if (!available) error = "此路径不是文件";
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       try {
         await stat(root.hostPath);
         error =
           (cause as NodeJS.ErrnoException).code === "ENOENT"
-            ? `File missing; media library record retained only: ${resolveRootRelativePath(root, relativePath)}`
-            : `Failed to inspect file: ${message}`;
+            ? `文件不存在，仅保留媒体库记录：${resolveRootRelativePath(root, relativePath)}`
+            : `检查文件失败：${message}`;
       } catch (rootError) {
-        error = `Media root directory inaccessible: ${root.hostPath} (${rootError instanceof Error ? rootError.message : String(rootError)})`;
+        error = `无法访问媒体根目录：${root.hostPath}（${rootError instanceof Error ? rootError.message : String(rootError)}）`;
       }
     }
     this.cache.set(key, { available, error, expiresAt: Date.now() + 30_000 });
@@ -73,9 +73,7 @@ export class LibraryAvailabilityChecker {
           return {
             id: file.id,
             available: root ? (this.cache.get(keyFor(root, file.rootRelativePath))?.available ?? false) : null,
-            availabilityError: root
-              ? this.error(root, file.rootRelativePath)
-              : "Corresponding media directory no longer exists",
+            availabilityError: root ? this.error(root, file.rootRelativePath) : "对应媒体目录已不存在",
           };
         });
         return { id: entry.id, available: libraryAvailability(fileRefs), fileRefs };

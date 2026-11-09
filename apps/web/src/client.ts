@@ -247,6 +247,7 @@ export const api: ServerApiContract = {
     retryNumberRecognition: (input) => trpcMutation("pending.retryNumberRecognition", input),
     confirmUncensored: (input) => trpcMutation("pending.confirmUncensored", input),
     ignore: (input) => trpcMutation("pending.ignore", input),
+    delete: (input) => trpcMutation("pending.delete", input),
   },
   apiKeys: {
     list: () => trpcQuery("apiKeys.list"),

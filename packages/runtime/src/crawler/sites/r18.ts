@@ -384,7 +384,7 @@ export class R18DevCrawler implements SiteAdapter {
       if (!record) {
         return {
           success: false,
-          error: `R18.dev detail URL not found for ${input.number}`,
+          error: `未找到 ${input.number} 的 R18.dev 详情网址`,
           reason: "not_found",
         };
       }
@@ -393,7 +393,7 @@ export class R18DevCrawler implements SiteAdapter {
       if (!data) {
         return {
           success: false,
-          error: `R18.dev metadata parsing failed for ${input.number}`,
+          error: `解析 ${input.number} 的 R18.dev 元数据失败`,
           reason: "parse_error",
         };
       }

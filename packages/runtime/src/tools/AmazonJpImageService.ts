@@ -85,7 +85,7 @@ export class AmazonJpImageService {
         },
       );
     } catch (error) {
-      this.logger.warn(`Amazon search failed for "${searchTitle}": ${toErrorMessage(error)}`);
+      this.logger.warn(`Amazon 搜索“${searchTitle}”失败：${toErrorMessage(error)}`);
       return { reason: "search_failed" };
     }
 
@@ -102,7 +102,7 @@ export class AmazonJpImageService {
       if (!imageUrl) continue;
       if (!(await this.isImageReachable(imageUrl))) {
         hadUnreachableImage = true;
-        this.logger.warn(`Amazon detail image is not reachable for "${candidate.detailTitle}" (${imageUrl})`);
+        this.logger.warn(`无法访问“${candidate.detailTitle}”的 Amazon 详情图片（${imageUrl}）`);
         continue;
       }
       return { poster_url: imageUrl, reason: "found" };
@@ -119,7 +119,7 @@ export class AmazonJpImageService {
     const imageUrl = directImageUrl ?? (await this.fetchPosterViaAsinSearch(session, detailPath));
     if (!imageUrl) return { reason: "detail_unreadable" };
     if (!(await this.isImageReachable(imageUrl))) {
-      this.logger.warn(`Amazon detail image is not reachable for "${detailPath}" (${imageUrl})`);
+      this.logger.warn(`无法访问“${detailPath}”的 Amazon 详情图片（${imageUrl}）`);
       return { reason: "image_unreachable" };
     }
     return { poster_url: imageUrl, reason: "found" };
@@ -134,7 +134,7 @@ export class AmazonJpImageService {
         headers: AMAZON_HEADERS,
       });
     } catch (error) {
-      this.logger.warn(`Amazon ASIN search failed for "${asin}": ${toErrorMessage(error)}`);
+      this.logger.warn(`Amazon ASIN“${asin}”搜索失败：${toErrorMessage(error)}`);
       return null;
     }
     const candidate = this.extractAsinCandidate(html, asin);
@@ -222,7 +222,7 @@ export class AmazonJpImageService {
       const html = await session.getText(detailUrl, { headers: AMAZON_HEADERS });
       return this.extractDetailPosterUrl(html);
     } catch (error) {
-      this.logger.warn(`Amazon detail request failed for "${detailPath}": ${toErrorMessage(error)}`);
+      this.logger.warn(`Amazon 详情请求“${detailPath}”失败：${toErrorMessage(error)}`);
       return null;
     }
   }

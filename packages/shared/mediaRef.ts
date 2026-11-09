@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod";
 
 const normalizeWireRelativePath = (relativePath: string): string => {
   const normalized = relativePath.replace(/\\/gu, "/").replace(/^\.\//u, "");
@@ -16,7 +16,7 @@ const normalizeWireRelativePath = (relativePath: string): string => {
 export const wireRelativePathSchema = z.string().transform((relativePath, context) => {
   const normalized = normalizeWireRelativePath(relativePath);
   if (!normalized) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid media relative path: ${relativePath}` });
+    context.addIssue({ code: z.ZodIssueCode.custom, message: `媒体相对路径无效：${relativePath}` });
     return z.NEVER;
   }
   return normalized;
@@ -27,7 +27,7 @@ export const wireRelativeDirectorySchema = z.string().transform((relativeDirecto
   if (!normalized) return "";
   const parsed = normalizeWireRelativePath(normalized);
   if (parsed) return parsed;
-  context.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid media relative directory: ${relativeDirectory}` });
+  context.addIssue({ code: z.ZodIssueCode.custom, message: `媒体相对目录无效：${relativeDirectory}` });
   return z.NEVER;
 });
 
@@ -81,14 +81,14 @@ export const parseLocalFileUrl = (value: string): RootFileRef => {
   const separator = "://";
   const schemeEnd = value.indexOf(separator);
   if (schemeEnd < 0 || value.slice(0, schemeEnd).toLowerCase() !== LOCAL_FILE_SCHEME) {
-    throw new Error(`Unsupported asset URL: ${value}`);
+    throw new Error(`不支持的资源网址：${value}`);
   }
 
   // Parse the path ourselves. `new URL()` collapses `..` / `%2e%2e` before we can reject them.
   const body = (value.slice(schemeEnd + separator.length).split(/[?#]/u, 1)[0] ?? "").replace(/\/+$/u, "");
   const slash = body.indexOf("/");
   if (slash <= 0) {
-    throw new Error(`Unsupported asset URL: ${value}`);
+    throw new Error(`不支持的资源网址：${value}`);
   }
 
   return rootFileRefSchema.parse({

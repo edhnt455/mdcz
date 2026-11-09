@@ -27,7 +27,7 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   } catch (error) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
-      message: error instanceof Error ? error.message : "Authentication required",
+      message: error instanceof Error ? error.message : "请先登录",
     });
   }
   const result = await next({ ctx });
@@ -55,7 +55,7 @@ export const setupProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!authStatus.setupRequired) {
     throw new TRPCError({
       code: "FORBIDDEN",
-      message: "Setup is already complete; please sign in",
+      message: "初始化已完成，请登录",
     });
   }
   return next({ ctx });

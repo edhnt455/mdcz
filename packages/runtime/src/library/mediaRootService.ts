@@ -124,7 +124,7 @@ export class ConfiguredMediaRootService {
       }
       const current = await canonicalPath(root.hostPath);
       if (root.realPath === null || filesystemPathKey(current) !== filesystemPathKey(root.realPath)) {
-        throw new Error(`Media root canonical path changed: ${root.hostPath}`);
+        throw new Error(`媒体根目录的实际路径已变化：${root.hostPath}`);
       }
     }
   }
@@ -151,7 +151,7 @@ export class ConfiguredMediaRootService {
     const normalized = normalizeHostPath(trimmed);
     const availability = await this.checkAvailability(normalized);
     if (!availability.available) {
-      throw new MediaDirectoryUnavailableError("Directory does not exist or is inaccessible; please check");
+      throw new MediaDirectoryUnavailableError("目录不存在或无法访问，请检查");
     }
     return normalized;
   }
@@ -160,8 +160,7 @@ export class ConfiguredMediaRootService {
     const checkedAt = new Date().toISOString();
     try {
       const stats = await stat(hostPath);
-      if (!stats.isDirectory())
-        return { available: false, checkedAt, error: "Media directory path is not a directory" };
+      if (!stats.isDirectory()) return { available: false, checkedAt, error: "媒体目录路径不是目录" };
       return { available: true, checkedAt, error: null };
     } catch (error) {
       return { available: false, checkedAt, error: error instanceof Error ? error.message : String(error) };
@@ -169,10 +168,9 @@ export class ConfiguredMediaRootService {
   }
 
   private validatePathSyntax(trimmed: string): void {
-    if (!trimmed) throw new Error("Media directory path cannot be empty");
-    if (hasInvalidPathBytes(trimmed)) throw new Error("Media directory path contains invalid characters");
-    if (isRemoteUrl(trimmed))
-      throw new Error("Native remote protocol URLs are not supported; please mount the share in your system first.");
-    if (!path.isAbsolute(trimmed)) throw new Error("Media directory path must be an absolute path");
+    if (!trimmed) throw new Error("媒体目录路径不能为空");
+    if (hasInvalidPathBytes(trimmed)) throw new Error("媒体目录路径包含无效字符");
+    if (isRemoteUrl(trimmed)) throw new Error("不支持直接使用远程协议网址，请先将共享挂载到系统。");
+    if (!path.isAbsolute(trimmed)) throw new Error("媒体目录路径必须是绝对路径");
   }
 }

@@ -163,7 +163,7 @@ export class LocalActorSource implements BaseActorSource {
       return {
         source: this.name,
         success: false,
-        warnings: [`Failed to load local actor data: ${message}`],
+        warnings: [`加载本地演员数据失败：${message}`],
       };
     }
   }

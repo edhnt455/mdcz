@@ -40,7 +40,7 @@ export const recoverInterruptedPublications = async (
       }
       store.forget(entry.path);
     } catch (error) {
-      logger.warn(`Failed to recover publication temporary path ${entry.path}: ${toErrorMessage(error)}`);
+      logger.warn(`恢复发布临时路径 ${entry.path} 失败：${toErrorMessage(error)}`);
     }
   }
 };

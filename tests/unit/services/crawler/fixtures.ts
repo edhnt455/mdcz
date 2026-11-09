@@ -40,7 +40,7 @@ export class FixtureNetworkClient extends NetworkClient {
     const text = typeof fixture === "string" ? fixture : JSON.stringify(fixture);
     const reason = classifyBlockedPage(url, text);
     if (reason) {
-      throw new SiteError(reason, `${reason} page served for ${url}`);
+      throw new SiteError(reason, `${url} 返回 ${reason} 页面`);
     }
     return text;
   }

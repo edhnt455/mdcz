@@ -112,16 +112,16 @@ export class DownloadManager {
 
     const downloadedPaths = new Set(assets.downloaded);
     const existingKinds = [
-      assets.thumb && !downloadedPaths.has(assets.thumb) ? "thumb" : undefined,
-      assets.poster && !downloadedPaths.has(assets.poster) ? "poster" : undefined,
-      assets.fanart && !downloadedPaths.has(assets.fanart) ? "fanart" : undefined,
-      assets.trailer && !downloadedPaths.has(assets.trailer) ? "trailer" : undefined,
+      assets.thumb && !downloadedPaths.has(assets.thumb) ? "封面" : undefined,
+      assets.poster && !downloadedPaths.has(assets.poster) ? "海报" : undefined,
+      assets.fanart && !downloadedPaths.has(assets.fanart) ? "背景图" : undefined,
+      assets.trailer && !downloadedPaths.has(assets.trailer) ? "预告片" : undefined,
       assets.sceneImages.length > 0 && assets.sceneImages.every((asset) => !downloadedPaths.has(asset))
-        ? "scene images"
+        ? "剧照"
         : undefined,
     ].filter((kind): kind is string => Boolean(kind));
     if (existingKinds.length > 0) {
-      this.logger.info(`[${data.number}] Using existing local assets: ${existingKinds.join(", ")}`);
+      this.logger.info(`[${data.number}] 使用已有本地资源：${existingKinds.join(", ")}`);
     }
 
     const imageFields = {

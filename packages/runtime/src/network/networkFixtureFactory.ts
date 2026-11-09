@@ -6,7 +6,7 @@ import { NetworkFixtureClient } from "./NetworkFixtureClient";
 const findWorkspaceRoot = (start: string): string => {
   for (let directory = path.resolve(start); ; directory = path.dirname(directory)) {
     if (existsSync(path.join(directory, "pnpm-workspace.yaml"))) return directory;
-    if (path.dirname(directory) === directory) throw new Error(`No pnpm workspace above ${start}`);
+    if (path.dirname(directory) === directory) throw new Error(`在 ${start} 的上级目录中未找到 pnpm 工作区`);
   }
 };
 
@@ -20,11 +20,11 @@ export const createDevNetworkClient = (
 ): NetworkFixtureClient => {
   const mode = env.MDCZ_NETWORK?.trim() || "record";
   if (mode !== "record" && mode !== "replay") {
-    throw new Error(`MDCZ_NETWORK must be record or replay, got ${mode}`);
+    throw new Error(`MDCZ_NETWORK 必须为 record 或 replay，当前值为 ${mode}`);
   }
   const delayMs = Number(env.MDCZ_REPLAY_DELAY_MS ?? 0);
   if (!Number.isFinite(delayMs) || delayMs < 0) {
-    throw new Error(`MDCZ_REPLAY_DELAY_MS must be a non-negative number, got ${env.MDCZ_REPLAY_DELAY_MS}`);
+    throw new Error(`MDCZ_REPLAY_DELAY_MS 必须为非负数，当前值为 ${env.MDCZ_REPLAY_DELAY_MS}`);
   }
   const workspaceRoot = findWorkspaceRoot(process.cwd());
   const recordRoot = path.join(workspaceRoot, ".tmp", "network-recordings");

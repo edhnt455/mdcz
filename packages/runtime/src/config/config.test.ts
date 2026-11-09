@@ -55,9 +55,7 @@ describe("RuntimeConfigProfileStore", () => {
     await store.createProfile("windows-dev");
     const previous = await service.get();
     const switching = service.switchProfile("windows-dev");
-    const staleWrite = expect(service.update({ libraries: [library] }, previous)).rejects.toThrow(
-      "Configuration changed",
-    );
+    const staleWrite = expect(service.update({ libraries: [library] }, previous)).rejects.toThrow("配置已变化");
     await switching;
     await staleWrite;
     expect((await service.get()).libraries).toEqual([]);

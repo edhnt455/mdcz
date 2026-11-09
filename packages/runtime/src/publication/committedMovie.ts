@@ -39,10 +39,10 @@ export const toCommittedMovie = (
   group: NonNullable<PreparedMovieOutput["scrape"]>,
 ): CommittedMovie => {
   if (!group || !output.files.length) {
-    throw new Error("Committed movie requires metadata and files");
+    throw new Error("提交影片需要元数据和文件");
   }
   const identity = group.crawlerData.number.trim() || basename(output.files[0].source.relativePath);
-  if (!identity) throw new Error("Committed movie has no media identity");
+  if (!identity) throw new Error("提交的影片没有媒体身份");
   const crawlerDataJson = JSON.stringify(group.crawlerData);
 
   const refKey = (ref: { rootId: string; relativePath: string }) => `${ref.rootId}\0${ref.relativePath}`;

@@ -21,5 +21,5 @@ export async function copyText(text: string): Promise<void> {
   textarea.select();
   const copied = document.execCommand("copy");
   textarea.remove();
-  if (!copied) throw new Error("Clipboard is unavailable");
+  if (!copied) throw new Error("剪贴板不可用");
 }

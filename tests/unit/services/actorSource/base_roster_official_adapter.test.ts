@@ -104,7 +104,7 @@ describe("BaseRosterOfficialAdapter", () => {
 
     const aborted = vi.fn().mockRejectedValueOnce(createAbortError()).mockResolvedValue(["Recovered"]);
     const abortedAdapter = new TestRosterAdapter(aborted, setDomainLimit);
-    await expect(abortedAdapter.lookup(query)).rejects.toThrow("Operation aborted");
+    await expect(abortedAdapter.lookup(query)).rejects.toThrow("操作已中止");
     await expect(abortedAdapter.lookup(query)).resolves.toMatchObject({ profile: { name: "Recovered" } });
     expect(aborted).toHaveBeenCalledTimes(2);
 

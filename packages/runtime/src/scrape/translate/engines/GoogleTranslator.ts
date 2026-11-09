@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@mdcz/shared/zod";
 import type { RuntimeNetworkClient } from "../../../network";
 import { throwIfAborted } from "../../utils/abort";
 import type { LanguageTarget, MachineTranslator } from "../types";

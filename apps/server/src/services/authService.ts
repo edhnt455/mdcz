@@ -65,7 +65,7 @@ export class AuthService {
       const actual = (await deriveKey(password, Buffer.from(salt, "hex"), 64)) as Buffer;
       valid = timingSafeEqual(actual, Buffer.from(hash, "hex"));
     }
-    if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "Incorrect administrator password" });
+    if (!valid) throw new TRPCError({ code: "UNAUTHORIZED", message: "管理员密码错误" });
     const token = randomBytes(24).toString("base64url");
     (await this.persistence.getState()).repositories.credentials.createSession(hashSecret(token));
     return { authenticated: true, token };
@@ -80,14 +80,14 @@ export class AuthService {
   }
 
   async assertAuthenticated(token?: string): Promise<void> {
-    if (!(await this.isSession(token))) throw new AuthenticationError("Authentication required");
+    if (!(await this.isSession(token))) throw new AuthenticationError("请先登录");
   }
 
   /** Automation endpoints accept an API key or a WebUI session. */
   async assertAutomation(token?: string): Promise<void> {
     if (token?.startsWith(API_KEY_PREFIX)) {
       if ((await this.persistence.getState()).repositories.credentials.touchApiKey(hashSecret(token))) return;
-      throw new AuthenticationError("Invalid API key");
+      throw new AuthenticationError("API 密钥无效");
     }
     await this.assertAuthenticated(token);
   }
@@ -123,7 +123,7 @@ export class AuthService {
 
   async completeSetup(input: SetupCompleteInput): Promise<AuthSessionDto> {
     if (!(await this.status()).setupRequired) {
-      throw new TRPCError({ code: "FORBIDDEN", message: "Setup is already complete; please sign in" });
+      throw new TRPCError({ code: "FORBIDDEN", message: "初始化已完成，请登录" });
     }
     const salt = randomBytes(16);
     const hash = (await deriveKey(input.password, salt, 64)) as Buffer;
@@ -140,7 +140,7 @@ export class AuthService {
       await link(temporaryPath, statePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        throw new TRPCError({ code: "CONFLICT", message: "Administrator already exists; please sign in" });
+        throw new TRPCError({ code: "CONFLICT", message: "管理员已存在，请登录" });
       }
       throw error;
     } finally {
@@ -176,9 +176,7 @@ export class AuthService {
     }
     const state = JSON.parse(content) as { passwordHash?: unknown } | null;
     if (typeof state?.passwordHash !== "string" || !/^scrypt\$[a-f0-9]{32}\$[a-f0-9]{128}$/.test(state.passwordHash)) {
-      throw new Error(
-        "Invalid auth-state.json: expected a scrypt password hash. Reset the file while the server is stopped to register again.",
-      );
+      throw new Error("auth-state.json 无效：需要 scrypt 密码哈希。请停止服务后重置此文件，再重新注册。");
     }
     return state.passwordHash;
   }

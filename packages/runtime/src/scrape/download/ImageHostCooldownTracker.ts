@@ -73,7 +73,7 @@ const IMAGE_HOST_FAILURE_POLICY: ImageHostCooldownFailurePolicy = {
 const IMAGE_HOST_COOLDOWN_STATUS_CODES = new Set([408, 429]);
 
 const formatCooldownDetails = (cooldownUntil: number, remainingMs: number): string =>
-  `${remainingMs}ms remaining until ${new Date(cooldownUntil).toISOString()}`;
+  `距离 ${new Date(cooldownUntil).toISOString()} 尚余 ${remainingMs} 毫秒`;
 
 const parseHttpStatus = (message?: string): number | null => {
   const match = message?.match(/\bHTTP (\d{3})\b/u);
@@ -169,10 +169,10 @@ export class ImageHostCooldownTracker {
     const state = this.store.recordFailure(host, IMAGE_HOST_FAILURE_POLICY);
     if (state?.cooldownUntil) {
       this.logger.warn(
-        `Image host cooldown opened for ${host} for ${IMAGE_HOST_COOLDOWN_MS}ms (${formatCooldownDetails(
+        `图片主机 ${host} 已进入冷却期，持续 ${IMAGE_HOST_COOLDOWN_MS} 毫秒（${formatCooldownDetails(
           state.cooldownUntil,
           Math.max(0, state.cooldownUntil - Date.now()),
-        )}) after ${state.failureCount} failures (${reason ?? "request failed"})`,
+        )}），此前失败 ${state.failureCount} 次（${reason ?? "请求失败"}）`,
       );
     }
   }
@@ -194,10 +194,10 @@ export class ImageHostCooldownTracker {
 
     this.loggedCooldownUntilByImageHost.set(host, activeCooldown.cooldownUntil);
     this.logger.warn(
-      `Skipping ${url}: image host cooldown active for ${host} (${formatCooldownDetails(
+      `跳过 ${url}：图片主机 ${host} 正在冷却（${formatCooldownDetails(
         activeCooldown.cooldownUntil,
         activeCooldown.remainingMs,
-      )})`,
+      )}）`,
     );
   }
 

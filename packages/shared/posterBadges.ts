@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "./zod";
 
 export const POSTER_TAG_BADGE_TYPE_OPTIONS = [
   "subtitle",

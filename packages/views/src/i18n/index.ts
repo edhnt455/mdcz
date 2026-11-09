@@ -13,7 +13,7 @@ const DICTIONARIES: Record<Locale, Messages> = { "en-US": en, "zh-CN": zh };
 const detectLocale = (): Locale => {
   const stored = typeof localStorage === "undefined" ? null : localStorage.getItem(STORAGE_KEY);
   if (stored === "en-US" || stored === "zh-CN") return stored;
-  return typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+  return "zh-CN";
 };
 
 const applyDocumentLocale = (locale: Locale) => {

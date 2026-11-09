@@ -102,12 +102,12 @@ class LibraryWatcher {
           this.wake(this.library.sourcePath, EVENT_DEBOUNCE_MS),
         );
         this.fsWatcher.on("error", (error) => {
-          this.deps.logger.warn(`Change events stopped for ${this.library.sourcePath}; polling continues: ${error}`);
+          this.deps.logger.warn(`${this.library.sourcePath} 的文件变更监听已停止，将继续轮询：${error}`);
           this.fsWatcher?.close();
           this.fsWatcher = undefined;
         });
       } catch (error) {
-        this.deps.logger.warn(`Change events unavailable for ${this.library.sourcePath}; polling only: ${error}`);
+        this.deps.logger.warn(`${this.library.sourcePath} 的文件变更监听不可用，将仅使用轮询：${error}`);
       }
     }
     this.wake(this.library.sourcePath, 0);
@@ -163,8 +163,7 @@ class LibraryWatcher {
       for (const scope of scanScopes) await this.tick(scope, controller.signal);
     })()
       .catch((error: unknown) => {
-        if (!controller.signal.aborted)
-          this.deps.logger.error(`Library scan failed for ${this.library.name}: ${error}`);
+        if (!controller.signal.aborted) this.deps.logger.error(`媒体库 ${this.library.name} 扫描失败：${error}`);
       })
       .finally(() => {
         this.inFlight = undefined;
@@ -203,7 +202,7 @@ class LibraryWatcher {
     signal.throwIfAborted();
     const locate = (ref: RootFileRef) => {
       const root = roots.get(ref.rootId);
-      if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+      if (!root) throw new Error(`未找到媒体根目录：${ref.rootId}`);
       return filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, ref.relativePath));
     };
     const current = new Map<string, { ref: RootFileRef; signature: string }>();
@@ -284,7 +283,7 @@ class LibraryWatcher {
           if (repositories.pending.upsert({ kind: "new_file", ...ref, libraryId: library.id })) added += 1;
         acknowledge(submitted);
         if (added) this.deps.onPending?.(added);
-        this.deps.logger.info(`Registered ${submitted.length} new files in library ${library.name}`);
+        this.deps.logger.info(`已在媒体库 ${library.name} 登记 ${submitted.length} 个新文件`);
         return;
       }
       const keys = submitted.map(({ key }) => key);
@@ -302,9 +301,7 @@ class LibraryWatcher {
       }
       this.sources.settle(keys, snapshot.task.id);
       acknowledge(submitted);
-      this.deps.logger.info(
-        `Submitted ${submitted.length} files from library ${library.name}: taskId=${snapshot.task.id}`,
-      );
+      this.deps.logger.info(`已提交媒体库 ${library.name} 的 ${submitted.length} 个文件：taskId=${snapshot.task.id}`);
     } finally {
       if (changed) repositories.libraryState.saveWatchSnapshot(library.id, known);
     }

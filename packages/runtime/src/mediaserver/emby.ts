@@ -101,18 +101,18 @@ const fetchAutoResolvedEmbyUserId = async (
       createMissingUserContextError: () =>
         new EmbyServiceError(
           "EMBY_USER_CONTEXT_REQUIRED",
-          "Current Emby server requires user context; please configure Emby user ID in settings and retry",
+          "当前 Emby 服务器需要用户身份，请在设置中配置 Emby 用户 ID 后重试",
         ),
       toServiceError: toEmbyServiceError,
     },
     {
       statusMappings: {
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot read user list" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack permission to read user list" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API 密钥无效，无法读取用户列表" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭证无权读取用户列表" },
       },
       fallback: {
         code: "EMBY_USER_CONTEXT_REQUIRED",
-        message: "Current Emby server requires user context; please configure Emby user ID in settings and retry",
+        message: "当前 Emby 服务器需要用户身份，请在设置中配置 Emby 用户 ID 后重试",
       },
     },
   );
@@ -174,13 +174,13 @@ export const fetchEmbyPersons = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Invalid parameters for Emby person read request" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid or expired" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person read permissions" },
+        400: { code: "EMBY_BAD_REQUEST", message: "Emby 人物读取请求参数无效" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API 密钥无效或已过期" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭证无权读取人物信息" },
       },
       fallback: {
         code: "EMBY_UNREACHABLE",
-        message: "Failed to read Emby person list",
+        message: "读取 Emby 人物列表失败",
       },
     },
   );
@@ -215,7 +215,7 @@ export const fetchEmbyPersonDetail = async (
       createMissingUserContextError: () =>
         new EmbyServiceError(
           "EMBY_USER_CONTEXT_REQUIRED",
-          "Current Emby server requires user context; please resolve and provide an Emby user ID before retrying",
+          "当前 Emby 服务器需要用户身份，请先获取并提供 Emby 用户 ID 后重试",
         ),
       toServiceError: toEmbyServiceError,
     },
@@ -223,17 +223,17 @@ export const fetchEmbyPersonDetail = async (
       statusMappings: {
         401: {
           code: "EMBY_AUTH_FAILED",
-          message: `Failed to read person details: Emby API key is invalid; cannot access ${person.Name}`,
+          message: `读取人物详情失败：Emby API 密钥无效，无法访问 ${person.Name}`,
         },
         403: {
           code: "EMBY_PERMISSION_DENIED",
-          message: `Failed to read person details: current Emby API key has no permission to access ${person.Name}`,
+          message: `读取人物详情失败：当前 Emby API 密钥无权访问 ${person.Name}`,
         },
-        404: { code: "EMBY_NOT_FOUND", message: `Person ${person.Name} does not exist in Emby` },
+        404: { code: "EMBY_NOT_FOUND", message: `Emby 中不存在人物 ${person.Name}` },
       },
       fallback: {
         code: "EMBY_UNREACHABLE",
-        message: `Failed to read Emby person details: ${person.Name}`,
+        message: `读取 Emby 人物详情失败：${person.Name}`,
       },
     },
   );
@@ -307,14 +307,14 @@ export const fetchEmbyMetadataEditorInfo = async (
       statusMappings: {
         401: {
           code: "EMBY_AUTH_FAILED",
-          message: "Emby credentials are invalid; cannot verify person write permissions",
+          message: "Emby 凭证无效，无法核验人物写入权限",
         },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person write permissions" },
-        404: { code: "EMBY_NOT_FOUND", message: "Emby cannot retrieve metadata editor info for person" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭证无权写入人物信息" },
+        404: { code: "EMBY_NOT_FOUND", message: "Emby 无法获取人物元数据编辑信息" },
       },
       fallback: {
         code: "EMBY_UNREACHABLE",
-        message: "Failed to read Emby metadata editor info for person",
+        message: "读取 Emby 人物元数据编辑信息失败",
       },
     },
   );
@@ -338,14 +338,14 @@ export const updateEmbyPersonInfo = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: `Emby rejected person update: ${person.Name}` },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby credentials are invalid; cannot write person info" },
-        403: { code: "EMBY_PERMISSION_DENIED", message: "Current Emby credentials lack person write permissions" },
-        404: { code: "EMBY_NOT_FOUND", message: `Person ${person.Name} does not exist in Emby` },
+        400: { code: "EMBY_BAD_REQUEST", message: `Emby 拒绝更新人物：${person.Name}` },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby 凭证无效，无法写入人物信息" },
+        403: { code: "EMBY_PERMISSION_DENIED", message: "当前 Emby 凭证无权写入人物信息" },
+        404: { code: "EMBY_NOT_FOUND", message: `Emby 中不存在人物 ${person.Name}` },
       },
       fallback: {
         code: "EMBY_WRITE_FAILED",
-        message: `Failed to write Emby person info: ${person.Name}`,
+        message: `写入 Emby 人物信息失败：${person.Name}`,
       },
     },
   );
@@ -374,21 +374,21 @@ export const uploadEmbyPrimaryImage = async (
     },
     {
       statusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby rejected person photo upload request" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot upload person photo" },
-        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby person photo upload requires an administrator API key" },
-        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby does not accept the current photo file type" },
+        400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝人物照片上传请求" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API 密钥无效，无法上传人物照片" },
+        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "上传 Emby 人物照片需要管理员 API 密钥" },
+        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不支持当前照片文件类型" },
       },
       fallback: {
         code: "EMBY_WRITE_FAILED",
-        message: "Failed to upload Emby person photo",
+        message: "上传 Emby 人物照片失败",
       },
       fallbackStatusMappings: {
-        400: { code: "EMBY_BAD_REQUEST", message: "Emby rejected person photo upload request" },
-        401: { code: "EMBY_AUTH_FAILED", message: "Emby API key is invalid; cannot upload person photo" },
-        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "Emby person photo upload requires an administrator API key" },
-        404: { code: "EMBY_NOT_FOUND", message: "Emby cannot find the person to upload photo for" },
-        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby does not accept the current photo file type" },
+        400: { code: "EMBY_BAD_REQUEST", message: "Emby 拒绝人物照片上传请求" },
+        401: { code: "EMBY_AUTH_FAILED", message: "Emby API 密钥无效，无法上传人物照片" },
+        403: { code: "EMBY_ADMIN_KEY_REQUIRED", message: "上传 Emby 人物照片需要管理员 API 密钥" },
+        404: { code: "EMBY_NOT_FOUND", message: "Emby 中未找到要上传照片的人物" },
+        415: { code: "EMBY_UNSUPPORTED_MEDIA", message: "Emby 不支持当前照片文件类型" },
       },
     },
   );
@@ -476,7 +476,7 @@ export class EmbyActorInfoService {
         );
         if (tagItems === undefined || tagItems === null) return detail;
         if (!Array.isArray(tagItems) || tagItems.some((tag) => !isRecord(tag) || !toStringValue(tag.Name))) {
-          throw new Error(`Invalid Emby person tags: ${person.Name}`);
+          throw new Error(`Emby 人物标签无效：${person.Name}`);
         }
         return { ...detail, Tags: tagItems.map((tag) => tag.Name as string) };
       },
@@ -492,7 +492,7 @@ export class EmbyActorInfoService {
         await updateEmbyPersonInfo(this.networkClient, configuration, person, detail, synced);
       },
       buildCompletionMessage: (result, total) =>
-        `Emby actor info sync completed. Total: ${total}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
+        `Emby 演员信息同步完成。总计：${total}，成功：${result.processedCount}，失败：${result.failedCount}，跳过：${result.skippedCount}`,
     });
   }
 }
@@ -533,7 +533,7 @@ export class EmbyActorPhotoService {
         await uploadEmbyPrimaryImage(this.networkClient, configuration, personId, bytes, contentType);
       },
       buildCompletionMessage: (result, total) =>
-        `Emby actor photo sync completed. Total: ${total}, Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
+        `Emby 演员照片同步完成。总计：${total}，成功：${result.processedCount}，失败：${result.failedCount}，跳过：${result.skippedCount}`,
     });
   }
 }

@@ -161,7 +161,7 @@ describe("applyImageWatermarks", () => {
         },
       }),
     ).resolves.toBe(assets);
-    expect(warn).toHaveBeenCalledWith("Failed to apply tag badges for /tmp/poster.jpg: render failed");
+    expect(warn).toHaveBeenCalledWith("为 /tmp/poster.jpg 添加标签水印失败：render failed");
   });
 
   it("checks cancellation before and after rendering", async () => {

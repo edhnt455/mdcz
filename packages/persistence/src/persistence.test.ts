@@ -182,7 +182,7 @@ describe("Persistence migrations", () => {
         { name: "scrape_runs" },
       ]);
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 16,
+        count: 17,
       });
 
       expect(
@@ -252,7 +252,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 16,
+        count: 17,
       });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
@@ -313,7 +313,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 14,
+        count: 15,
       });
       const fresh = createTestPersistenceDatabase();
       try {
@@ -370,7 +370,7 @@ describe("MediaRootRepository", () => {
       await expect(repository.list()).resolves.toHaveLength(2);
       const file = join(directory.path, "movie.mp4");
       await writeFile(file, "video");
-      await expect(repository.ensurePath(file)).rejects.toThrow("Media root is not a directory");
+      await expect(repository.ensurePath(file)).rejects.toThrow("媒体根路径不是目录");
     } finally {
       await directory.cleanup();
     }
@@ -505,7 +505,7 @@ describe("LibraryRepository", () => {
         expect.objectContaining({ id: "root-1:ABC-123/ABC-123-CD2.mp4", size: 12 }),
       ]),
     );
-    await expect(repository.getEntryById("new-movie")).rejects.toThrow("Library entry not found");
+    await expect(repository.getEntryById("new-movie")).rejects.toThrow("未找到媒体库条目");
 
     await expect(repository.listEntries()).resolves.toEqual([
       expect.objectContaining({
@@ -548,7 +548,7 @@ describe("LibraryRepository", () => {
     const first = pending.list()[0];
     expect(first.numberRecognitionJson).toBeNull();
     expect(() => pending.confirmUncensored(first.id, { id: "other-movie" }, [])).toThrow(
-      "Pending confirmation no longer matches this movie",
+      "待处理确认信息已与此影片不匹配",
     );
 
     pending.deleteFiles([{ rootId: "root-1", relativePath: "A.mp4" }]);
@@ -820,15 +820,15 @@ describe("LibraryRepository", () => {
       ],
     });
 
-    await expect(repository.getEntryByFileId("missing")).rejects.toThrow("Library file not found");
-    expect(() => repository.removeFile("missing")).toThrow("Library file not found");
-    expect(() => repository.deleteEntry("missing")).toThrow("Library entry not found");
+    await expect(repository.getEntryByFileId("missing")).rejects.toThrow("未找到媒体库文件");
+    expect(() => repository.removeFile("missing")).toThrow("未找到媒体库文件");
+    expect(() => repository.deleteEntry("missing")).toThrow("未找到媒体库条目");
     await expect(
       repository.relinkFile({ fileId: "missing", rootId: "root-1", rootRelativePath: "new.mp4" }),
-    ).rejects.toThrow("Library file not found");
+    ).rejects.toThrow("未找到媒体库文件");
     await expect(
       repository.relinkFile({ fileId: entry.files[0].id, rootId: "missing", rootRelativePath: "new.mp4" }),
-    ).rejects.toThrow("Media root not found");
+    ).rejects.toThrow("未找到媒体根目录");
 
     await repository.relinkFile({
       fileId: entry.files[0].id,
@@ -841,7 +841,7 @@ describe("LibraryRepository", () => {
       size: 11,
       files: [expect.objectContaining({ rootRelativePath: "new/ABC-123-流出.mp4" })],
     });
-    await expect(repository.getEntry("root-1", "old/ABC-123.mp4")).rejects.toThrow("Library entry not found");
+    await expect(repository.getEntry("root-1", "old/ABC-123.mp4")).rejects.toThrow("未找到媒体库条目");
     database.sqlite.prepare("UPDATE media_roots SET real_path = ? WHERE id = ?").run("/mnt/disk/root-1", "root-1");
     expect(
       repository
@@ -956,7 +956,7 @@ describe("LibraryRepository", () => {
             },
           ],
         }),
-      ).rejects.toThrow("Invalid library asset scope");
+      ).rejects.toThrow("媒体库资源作用范围无效");
     }
     expect((await repository.getEntryById("entry-1")).assets.map((asset) => asset.kind).sort()).toEqual([
       "poster",
@@ -1037,7 +1037,7 @@ describe("LibraryRepository", () => {
 
     await repository.deleteEntry("entry-1");
 
-    await expect(repository.getEntryById("entry-1")).rejects.toThrow("Library entry not found");
+    await expect(repository.getEntryById("entry-1")).rejects.toThrow("未找到媒体库条目");
     await expect(repository.listEntries()).resolves.toEqual([
       expect.objectContaining({
         id: "entry-2",
@@ -1124,7 +1124,7 @@ describe("ScanTaskRepository", () => {
     await repository.complete({ taskId: "task-1", rootId: "root-1", directoryCount: 0, results: [] });
     await expect(repository.requeue("task-1")).resolves.toMatchObject({ status: "queued", videoCount: 0 });
     await expect(repository.get("missing")).rejects.toMatchObject({ code: persistenceErrorCodes.NotFound });
-    await expect(repository.fail("missing", "not found")).resolves.toBeNull();
+    await expect(repository.fail("missing", "未找到")).resolves.toBeNull();
     await repository.claim("task-1");
     await expect(repository.fail("task-1", "unreadable directory")).resolves.toMatchObject({
       status: "failed",
@@ -1181,7 +1181,7 @@ describe("ScanTaskRepository", () => {
       }),
     ).rejects.toMatchObject({
       code: persistenceErrorCodes.ConstraintViolation,
-      message: "Duplicate scan result path for task task-1: ABC-123.mp4",
+      message: "任务 task-1 的扫描结果路径重复：ABC-123.mp4",
     });
   });
 });

@@ -49,7 +49,7 @@ export class StrmDeletionService {
   async configure(current: EmbyDeletionConfig["moviePilot"], input: MoviePilotSettings): Promise<StoredMoviePilot> {
     const settings = moviePilotSettingsSchema.parse(input);
     const token = settings.token ?? current?.token;
-    if (!token) throw new Error("Enter a MoviePilot API token");
+    if (!token) throw new Error("请输入 MoviePilot API 令牌");
     const client = new MoviePilotClient(settings, token, this.fetcher);
     await client.test();
     const { root } = await client.resolveRoot();
@@ -65,11 +65,11 @@ export class StrmDeletionService {
 
   async test(): Promise<{ storage: string }> {
     const connection = this.readSettings().moviePilot;
-    if (!connection) throw new Error("Configure MoviePilot first");
+    if (!connection) throw new Error("请先配置 MoviePilot");
     const client = this.client(connection);
     const result = await client.test();
     if ((await client.resolveRoot()).root.fileid !== connection.root.fileid)
-      throw new Error("MoviePilot root identity changed; reconnect and rebind");
+      throw new Error("MoviePilot 根目录身份已变化，请重新连接并绑定");
     return result;
   }
 
@@ -79,8 +79,8 @@ export class StrmDeletionService {
   ): Promise<{ verified: number; unverified: number }> {
     const settings = this.readSettings();
     const connection = settings.moviePilot;
-    if (!connection) throw new Error("Configure MoviePilot first");
-    if (repository.hasLiveScrapes()) throw new Error("Wait for active media tasks before binding STRM sources");
+    if (!connection) throw new Error("请先配置 MoviePilot");
+    if (repository.hasLiveScrapes()) throw new Error("请等待媒体任务结束后再绑定 STRM 来源");
     const index = await this.client(connection).index(connection);
     let verified = 0;
     let unverified = 0;
@@ -120,7 +120,7 @@ export class StrmDeletionService {
           !isPathInside(library.source.realPath, filesystemPathKey(await realpath(source.sourcePath))) ||
           (linkStat && !isPathInside(library.realPath, filesystemPathKey(await realpath(entry.path))))
         )
-          throw new Error("STRM file type or location changed");
+          throw new Error("STRM 文件类型或位置已变化");
         const sourceContent = await readFile(source.sourcePath);
         const sourceHash = hash(sourceContent);
         if (
@@ -158,7 +158,7 @@ export class StrmDeletionService {
           current.updatedAt.getTime() !== entry.file.updatedAt.getTime() ||
           this.readSettings().moviePilot?.id !== connection.id
         )
-          throw new Error("STRM configuration or file record changed while binding");
+          throw new Error("绑定期间 STRM 配置或文件记录已变化");
         const binding: StrmCloudBinding = {
           connectionId: connection.id,
           fileUpdatedAt: current.updatedAt.getTime(),
@@ -198,7 +198,7 @@ export class StrmDeletionService {
         filesystemPathKey(await realpath(root.path)) !== root.realPath ||
         (await readFile(path.join(root.path, ".mdcz-library-id"), "utf8")) !== root.marker
       )
-        throw new Error("STRM mount identity cannot be verified");
+        throw new Error("无法核验 STRM 挂载身份");
     }
   }
 
@@ -220,7 +220,7 @@ export class StrmDeletionService {
       !event.fileId ||
       ![library.source.path, library.source.realPath].some((root) => isPathInside(root, snapshot.source.sourcePath))
     )
-      throw new Error("STRM source binding is unavailable or changed");
+      throw new Error("STRM 来源绑定不可用或已变化");
     await this.assertMounts(library);
     if (!active()) return false;
     if (event.step !== "validating" && this.readSettings().mode !== "delete") return false;
@@ -233,7 +233,7 @@ export class StrmDeletionService {
       )
     ) {
       if (event.cloudDeletedAt !== null || event.step !== "validating")
-        throw new Error("A new reference appeared during cloud deletion; review required");
+        throw new Error("云端删除期间出现新引用，需要检查");
       if (this.readSettings().mode === "observe") {
         repository.finish(event.id, "ignored", "would_keep_shared_resource", now());
         return false;
@@ -252,24 +252,23 @@ export class StrmDeletionService {
             isPathInside(root, related.snapshot.source.sourcePath),
           ),
       );
-      if (!allowed) throw new Error("A retained STRM source is outside the currently allowed libraries");
+      if (!allowed) throw new Error("要保留的 STRM 来源不在当前允许的媒体库内");
       const previous = sources.get(related.snapshot.source.sourcePath);
       if (previous && previous.snapshot.source.sha256 !== related.snapshot.source.sha256)
-        throw new Error("Conflicting STRM source identities require review");
+        throw new Error("STRM 来源身份冲突，需要检查");
       sources.set(related.snapshot.source.sourcePath, { library: allowed, snapshot: related.snapshot });
     }
-    if (!sources.size) throw new Error("No persisted STRM sources remain");
+    if (!sources.size) throw new Error("没有剩余的已记录 STRM 来源");
     const writable = () => active() && this.readSettings().mode === "delete";
     const client = await this.client(connection);
     let step = event.step;
     if (step === "validating" || step === "deleting_cloud") {
       const target = await client.verify(connection, snapshot);
-      if (!target)
-        throw new Error("Cloud file is absent without a persisted deletion acknowledgement; review required");
+      if (!target) throw new Error("云端文件已不存在，但没有已保存的删除确认记录，需要检查");
       for (const source of sources.values()) await this.assertSource(source.library, source.snapshot, false);
       try {
         await lstat(event.path ?? "");
-        throw new Error("Link STRM reappeared; deletion requires review");
+        throw new Error("Link STRM 再次出现，删除操作需要检查");
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
@@ -288,8 +287,7 @@ export class StrmDeletionService {
     if (step === "verifying_cloud") {
       if (!active() || this.readSettings().mode !== "delete") return false;
       await client.test();
-      if (await client.verify(connection, snapshot))
-        throw new Error("Cloud deletion was acknowledged but file is still listed");
+      if (await client.verify(connection, snapshot)) throw new Error("云端已确认删除，但文件仍在列表中");
       if (!active()) return false;
       repository.update(event.id, { step: "cleaning_source", result: "cleaning_source" });
       step = "cleaning_source";
@@ -312,11 +310,11 @@ export class StrmDeletionService {
       for (const source of sources.values())
         regenerated = (await this.removeSource(event.id, source.library, source.snapshot, writable)) || regenerated;
       if (regenerated) {
-        throw new Error("STRM generator recreated the source; waiting for regeneration to stop");
+        throw new Error("STRM 生成器重新创建了来源文件，正在等待停止生成");
       }
       return active();
     }
-    throw new Error("Unsupported STRM deletion step");
+    throw new Error("不支持此 STRM 删除步骤");
   }
 
   async removeSource(
@@ -332,7 +330,7 @@ export class StrmDeletionService {
       !library.source ||
       !isPathInside(library.source.realPath, filesystemPathKey(await realpath(path.dirname(sourcePath))))
     )
-      throw new Error("STRM source directory identity changed");
+      throw new Error("STRM 来源目录身份已变化");
     let parkedExists = false;
     try {
       await lstat(parked);
@@ -355,7 +353,7 @@ export class StrmDeletionService {
           if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         }
       }
-      throw new Error("STRM changed during cleanup; replacement preserved for manual review");
+      throw new Error("清理期间 STRM 已变化，已保留替换文件供人工检查");
     }
     // Parking first makes a generator's same-path replacement independent of the file being removed.
     if (!active()) return true;
@@ -368,7 +366,7 @@ export class StrmDeletionService {
     snapshot: StrmCloudBinding,
     allowMissing: boolean,
   ): Promise<boolean> {
-    if (!library.source) throw new Error("STRM source root is not configured");
+    if (!library.source) throw new Error("尚未配置 STRM 来源根目录");
     await this.assertMounts(library);
     try {
       const stat = await lstat(snapshot.source.sourcePath);
@@ -378,7 +376,7 @@ export class StrmDeletionService {
         !isPathInside(library.source.realPath, filesystemPathKey(await realpath(snapshot.source.sourcePath))) ||
         hash(await readFile(snapshot.source.sourcePath)) !== snapshot.source.sha256
       )
-        throw new Error("STRM source was replaced; manual review required");
+        throw new Error("STRM 来源已被替换，需要人工检查");
       return true;
     } catch (error) {
       if (allowMissing && (error as NodeJS.ErrnoException).code === "ENOENT") return false;

@@ -80,7 +80,7 @@ export class CrawlerProvider {
     if (!crawler) {
       return {
         input,
-        result: { success: false, error: `Crawler for site '${input.site}' is not implemented`, reason: "unknown" },
+        result: { success: false, error: `尚未实现站点“${input.site}”的刮削器`, reason: "unknown" },
         elapsedMs: Date.now() - startedAt,
       };
     }
@@ -151,14 +151,14 @@ export class CrawlerProvider {
       const current = this.pauses.get(site);
       if (current?.until === undefined && current?.reason === result.reason) return;
       this.pauses.set(site, { reason: result.reason, networkKey: this.getSiteNetworkKey?.(site) });
-      this.logger.warn(`${site} is unavailable on this network (${result.reason}): ${result.error}`);
+      this.logger.warn(`当前网络无法访问 ${site}（${result.reason}）：${result.error}`);
       return;
     }
 
     if (result.reason === "rate_limited") {
       const cooldownMs = Math.min(result.retryAfterMs ?? RATE_LIMIT_COOLDOWN_MS, MAX_RETRY_AFTER_MS);
       this.pauses.set(site, { reason: result.reason, until: now + cooldownMs });
-      this.logger.warn(`${site} rate limited; paused for ${cooldownMs}ms`);
+      this.logger.warn(`${site} 触发限流，暂停 ${cooldownMs} 毫秒`);
       return;
     }
 
@@ -171,8 +171,6 @@ export class CrawlerProvider {
     }
     this.transientFailures.delete(site);
     this.pauses.set(site, { reason: result.reason, until: now + TRANSIENT_COOLDOWN_MS });
-    this.logger.warn(
-      `${site} paused for ${TRANSIENT_COOLDOWN_MS}ms after ${count} consecutive ${result.reason} failures`,
-    );
+    this.logger.warn(`${site} 连续发生 ${count} 次 ${result.reason} 错误，暂停 ${TRANSIENT_COOLDOWN_MS} 毫秒`);
   }
 }

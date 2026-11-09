@@ -41,7 +41,7 @@ export class ScrapeConflictRepository {
 
   preview(input: typeof scrapeConflictResolutions.$inferInsert): void {
     const existing = this.get(input.itemId);
-    if (existing?.keep) throw new Error("A duplicate resolution is already in progress");
+    if (existing?.keep) throw new Error("已有重复版本处理正在进行");
     this.database.db
       .insert(scrapeConflictResolutions)
       .values({ ...input, updatedAt: Date.now() })

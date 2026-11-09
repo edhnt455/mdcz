@@ -95,13 +95,13 @@ const handleChallengeWithSession = async (
   requestHeaders: Record<string, string>,
   warnings: string[],
 ): Promise<ChallengeRetryResult> => {
-  const nextWarnings = [...warnings, `AVJOHO retrying request with session cookies for ${url}`];
+  const nextWarnings = [...warnings, `AVJOHO 正在使用会话 Cookie 重试请求：${url}`];
   const sessionRetriedHtml = await context.session.getText(url, {
     headers: requestHeaders,
   });
 
   if (!isChallengePage(sessionRetriedHtml)) {
-    nextWarnings.push(`AVJOHO resolved browser challenge via session retry for ${url}`);
+    nextWarnings.push(`AVJOHO 已通过会话重试完成浏览器验证：${url}`);
     return {
       html: sessionRetriedHtml,
       warnings: nextWarnings,
@@ -109,7 +109,7 @@ const handleChallengeWithSession = async (
     };
   }
 
-  nextWarnings.push(`AVJOHO browser challenge persisted after session retry for ${url}`);
+  nextWarnings.push(`AVJOHO 会话重试后仍需浏览器验证：${url}`);
   return {
     html: sessionRetriedHtml,
     warnings: nextWarnings,
@@ -127,17 +127,17 @@ const handleChallengeWithCookieResolver = async (
   if (!context.cookieResolver) {
     return {
       html: challengeHtml,
-      warnings: [...warnings, `AVJOHO cookie resolver is unavailable for ${url}`],
+      warnings: [...warnings, `AVJOHO Cookie 解析器不可用：${url}`],
       challengeTriggered: true,
     };
   }
 
-  const nextWarnings = [...warnings, `AVJOHO resolving browser challenge cookies for ${url}`];
+  const nextWarnings = [...warnings, `AVJOHO 正在获取浏览器验证 Cookie：${url}`];
 
   try {
     const cookies = await context.cookieResolver(url);
     if (cookies.length === 0) {
-      nextWarnings.push(`AVJOHO cookie resolver returned no cookies for ${url}`);
+      nextWarnings.push(`AVJOHO Cookie 解析器未返回 Cookie：${url}`);
       return {
         html: challengeHtml,
         warnings: nextWarnings,
@@ -150,7 +150,7 @@ const handleChallengeWithCookieResolver = async (
       headers: requestHeaders,
     });
     if (isChallengePage(retriedHtml)) {
-      nextWarnings.push(`AVJOHO browser challenge persisted after retry for ${url}`);
+      nextWarnings.push(`AVJOHO 重试后仍需浏览器验证：${url}`);
       return {
         html: retriedHtml,
         warnings: nextWarnings,
@@ -158,13 +158,13 @@ const handleChallengeWithCookieResolver = async (
       };
     }
 
-    nextWarnings.push(`AVJOHO resolved browser challenge and retried successfully for ${url}`);
+    nextWarnings.push(`AVJOHO 已完成浏览器验证并重试成功：${url}`);
     return {
       html: retriedHtml,
       warnings: nextWarnings,
     };
   } catch (error) {
-    nextWarnings.push(`AVJOHO failed to resolve browser challenge for ${url}: ${toErrorMessage(error)}`);
+    nextWarnings.push(`AVJOHO 浏览器验证失败：${url}：${toErrorMessage(error)}`);
     return {
       html: challengeHtml,
       warnings: nextWarnings,
@@ -194,7 +194,7 @@ const getHtml = async (
   }
 
   const sessionRetry = await handleChallengeWithSession(context, url, requestHeaders, [
-    `AVJOHO browser challenge detected for ${url}`,
+    `AVJOHO 检测到浏览器验证：${url}`,
   ]);
   if (sessionRetry.resolved) {
     return {
@@ -439,7 +439,7 @@ export class AvjohoActorSource implements BaseActorSource {
       return {
         source: this.name,
         success: false,
-        warnings: [`Failed to load AVJOHO actor data: ${message}`],
+        warnings: [`加载 AVJOHO 演员数据失败：${message}`],
       };
     }
   }

@@ -7,7 +7,7 @@ import "./styles.css";
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
-  throw new Error("Missing #root element");
+  throw new Error("缺少页面根节点 #root");
 }
 
 createRoot(rootElement).render(

@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { normalizeActorAliasMap, normalizeActorName, toTrimmedActorName } from "./actorAliases";
 import { ACTOR_IMAGE_SOURCE_OPTIONS, ACTOR_OVERVIEW_SOURCE_OPTIONS } from "./actorSource";
 import { ASSET_NAMING_MODES } from "./assetNaming";
@@ -16,6 +15,7 @@ import { localPathStyle } from "./localPath";
 import { mediaLibrariesConfigSchema } from "./mediaLibrary";
 import { tagBadgeSettingsSchema } from "./posterBadges";
 import { DEFAULT_R18_METADATA_LANGUAGE, R18_METADATA_LANGUAGE_OPTIONS } from "./r18";
+import { z } from "./zod";
 
 const DEFAULT_SITES: Website[] = [
   Website.DMM,

@@ -138,7 +138,7 @@ export abstract class BaseH0930FamilyCrawler extends BaseCrawler {
     _$: CheerioAPI,
     _detailUrl: string,
   ): SiteError {
-    return new SiteError("not_found", `Detail URL not found for ${context.canonicalNumber}`);
+    return new SiteError("not_found", `未找到 ${context.canonicalNumber} 的详情网址`);
   }
 
   protected async parseDetailPage(

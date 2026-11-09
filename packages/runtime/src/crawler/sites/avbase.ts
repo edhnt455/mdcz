@@ -222,18 +222,18 @@ const readDomActors = ($: CheerioAPI): string[] => {
 const readPageProps = ($: CheerioAPI): AvbasePageProps | undefined => {
   const raw = $("script#__NEXT_DATA__").first().text().trim();
   if (!raw) {
-    throw new SiteError("parse_error", "AVBase parse error: __NEXT_DATA__ missing");
+    throw new SiteError("parse_error", "AVBase 解析失败：缺少 __NEXT_DATA__");
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new SiteError("parse_error", "AVBase parse error: invalid __NEXT_DATA__ JSON");
+    throw new SiteError("parse_error", "AVBase 解析失败：__NEXT_DATA__ JSON 无效");
   }
 
   if (!isRecord(parsed)) {
-    throw new SiteError("parse_error", "AVBase parse error: unexpected __NEXT_DATA__ shape");
+    throw new SiteError("parse_error", "AVBase 解析失败：__NEXT_DATA__ 结构异常");
   }
 
   return (parsed as AvbaseNextData).props?.pageProps;
@@ -257,7 +257,7 @@ const resolveSearchWork = (works: AvbaseSearchWork[], expectedNumber: string): A
     if (!byMaker.has(prefix)) byMaker.set(prefix, work);
   }
   if (byMaker.size > 1) {
-    throw new SiteError("ambiguous", `AVBase lists ${byMaker.size} works under ${expectedNumber}`, {
+    throw new SiteError("ambiguous", `AVBase 在 ${expectedNumber} 下列出 ${byMaker.size} 部作品`, {
       candidates: [...byMaker.values()].map((work) => {
         const products = getProducts(work);
         return {

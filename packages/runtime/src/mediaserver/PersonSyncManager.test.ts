@@ -83,7 +83,7 @@ describe("automatic Emby actor photos", () => {
       processedCount: 1,
       failedCount: 1,
       skippedCount: 1,
-      failures: [{ personId: "a", message: "Invalid actor image content" }],
+      failures: [{ personId: "a", message: "演员图片内容无效" }],
     });
     expect(networkClient.postText.mock.calls[0][2]?.headers?.get("content-type")).toBe("image/png");
   });

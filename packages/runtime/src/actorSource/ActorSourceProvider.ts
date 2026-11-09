@@ -183,7 +183,7 @@ export class ActorSourceProvider {
       return {
         source: sourceName,
         success: false,
-        warnings: [`Actor source "${sourceName}" is not registered.`],
+        warnings: [`演员来源“${sourceName}”未注册。`],
       };
     }
 
@@ -191,7 +191,7 @@ export class ActorSourceProvider {
       return await source.lookup(configuration, query);
     } catch (error) {
       if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
-      const message = `Actor source "${sourceName}" failed for ${query.name}: ${toErrorMessage(error)}`;
+      const message = `演员来源“${sourceName}”查询 ${query.name} 失败：${toErrorMessage(error)}`;
       this.logger.warn(message);
       return {
         source: sourceName,

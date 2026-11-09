@@ -55,7 +55,7 @@ export class ServerPersistenceService {
 
   async initialize(): Promise<ServerPersistenceState> {
     if (this.closed) {
-      throw new Error("Server persistence service is closed");
+      throw new Error("服务端持久化服务已关闭");
     }
     if (this.state) {
       return this.state;
@@ -101,7 +101,7 @@ export class ServerPersistenceService {
       this.lease = null;
       if (isSchemaMigrationFailure(error)) {
         throw new Error(
-          `Database ${this.paths.databasePath} cannot be upgraded to this MDCz version. Stop MDCz, then run from the MDCz install directory: node server.js database rebuild "${this.paths.databasePath}" --confirm (Docker: docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm). The database is renamed to a backup next to itself and a new one is created on the next start; configuration, profiles and library settings are kept; API keys must be created again.`,
+          `数据库 ${this.paths.databasePath} 无法升级到此 MDCz 版本。请停止 MDCz 后，在安装目录执行：node server.js database rebuild "${this.paths.databasePath}" --confirm（Docker：docker compose run --rm --no-deps mdcz node server.js database rebuild "${this.paths.databasePath}" --confirm）。原数据库将重命名为同目录下的备份，下次启动时创建新数据库；配置、档案及媒体库设置会保留，API 密钥需要重新创建。`,
           { cause: error },
         );
       }

@@ -101,14 +101,14 @@ export interface FinalizeScrapeRunInput {
 }
 
 const notFound = (entity: string, id: string): PersistenceError =>
-  new PersistenceError(persistenceErrorCodes.NotFound, `${entity} not found: ${id}`);
+  new PersistenceError(persistenceErrorCodes.NotFound, `未找到${entity}：${id}`);
 
 export class ScrapeRunRepository {
   constructor(private readonly database: PersistenceDatabase) {}
 
   async create(input: CreateScrapeRunInput): Promise<ScrapeRunRecord> {
     if (input.directoryScopeJson && (input.items.length > 0 || input.executionMode !== "batch")) {
-      throw new Error("Directory runs require an unfixed batch manifest");
+      throw new Error("目录任务需要尚未固定的批量文件清单");
     }
     const id = input.id ?? randomUUID();
     const createdAt = input.createdAt ?? new Date();
@@ -145,7 +145,7 @@ export class ScrapeRunRepository {
 
   async get(runId: string): Promise<ScrapeRunRecord> {
     const run = this.database.db.select().from(scrapeRuns).where(eq(scrapeRuns.id, runId)).get();
-    if (!run) throw notFound("Scrape run", runId);
+    if (!run) throw notFound("刮削任务", runId);
 
     const items = run.manifestJson ? (JSON.parse(run.manifestJson) as ScrapeRunManifestItem[]) : [];
 
@@ -183,7 +183,7 @@ export class ScrapeRunRepository {
     input.signal.throwIfAborted();
     const run = this.database.db.select().from(scrapeRuns).where(eq(scrapeRuns.id, input.runId)).get();
     if (!run || run.disposition || run.manifestFixedAt || !run.directoryScopeJson) {
-      throw new Error(`Cannot fix scrape manifest: ${input.runId}`);
+      throw new Error(`无法固定刮削文件清单：${input.runId}`);
     }
     const manifestItems: ScrapeRunManifestItem[] = input.items.map((item) => ({
       id: item.id ?? randomUUID(),
@@ -220,7 +220,7 @@ export class ScrapeRunRepository {
     if (!row) return null;
     const run = await this.get(row.id);
     if (!run.disposition || !run.completedAt) {
-      throw new Error(`Finalized scrape run is missing terminal fields: ${run.id}`);
+      throw new Error(`已结束的刮削任务缺少结束状态字段：${run.id}`);
     }
     return { ...run, disposition: run.disposition, completedAt: run.completedAt };
   }
@@ -242,7 +242,7 @@ export class ScrapeRunRepository {
       .where(runId ? eq(scrapeRuns.id, runId) : undefined)
       .orderBy(desc(scrapeRuns.createdAt))
       .all();
-    if (runId && !rows.length) throw notFound("Scrape run", runId);
+    if (runId && !rows.length) throw notFound("刮削任务", runId);
     return rows.map(({ outputRootId, outputRelativeDirectory, errorMessage, ...run }) => ({
       ...run,
       requestedOutputRootId: outputRootId,
@@ -254,7 +254,7 @@ export class ScrapeRunRepository {
   async finalize(input: FinalizeScrapeRunInput): Promise<ScrapeRunRecord> {
     const run = await this.get(input.runId);
     if (input.disposition === "completed" && !run.manifestFixedAt) {
-      throw new Error(`Cannot finalize scrape run ${run.id}: manifest is not fixed`);
+      throw new Error(`无法结束刮削任务 ${run.id}：文件清单尚未固定`);
     }
     const successCount = input.successCount ?? run.successCount;
     const failedCount = input.failedCount ?? run.failedCount;
@@ -294,7 +294,7 @@ export class ScrapeRunRepository {
       .set({
         disposition: "interrupted",
         completedAt: interruptedAt,
-        errorMessage: "Interrupted by shutdown",
+        errorMessage: "服务关闭导致中断",
       })
       .where(isNull(scrapeRuns.disposition))
       .run();
@@ -303,7 +303,7 @@ export class ScrapeRunRepository {
   async rerunDirectory(runId: string): Promise<ScrapeRunRecord> {
     const run = await this.get(runId);
     if (!run.disposition || !run.directoryScopeJson || !run.libraryId) {
-      throw new Error(`Directory run cannot be rerun: ${runId}`);
+      throw new Error(`无法重新执行目录任务：${runId}`);
     }
     return await this.create({
       previousRunId: run.id,

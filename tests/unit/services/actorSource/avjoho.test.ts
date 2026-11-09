@@ -166,13 +166,13 @@ describe("AvjohoActorSource", () => {
     expect(first.success).toBe(true);
     expect(first.profile?.name).toBe("北川美玖");
     expect(first.warnings).toContain(
-      "AVJOHO browser challenge detected for https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+      "AVJOHO 检测到浏览器验证：https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
     );
     expect(first.warnings).toContain(
-      "AVJOHO browser challenge persisted after session retry for https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+      "AVJOHO 会话重试后仍需浏览器验证：https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
     );
     expect(first.warnings).toContain(
-      "AVJOHO resolved browser challenge and retried successfully for https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+      "AVJOHO 已完成浏览器验证并重试成功：https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
     );
 
     expect(second.success).toBe(true);
@@ -212,7 +212,7 @@ describe("AvjohoActorSource", () => {
     expect(result.success).toBe(true);
     expect(result.profile?.name).toBe("北川美玖");
     expect(result.warnings).toContain(
-      "AVJOHO resolved browser challenge via session retry for https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+      "AVJOHO 已通过会话重试完成浏览器验证：https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
     );
     expect(cookieResolver).not.toHaveBeenCalled();
     expect(networkClient.getText).toHaveBeenCalledTimes(3);
@@ -229,21 +229,21 @@ describe("AvjohoActorSource", () => {
 
     expect(first.success).toBe(true);
     expect(first.warnings).toContain(
-      "AVJOHO browser challenge detected for https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+      "AVJOHO 检测到浏览器验证：https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
     );
     expect(first.warnings).toContain(
-      "AVJOHO browser challenge persisted after session retry for https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+      "AVJOHO 会话重试后仍需浏览器验证：https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
     );
     expect(first.warnings).toContain(
-      "AVJOHO cookie resolver is unavailable for https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
+      "AVJOHO Cookie 解析器不可用：https://db.avjoho.com/?s=%E5%8C%97%E5%B7%9D%E7%BE%8E%E7%8E%96",
     );
 
     expect(second.success).toBe(true);
     expect(second.warnings).toContain(
-      "AVJOHO browser challenge detected for https://db.avjoho.com/?s=%E4%B8%83%E7%80%AC%E3%82%A2%E3%83%AA%E3%82%B9",
+      "AVJOHO 检测到浏览器验证：https://db.avjoho.com/?s=%E4%B8%83%E7%80%AC%E3%82%A2%E3%83%AA%E3%82%B9",
     );
     expect(second.warnings).toContain(
-      "AVJOHO browser challenge persisted after session retry for https://db.avjoho.com/?s=%E4%B8%83%E7%80%AC%E3%82%A2%E3%83%AA%E3%82%B9",
+      "AVJOHO 会话重试后仍需浏览器验证：https://db.avjoho.com/?s=%E4%B8%83%E7%80%AC%E3%82%A2%E3%83%AA%E3%82%B9",
     );
     expect(networkClient.getText).toHaveBeenCalledTimes(4);
   });

@@ -71,7 +71,7 @@ describe("ScrapeRunRepository", () => {
       manifestFixedAt: null,
       items: [],
     });
-    await expect(repository.finalize({ runId: run.id, disposition: "completed" })).rejects.toThrow("Cannot finalize");
+    await expect(repository.finalize({ runId: run.id, disposition: "completed" })).rejects.toThrow("无法结束刮削任务");
     const controller = new AbortController();
     const input = {
       runId: run.id,
@@ -89,7 +89,7 @@ describe("ScrapeRunRepository", () => {
     if (outcome === "empty" || outcome === "files") {
       const fixed = await repository.fixManifest(input);
       expect(fixed.manifestFixedAt).toBeInstanceOf(Date);
-      await expect(repository.fixManifest(input)).rejects.toThrow("Cannot fix");
+      await expect(repository.fixManifest(input)).rejects.toThrow("无法固定刮削文件清单");
       await repository.finalize({
         runId: run.id,
         disposition: outcome === "files" ? "failed" : "completed",
@@ -210,7 +210,7 @@ describe("ScrapeRunRepository", () => {
     expect(reloaded).toMatchObject({
       disposition: "interrupted",
       completedAt: new Date("2026-08-24T06:00:00.000Z"),
-      error: "Interrupted by shutdown",
+      error: "服务关闭导致中断",
     });
   });
 });

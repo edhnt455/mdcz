@@ -405,7 +405,7 @@ describe("Emby deletion sync", () => {
     f.reopen();
     const restarted = f.createService();
     const next = await restarted.rotateSecret();
-    await expect(restarted.assertToken(f.token)).rejects.toThrow("Invalid Emby webhook credential");
+    await expect(restarted.assertToken(f.token)).rejects.toThrow("Emby Webhook 凭证无效");
     await restarted.assertToken(next.token);
     await f.advance(restarted);
     expect(f.count("library_items")).toBe(0);
@@ -448,7 +448,7 @@ describe("Emby deletion sync", () => {
     expect(f.count("library_items")).toBe(1);
     await expect(
       f.service.configure({ mode: "delete", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] }),
-    ).rejects.toThrow("identity marker is missing");
+    ).rejects.toThrow("缺少媒体库身份标记");
     await rename(f.output, `${f.output}-offline`);
     expect(
       (await f.service.configure({ mode: "off", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] })).settings
@@ -469,7 +469,7 @@ describe("Emby deletion sync", () => {
     expect(manual.remote.deleteCalls).toBe(0);
     await expect(
       manual.service.configure({ mode: "observe", serverId: "emby-server", libraryIds: [manual.mediaLibrary.id] }),
-    ).rejects.toThrow("webhook");
+    ).rejects.toThrow("Webhook");
     const f = await fixture("observe");
     await f.addMovie();
     await writeFile(path.join(f.output, "unregistered.mp4"), "video");
@@ -587,7 +587,7 @@ describe("copy STRM deep deletion", () => {
     await f.advance();
     await f.advance();
     expect(f.repository().event(broken.id)?.attempts).toBeGreaterThan(0);
-    expect(f.repository().event(broken.id)?.result).toContain("replaced");
+    expect(f.repository().event(broken.id)?.result).toContain("已被替换");
     expect(f.events().find((event) => event.id === accepted.id)?.result).toBe("confirming_source_cleanup");
     expect(f.remote.deleteCalls).toBe(1);
     expect(f.count("library_item_files")).toBe(2);
@@ -700,7 +700,7 @@ describe("copy STRM deep deletion", () => {
     if (failure === "lost acknowledgement") {
       f.database.sqlite.prepare("UPDATE emby_deletion_events SET next_attempt_at = 0").run();
       await f.advance();
-      expect(f.events()[0].result).toContain("without a persisted deletion acknowledgement");
+      expect(f.events()[0].result).toContain("没有已保存的删除确认记录");
       expect(f.remote.deleteCalls).toBe(1);
     }
   });
@@ -722,7 +722,7 @@ describe("copy STRM deep deletion", () => {
     await f.service.configure({ mode: "delete", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] });
     await f.advance();
     expect(f.count("library_item_files")).toBe(1);
-    expect(f.events()[0].result).toContain("recreated");
+    expect(f.events()[0].result).toContain("重新创建");
     f.database.sqlite.prepare("UPDATE emby_deletion_events SET next_attempt_at = 0").run();
     await f.advance();
     expect(f.count("library_item_files")).toBe(0);

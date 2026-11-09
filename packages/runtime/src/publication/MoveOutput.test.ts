@@ -291,7 +291,7 @@ describe("MoveOutput", () => {
       for (const occupied of [targetPath, conflictPath]) {
         await writeFile(occupied, "existing");
         await expect(output.install({ moves: [move], artifacts: [], reorganize: true, commit })).rejects.toThrow(
-          "already exists",
+          "已存在",
         );
         expect(commit).not.toHaveBeenCalled();
         await expect(readFile(local.sourcePath, "utf8")).resolves.toBe("video");
@@ -326,7 +326,7 @@ describe("MoveOutput", () => {
           throw Object.assign(new Error("cross device"), { code: "EXDEV" });
         },
       }).install({ moves: [{ ...crossVolume.move, transfer: "hardlink" }], artifacts: [], commit: () => undefined }),
-    ).rejects.toThrow("same volume");
+    ).rejects.toThrow("同一磁盘分区");
     await expect(readFile(crossVolume.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(crossVolume.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
     const test = await fixture();
@@ -338,7 +338,7 @@ describe("MoveOutput", () => {
         artifacts: [],
         commit: () => undefined,
       }),
-    ).rejects.toThrow("already exists");
+    ).rejects.toThrow("已存在");
     await expect(readFile(test.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(test.targetPath, "utf8")).resolves.toBe("existing");
     const overlapping = await fixture();
@@ -348,7 +348,7 @@ describe("MoveOutput", () => {
         artifacts: [{ targetPath: overlapping.targetPath, data: "metadata" }],
         commit: () => undefined,
       }),
-    ).rejects.toThrow("cannot overwrite a source media file");
+    ).rejects.toThrow("不能覆盖源媒体文件");
     await expect(readFile(overlapping.sourcePath, "utf8")).resolves.toBe("video");
     await expect(readFile(overlapping.targetPath)).rejects.toMatchObject({ code: "ENOENT" });
     const linked = await fixture();
@@ -369,7 +369,7 @@ describe("MoveOutput", () => {
         artifacts: [],
         commit,
       }),
-    ).rejects.toThrow("Cannot move a relative file symlink to another directory");
+    ).rejects.toThrow("无法将使用相对路径的文件符号链接移动到其他目录");
     expect(fs.readlink).toHaveBeenCalledExactlyOnceWith(linked.sourcePath);
     expect(rename).not.toHaveBeenCalled();
     expect(copyFile).not.toHaveBeenCalled();
@@ -392,7 +392,7 @@ describe("MoveOutput", () => {
           },
           commit,
         }),
-      ).rejects.toThrow(changed === "source" ? "source changed before mutation" : "already exists");
+      ).rejects.toThrow(changed === "source" ? "发布写入前来源已变化" : "已存在");
       expect(commit).not.toHaveBeenCalled();
       await expect(readFile(pending.sourcePath, "utf8")).resolves.toBe(
         changed === "source" ? "changed after observation" : "video",

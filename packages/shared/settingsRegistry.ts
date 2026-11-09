@@ -227,37 +227,37 @@ export const SETTINGS_SCHEMA_EXEMPTIONS: SettingsSchemaExemption[] = [
   {
     path: "libraries",
     kind: "internal",
-    reason: "Libraries are edited on the Libraries page and saved in the active configuration profile.",
+    reason: "媒体库在媒体库页面编辑，并保存在当前配置档案中。",
   },
   {
     path: "scrape.numberMappings",
     kind: "dynamic-record",
-    reason: "Number mappings are user-defined file name keywords, saved from pending-list repairs.",
+    reason: "番号映射是用户定义的文件名关键词，通过待处理列表修复功能保存。",
   },
   {
     path: "embyDeletion.mode",
     kind: "internal",
-    reason: "Emby deletion mode is edited by the deletion panel and saved in the profile file.",
+    reason: "Emby 删除模式由删除面板编辑，并保存在配置档案中。",
   },
   {
     path: "embyDeletion.serverId",
     kind: "internal",
-    reason: "Emby server id is edited by the deletion panel and saved in the profile file.",
+    reason: "Emby 服务器 ID 由删除面板编辑，并保存在配置档案中。",
   },
   {
     path: "embyDeletion.libraries",
     kind: "internal",
-    reason: "Linked library identities are edited by the deletion panel and saved in the profile file.",
+    reason: "关联媒体库身份由删除面板编辑，并保存在配置档案中。",
   },
   {
     path: "embyDeletion.secretHash",
     kind: "internal",
-    reason: "The webhook secret hash is rotated by the deletion panel and saved in the profile file.",
+    reason: "Webhook 密钥哈希由删除面板更新，并保存在配置档案中。",
   },
   {
     path: "embyDeletion.moviePilot",
     kind: "internal",
-    reason: "The MoviePilot connection and token are edited by the deletion panel and saved in the profile file.",
+    reason: "MoviePilot 连接和令牌由删除面板编辑，并保存在配置档案中。",
   },
 ];
 

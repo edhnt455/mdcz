@@ -89,7 +89,7 @@ describe("ScrapeService queue admission", () => {
         libraryId: "library-1",
         refs: [{ rootId: root.id, relativePath: "ABC-001.mp4" }],
       }),
-    ).rejects.toThrow("Scrape queue is closing");
+    ).rejects.toThrow("刮削队列正在关闭");
 
     expect(scrapeRuns.create).not.toHaveBeenCalled();
   });

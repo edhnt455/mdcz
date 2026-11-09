@@ -34,18 +34,17 @@ export class MoviePilotClient {
         },
       );
     } catch {
-      throw new Error(`MoviePilot ${endpoint}: connection failed or response lost`);
+      throw new Error(`MoviePilot ${endpoint}：连接失败或响应丢失`);
     }
-    if (!response.ok) throw new Error(`MoviePilot ${endpoint}: HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`MoviePilot ${endpoint}：HTTP ${response.status}`);
     let bodyData: unknown;
     try {
       bodyData = await response.json();
     } catch {
-      throw new Error(`MoviePilot ${endpoint}: invalid JSON response`);
+      throw new Error(`MoviePilot ${endpoint}：JSON 响应无效`);
     }
     const parsed = moviePilotEnvelopeSchema.safeParse(bodyData);
-    if (!parsed.success || !parsed.data.success)
-      throw new Error(`MoviePilot ${endpoint}: unsuccessful business response`);
+    if (!parsed.success || !parsed.data.success) throw new Error(`MoviePilot ${endpoint}：业务请求未成功`);
     return { data: parsed.data.data, headers: response.headers };
   }
 
@@ -53,13 +52,13 @@ export class MoviePilotClient {
     const { data } = await this.request("storage/options");
     const options = moviePilotOptionsSchema.parse(data);
     if (!options.some((option) => option.type === this.settings.storage))
-      throw new Error("MoviePilot u115 storage is not available");
+      throw new Error("MoviePilot 的 u115 存储不可用");
     return { storage: this.settings.storage };
   }
 
   async list(directory: MoviePilotFile): Promise<MoviePilotFile[]> {
     if (directory.storage !== this.settings.storage || directory.type !== "dir")
-      throw new Error("MoviePilot directory identity is invalid");
+      throw new Error("MoviePilot 目录身份无效");
     const items: MoviePilotFile[] = [];
     const seen = new Set<string>();
     let total: number | undefined;
@@ -77,7 +76,7 @@ export class MoviePilotClient {
         Number(response.headers.get("X-Page-Size")) !== PAGE_SIZE ||
         Number(response.headers.get("X-Result-Count")) !== rows.length
       )
-        throw new Error("MoviePilot pagination is incomplete, changed or exceeds the scan limit");
+        throw new Error("MoviePilot 分页数据不完整、已变化或超出扫描上限");
       total = currentTotal;
       for (const item of rows) {
         const itemPath = item.path.replace(/\/$/u, "");
@@ -91,16 +90,15 @@ export class MoviePilotClient {
           path.posix.dirname(itemPath) !== (path.posix.normalize(directory.path).replace(/\/$/u, "") || "/") ||
           seen.has(item.fileid)
         )
-          throw new Error("MoviePilot directory membership or file identity cannot be verified");
+          throw new Error("无法核验 MoviePilot 目录归属或文件身份");
         seen.add(item.fileid);
         items.push(item);
       }
       if (items.length === total) return items;
-      if (!rows.length || rows.length > PAGE_SIZE || items.length > total)
-        throw new Error("MoviePilot pagination is incomplete");
+      if (!rows.length || rows.length > PAGE_SIZE || items.length > total) throw new Error("MoviePilot 分页数据不完整");
       await delay(200);
     }
-    throw new Error("MoviePilot directory exceeds the scan limit");
+    throw new Error("MoviePilot 目录超出扫描上限");
   }
 
   async resolveRoot(): Promise<{ root: MoviePilotFile; ancestors: MoviePilotFile[] }> {
@@ -108,11 +106,11 @@ export class MoviePilotClient {
     const ancestors: MoviePilotFile[] = [];
     for (const part of path.posix.normalize(this.settings.rootPath).split("/").filter(Boolean)) {
       const matches = (await this.list(directory)).filter((item) => item.type === "dir" && item.name === part);
-      if (matches.length !== 1) throw new Error("MoviePilot allowed root cannot be uniquely resolved");
+      if (matches.length !== 1) throw new Error("无法唯一确定 MoviePilot 允许访问的根目录");
       directory = matches[0];
       ancestors.push(directory);
     }
-    if (!ancestors.length) throw new Error("The cloud storage root cannot be used as the allowed directory");
+    if (!ancestors.length) throw new Error("不能将云盘根目录设为允许访问的目录");
     return { root: directory, ancestors };
   }
 
@@ -121,17 +119,17 @@ export class MoviePilotClient {
   ): Promise<Map<string, { target: MoviePilotFile; ancestors: MoviePilotFile[] }[]>> {
     const resolved = await this.resolveRoot();
     if (resolved.root.fileid !== connection.root.fileid)
-      throw new Error("MoviePilot allowed root identity changed; reconnect and rebind");
+      throw new Error("MoviePilot 允许访问的根目录身份已变化，请重新连接并绑定");
     const queue = [{ directory: resolved.root, ancestors: resolved.ancestors }];
     const visited = new Set<string>();
     const index = new Map<string, { target: MoviePilotFile; ancestors: MoviePilotFile[] }[]>();
     let scanned = 0;
     for (let current = queue.shift(); current; current = queue.shift()) {
       if (visited.has(current.directory.fileid) || visited.size >= 1_000)
-        throw new Error("MoviePilot directory traversal is ambiguous or exceeds the scan limit");
+        throw new Error("MoviePilot 目录遍历结果不明确或超出扫描上限");
       visited.add(current.directory.fileid);
       for (const item of await this.list(current.directory)) {
-        if (++scanned > MAX_ENTRIES) throw new Error("MoviePilot resource scan exceeds the limit");
+        if (++scanned > MAX_ENTRIES) throw new Error("MoviePilot 资源扫描超出上限");
         if (item.type === "dir") queue.push({ directory: item, ancestors: [...current.ancestors, item] });
         else {
           if (!item.pickcode) continue;
@@ -156,13 +154,13 @@ export class MoviePilotClient {
             path.posix.normalize(connection.rootPath).replace(/\/$/u, ""),
       )
     )
-      throw new Error("MoviePilot source binding changed");
+      throw new Error("MoviePilot 来源绑定已变化");
     let directory: MoviePilotFile = { storage: connection.storage, path: "/", type: "dir", fileid: "0" };
     for (const ancestor of binding.ancestors) {
       const matches = (await this.list(directory)).filter(
         (item) => item.type === "dir" && item.fileid === ancestor.fileid && item.path === ancestor.path,
       );
-      if (matches.length !== 1) throw new Error("MoviePilot bound directory moved or changed");
+      if (matches.length !== 1) throw new Error("MoviePilot 绑定的目录已移动或变化");
       directory = matches[0];
     }
     const items = await this.list(directory);
@@ -176,7 +174,7 @@ export class MoviePilotClient {
       target.parent_fileid !== binding.target.parent_fileid ||
       items.filter((item) => item.pickcode === target.pickcode).length !== 1
     )
-      throw new Error("MoviePilot target identity changed");
+      throw new Error("MoviePilot 目标身份已变化");
     return target;
   }
 
@@ -189,7 +187,7 @@ export class MoviePilotClient {
       !file.pickcode ||
       file.size == null
     )
-      throw new Error("MoviePilot deletion requires a verified file identity");
+      throw new Error("MoviePilot 删除操作需要已核验的文件身份");
     await this.request("storage/delete", file);
   }
 }

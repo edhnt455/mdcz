@@ -122,7 +122,7 @@ export const AboutView = ({ about = fallbackAbout, loading = false, logoSrc, onO
 
           <footer className="pb-1 pt-2 text-center">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/30">
-              Crafted by ShotHeadman
+              由 ShotHeadman 制作
             </p>
           </footer>
         </div>

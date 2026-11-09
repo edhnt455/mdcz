@@ -124,7 +124,7 @@ export abstract class BaseCrawler implements SiteAdapter {
       if (!data) {
         throw (
           this.classifyDetailFailure(context, detailHtml, detailDoc, detailRequest.detailUrl) ??
-          new SiteError("parse_error", `Metadata parsing failed for ${context.number}`)
+          new SiteError("parse_error", `解析 ${context.number} 的元数据失败`)
         );
       }
 
@@ -134,7 +134,7 @@ export abstract class BaseCrawler implements SiteAdapter {
         data: this.normalizeCrawlerData(context, data),
       };
     } catch (error) {
-      this.logger.warn(`Crawler pipeline failed for ${context.number}: ${toErrorMessage(error)}`);
+      this.logger.warn(`${context.number} 刮削流程失败：${toErrorMessage(error)}`);
       return toCrawlerErrorResult(error);
     }
   }
@@ -142,14 +142,14 @@ export abstract class BaseCrawler implements SiteAdapter {
   private async resolveDetailRequest(context: Context): Promise<DetailRequest> {
     const searchUrl = await this.generateSearchUrl(context);
     if (!searchUrl) {
-      throw new SiteError("not_found", `Search URL not generated for ${context.number}`);
+      throw new SiteError("not_found", `未生成 ${context.number} 的搜索网址`);
     }
 
     const searchHtml = await this.fetch(searchUrl, context);
     const searchDoc = load(searchHtml);
     const searchResolution = await this.parseSearchPage(context, searchDoc, searchUrl);
     if (!searchResolution) {
-      throw new SiteError("not_found", `Detail URL not found for ${context.number}`);
+      throw new SiteError("not_found", `未找到 ${context.number} 的详情网址`);
     }
 
     const detailRequest =

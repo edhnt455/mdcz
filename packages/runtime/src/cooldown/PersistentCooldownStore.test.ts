@@ -39,7 +39,7 @@ describe("ImageHostCooldownTracker", () => {
 
     tracker.recordFailure(url, "HTTP 503", 503);
     expect(tracker.shouldSkipUrl(url)).toBe(true);
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("after 3 failures"));
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("此前失败 3 次"));
   });
 
   it("resetAll clears cooldown state and skip-log deduplication", () => {
@@ -60,6 +60,6 @@ describe("ImageHostCooldownTracker", () => {
       tracker.recordFailure(url, "HTTP 503", 503);
     }
     expect(tracker.shouldSkipUrl(url)).toBe(true);
-    expect(logger.warn.mock.calls.filter(([message]) => String(message).startsWith("Skipping "))).toHaveLength(2);
+    expect(logger.warn.mock.calls.filter(([message]) => String(message).startsWith("跳过 "))).toHaveLength(2);
   });
 });

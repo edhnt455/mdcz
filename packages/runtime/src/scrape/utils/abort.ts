@@ -1,5 +1,5 @@
 export const ABORT_ERROR_NAME = "AbortError";
-export const ABORT_ERROR_MESSAGE = "Operation aborted";
+export const ABORT_ERROR_MESSAGE = "操作已中止";
 
 export const createAbortError = (): Error => {
   const error = new Error(ABORT_ERROR_MESSAGE);

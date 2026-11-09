@@ -8,12 +8,12 @@ export const parsePort = (value: string | undefined): number => {
 
   const normalizedValue = value.trim();
   if (!/^\d+$/.test(normalizedValue)) {
-    throw new Error(`Invalid PORT value: ${value}`);
+    throw new Error(`PORT 值无效：${value}`);
   }
 
   const port = Number(normalizedValue);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid PORT value: ${value}`);
+    throw new Error(`PORT 值无效：${value}`);
   }
 
   return port;
@@ -26,7 +26,7 @@ export const parseHost = (value: string | undefined): string => {
 
   const normalizedValue = value.trim();
   if (!/^[A-Za-z0-9._:-]+$/.test(normalizedValue) || normalizedValue.length > 253) {
-    throw new Error(`Invalid MDCZ_HOST value: ${value}`);
+    throw new Error(`MDCZ_HOST 值无效：${value}`);
   }
 
   return normalizedValue;

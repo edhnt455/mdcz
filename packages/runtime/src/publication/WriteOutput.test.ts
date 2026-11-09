@@ -155,7 +155,7 @@ describe("WriteOutput", () => {
         protectedMediaFiles: [targetPath],
         commit: () => undefined,
       }),
-    ).rejects.toThrow("cannot overwrite a source media file");
+    ).rejects.toThrow("不能覆盖源媒体文件");
     const stagingPath = path.join(directory, ".mdcz-staging-poster.part");
     await writeFile(stagingPath, "poster");
     await expect(
@@ -163,7 +163,7 @@ describe("WriteOutput", () => {
         commit: () => undefined,
         protectedMediaFiles: [stagingPath],
       }),
-    ).rejects.toThrow("Cannot consume a media file");
+    ).rejects.toThrow("不能消耗媒体文件");
     await expect(readFile(stagingPath, "utf8")).resolves.toBe("poster");
   });
 });

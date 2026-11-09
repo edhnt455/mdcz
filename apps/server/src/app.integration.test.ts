@@ -179,7 +179,7 @@ describe("buildServer composition integration", () => {
     } finally {
       if (process.platform !== "win32") await chmod(statePath, 0o600);
     }
-    await expect(restartedAuth.login("admin")).rejects.toThrow("Incorrect administrator password");
+    await expect(restartedAuth.login("admin")).rejects.toThrow("管理员密码错误");
     const other = await createTestServer();
     await other.services.auth.completeSetup({
       password: winningPassword,
@@ -189,7 +189,7 @@ describe("buildServer composition integration", () => {
     );
     expect(otherState.passwordHash).not.toBe(state.passwordHash);
     await writeFile(statePath, "{}", "utf8");
-    await expect(restartedAuth.status()).rejects.toThrow("Invalid auth-state.json");
+    await expect(restartedAuth.status()).rejects.toThrow("auth-state.json 无效");
   });
 
   it.each([
@@ -230,7 +230,7 @@ describe("buildServer composition integration", () => {
       payload: { password: "another-password" },
     });
     expect(denied.statusCode).toBe(403);
-    await expect(services.auth.login("wrong-password")).rejects.toThrow("Incorrect administrator password");
+    await expect(services.auth.login("wrong-password")).rejects.toThrow("管理员密码错误");
     await expect(services.auth.login(environmentPassword)).resolves.toMatchObject({ authenticated: true });
     await expect(readFile(join(services.config.runtimePaths.configDir, "auth-state.json"))).rejects.toMatchObject({
       code: "ENOENT",
@@ -504,7 +504,7 @@ describe("buildServer composition integration", () => {
       headers: { authorization: `Bearer ${token}` },
     });
 
-    expect(overlapping.json().error.message).toContain("overlaps library");
+    expect(overlapping.json().error.message).toContain("来源目录与媒体库");
     expect(
       rootsResponse
         .json()
@@ -528,7 +528,7 @@ describe("buildServer composition integration", () => {
     await services.config.createProfile("empty");
     await services.config.switchProfile("empty");
     expect(await services.libraries.list()).toEqual([]);
-    await expect(services.libraries.get(firstLibrary.libraryId)).rejects.toThrow("Library not found");
+    await expect(services.libraries.get(firstLibrary.libraryId)).rejects.toThrow("未找到媒体库");
     await services.config.switchProfile("default");
     expect(await services.libraries.list()).toEqual(libraries);
 
@@ -663,7 +663,7 @@ describe("buildServer composition integration", () => {
     expect(watermarkResponse.statusCode).toBe(200);
     expect(watermarkResponse.json().result.data.path).toBe("/server-data/watermark");
     expect(unauthorizedResponse.statusCode).toBe(401);
-    expect(unauthorizedResponse.json().error.message).toContain("Authentication required");
+    expect(unauthorizedResponse.json().error.message).toContain("请先登录");
   });
 
   it("paces JavDB site tests from startup and retains pending requests through concurrent configuration updates", async () => {
@@ -908,7 +908,7 @@ describe("buildServer composition integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           available: false,
-          availabilityError: expect.stringContaining("File missing; media library record retained only"),
+          availabilityError: expect.stringContaining("文件不存在，仅保留媒体库记录"),
         }),
       ]),
     );
@@ -957,7 +957,7 @@ describe("buildServer composition integration", () => {
     });
 
     expect(response.statusCode).toBe(500);
-    expect(response.json().error.message).toContain("escapes media root");
+    expect(response.json().error.message).toContain("路径超出媒体根目录");
   });
 
   it("suggests server host directories through tRPC without returning files", async () => {
@@ -1061,7 +1061,7 @@ describe("buildServer composition integration", () => {
     const revoked = await fastify.inject({ method: "GET", url: "/api/automation/library/recent", headers: automation });
 
     expect(unauthorizedResponse.statusCode).toBe(401);
-    expect(unauthorizedResponse.json().message).toContain("Authentication required");
+    expect(unauthorizedResponse.json().message).toContain("请先登录");
     expect(startResponse.statusCode).toBe(200);
     expect(startResponse.json().webhook).toMatchObject({ taskId, kind: "scrape", errors: [] });
     expect(recentResponse.json().tasks[0]).toMatchObject({ taskId, kind: "scrape", status: "completed" });
@@ -1140,7 +1140,7 @@ describe("buildServer composition integration", () => {
       configured: true,
       error: null,
       library: { name: "Library" },
-      failures: [{ name: "Elsewhere", error: expect.stringContaining("No library's source directory contains") }],
+      failures: [{ name: "Elsewhere", error: expect.stringContaining("所有媒体库的来源目录均不包含") }],
     });
     await expect
       .poll(async () => (await services.activity.list()).entries.map(({ kind, status }) => ({ kind, status })))

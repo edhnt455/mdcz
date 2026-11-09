@@ -130,6 +130,10 @@ export const pending = {
   ignoreTokenPlaceholder: "e.g. hhd800.com@",
   saveIgnoreToken: "Save and retry",
   ignore: "Ignore",
+  delete: "Delete",
+  deleteHint: "Delete this STRM and its 115 source file immediately",
+  deleting: "Deleting…",
+  deleted: "STRM and 115 source file deleted",
   ignoreConfirm: "Remove this file from the pending list? The file stays where it is.",
   confirmTypes: {
     umr: "Cracked (UMR)",

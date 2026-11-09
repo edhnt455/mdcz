@@ -103,7 +103,7 @@ export const createScrapeNumberResolver = (input: {
               }
             }
             logger.info(
-              `[number-recognition] Trying AI for ${fileInfo.fileName}; previous=${fileInfo.number || "none"}`,
+              `[number-recognition] 正在使用 AI 识别 ${fileInfo.fileName}；此前番号=${fileInfo.number || "无"}`,
             );
             const recognition = await input.recognitionService.recognize(
               fileInfo.filePath,
@@ -115,7 +115,7 @@ export const createScrapeNumberResolver = (input: {
             member.numberRecognition = { ...recognition, trigger: "automatic" };
             if (recognition.status !== "recognized" || !recognition.number) {
               logger.warn(
-                `[number-recognition] ${fileInfo.fileName}: ${recognition.status}; number=${recognition.number ?? "none"}${recognition.error ? `; ${recognition.error}` : ""}; manual repair required`,
+                `[number-recognition] ${fileInfo.fileName}：${recognition.status}；番号=${recognition.number ?? "无"}${recognition.error ? `；${recognition.error}` : ""}；需要人工修复`,
               );
               return;
             }

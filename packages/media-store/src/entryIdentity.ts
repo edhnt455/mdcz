@@ -24,9 +24,9 @@ export const canonicalizeRootFileRefs = <T extends { rootId: string; relativePat
   const rootsById = new Map(roots.map((root) => [root.id, root]));
   return refs.map((ref) => {
     const root = rootsById.get(ref.rootId);
-    if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+    if (!root) throw new Error(`未找到媒体根目录：${ref.rootId}`);
     const relativePath = normalizeRootRelativePath(ref.relativePath);
-    if (!relativePath) throw new Error("Media file path must not be empty");
+    if (!relativePath) throw new Error("媒体文件路径不能为空");
     resolveRootRelativePath(root, relativePath);
     return { ...ref, relativePath };
   });

@@ -55,8 +55,7 @@ export class MediaRootRepository {
       if (error.code === "ENOENT") return null;
       throw error;
     });
-    if (realPath !== null && !(await stat(realPath)).isDirectory())
-      throw new Error(`Media root is not a directory: ${hostPath}`);
+    if (realPath !== null && !(await stat(realPath)).isDirectory()) throw new Error(`媒体根路径不是目录：${hostPath}`);
     for (const root of await this.list()) {
       if (root.realPath !== null) continue;
       try {
@@ -102,7 +101,7 @@ export class MediaRootRepository {
   async get(id: string): Promise<PersistedMediaRoot> {
     const row = this.database.db.select().from(mediaRoots).where(eq(mediaRoots.id, id)).limit(1).get();
     if (!row) {
-      throw new PersistenceError(persistenceErrorCodes.NotFound, `Media root not found: ${id}`);
+      throw new PersistenceError(persistenceErrorCodes.NotFound, `未找到媒体根目录：${id}`);
     }
     return toMediaRoot(row);
   }

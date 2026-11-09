@@ -120,7 +120,7 @@ export interface ParsedNfoSnapshot {
 export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const root = parser.parse(xml) as unknown;
   const movie = root && typeof root === "object" ? (root as Record<string, unknown>).movie : undefined;
-  if (!movie || typeof movie !== "object") throw new Error("Invalid NFO movie node");
+  if (!movie || typeof movie !== "object") throw new Error("NFO 影片节点无效");
 
   const movieNode = movie as Record<string, unknown>;
   const title =
@@ -133,8 +133,8 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
   const ratingText = toStringValue(movieNode.rating);
   const identifier = resolveNfoIdentifier(movieNode);
   const number = identifier.number ?? "";
-  if (!number) throw new Error("NFO missing number");
-  if (!title) throw new Error("NFO missing title");
+  if (!number) throw new Error("NFO 缺少番号");
+  if (!title) throw new Error("NFO 缺少标题");
 
   const actorNodes = toArray(movieNode.actor);
   const actors = actorNodes

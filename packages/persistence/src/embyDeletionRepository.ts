@@ -60,8 +60,7 @@ export class EmbyDeletionRepository {
   }
 
   bind(values: typeof strmCloudBindings.$inferInsert): void {
-    if (this.binding(values.fileId)?.blocked)
-      throw new Error("STRM source is suppressed by a deletion; review it before rebinding");
+    if (this.binding(values.fileId)?.blocked) throw new Error("STRM 来源已因删除操作被禁用，请检查后再重新绑定");
     this.database.db
       .insert(strmCloudBindings)
       .values(values)
@@ -160,7 +159,7 @@ export class EmbyDeletionRepository {
           ))
       )
     )
-      throw new Error("Only unfinished jobs or observed deletions can be retried");
+      throw new Error("只能重试未完成的任务或观察模式下的删除事件");
     this.update(id, { status: "pending", attempts: 0, result: null, completedAt: null, nextAttemptAt: Date.now() });
   }
 
@@ -209,7 +208,7 @@ export class EmbyDeletionRepository {
       .from(embyDeletionEvents)
       .where(eq(embyDeletionEvents.dedupKey, input.dedupKey))
       .get();
-    if (!event) throw new Error("Emby deletion event was not persisted");
+    if (!event) throw new Error("Emby 删除事件未保存");
     return { event, duplicate: event.id !== id };
   }
 
@@ -267,7 +266,7 @@ export class EmbyDeletionRepository {
         return false;
       }
       const item = this.database.db.select().from(libraryItems).where(eq(libraryItems.id, file.itemId)).get();
-      if (!item) throw new Error("Emby deletion target movie is missing");
+      if (!item) throw new Error("Emby 删除目标影片不存在");
       this.database.db
         .delete(pendingItems)
         .where(and(eq(pendingItems.rootId, file.rootId), eq(pendingItems.relativePath, file.rootRelativePath)))

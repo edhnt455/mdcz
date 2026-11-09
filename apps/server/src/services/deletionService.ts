@@ -150,7 +150,7 @@ export class DeletionService {
 
   async detail(id: string): Promise<DeletionJob> {
     const job = (await this.list(id)).jobs[0];
-    if (!job) throw new Error("Deletion job not found");
+    if (!job) throw new Error("未找到删除任务");
     return job;
   }
 
@@ -165,14 +165,14 @@ export class DeletionService {
 
   async retry(id: string): Promise<DeletionRetryResponse> {
     const job = await this.detail(id);
-    if (!job.canRetry) throw new Error("This deletion job cannot be retried in its current state");
+    if (!job.canRetry) throw new Error("当前状态下无法重试此删除任务");
     if (job.source === "emby") {
       await this.deps.emby.retry(id.slice(5));
       return { runId: null };
     }
     const state = await this.deps.persistence.getState();
     const row = new ScrapeConflictRepository(state.database).get(id.slice(10));
-    if (!row?.keep) throw new Error("Duplicate resolution has no confirmed version choice");
+    if (!row?.keep) throw new Error("重复版本处理尚未确认要保留的版本");
     return this.deps.scrape.conflicts.resolve({
       taskId: row.taskId,
       itemId: row.itemId,

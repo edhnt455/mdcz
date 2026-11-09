@@ -76,7 +76,7 @@ export class ScrapeRestGate {
       }
 
       const durationSeconds = Math.max(1, Math.round(this.restDurationMs / 1000));
-      this.logger.info(`Reached ${completedCount} files; resting for ${durationSeconds}s`);
+      this.logger.info(`已处理 ${completedCount} 个文件，休息 ${durationSeconds} 秒`);
       await sleepWithAbort(this.restDurationMs, signal);
     } finally {
       release?.();

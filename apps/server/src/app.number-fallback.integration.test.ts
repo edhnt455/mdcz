@@ -262,7 +262,7 @@ it("retries AI extraction with current settings without scraping or changing the
   expect(await library.listEntries()).toEqual([]);
   expect(await readFile(join(source, "ZZZ-999.mp4"), "utf8")).toBe("video");
   pending.upsert({ kind: "uncensored", rootId, relativePath: original.relativePath });
-  expect((await fastify.inject(request)).json().error.message).toContain("This movie is published");
+  expect((await fastify.inject(request)).json().error.message).toContain("此影片已发布");
   expect(recognize).toHaveBeenCalledTimes(5);
 });
 
@@ -294,7 +294,7 @@ it("does not overwrite changed pending outcomes or recreate ignored entries afte
       headers: { authorization: `Bearer ${token}` },
       payload: { id: original.id },
     });
-    expect(response.json().error.message).toContain("Pending item changed or was removed");
+    expect(response.json().error.message).toContain("待处理条目已变化或被移除");
     if (scenario === "removed") expect(pending.list()).toEqual([]);
     else
       expect(pending.get(original.id)).toMatchObject({ detail: "Newer scrape outcome", numberRecognitionJson: null });

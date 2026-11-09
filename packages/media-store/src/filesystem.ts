@@ -130,7 +130,7 @@ export const walkFiles = async (
     const timer = options.onDiagnostic
       ? setTimeout(() => {
           options.onDiagnostic?.(
-            `Slow scan call ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start), pending: [...pendingOperations.values()] })}`,
+            `扫描调用耗时较长 ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start), pending: [...pendingOperations.values()] })}`,
           );
         }, 1000)
       : undefined;
@@ -141,7 +141,7 @@ export const walkFiles = async (
       pendingOperations.delete(key);
       if (performance.now() - start >= 1000)
         options.onDiagnostic?.(
-          `Scan call finished ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start) })}`,
+          `扫描调用完成 ${JSON.stringify({ operation, path: target, elapsedMs: Math.round(performance.now() - start) })}`,
         );
     }
   };
@@ -267,7 +267,7 @@ export const walkFiles = async (
       const pump = () => {
         while (!failed && !signal?.aborted && active < 4 && cursor < queue.length) {
           const task = queue[cursor++];
-          if (!task) throw new Error("Missing filesystem task");
+          if (!task) throw new Error("缺少文件系统任务");
           active += 1;
           void task()
             .catch((error) => {
@@ -292,7 +292,7 @@ export const walkFiles = async (
     currentPath = null;
     progress(true);
     options.onDiagnostic?.(
-      `Scan summary ${JSON.stringify({ path: rootPath, recursive, elapsedMs: Math.round(performance.now() - started), directories, candidates, skipped: warnings.count, calls, pending: [...pendingOperations.values()] })}`,
+      `扫描摘要 ${JSON.stringify({ path: rootPath, recursive, elapsedMs: Math.round(performance.now() - started), directories, candidates, skipped: warnings.count, calls, pending: [...pendingOperations.values()] })}`,
     );
   }
 };
@@ -339,7 +339,7 @@ export const mkdirpRootPath = async (root: MediaRoot, relativePath: string): Pro
 
 const assertAbsolutePath = (value: string, label: string): void => {
   if (!path.isAbsolute(value)) {
-    throw new TypeError(`${label} must be an absolute path: ${value}`);
+    throw new TypeError(`${label} 必须是绝对路径：${value}`);
   }
 };
 

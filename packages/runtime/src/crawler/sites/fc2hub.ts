@@ -241,7 +241,7 @@ export class Fc2HubCrawler extends BaseFc2Crawler {
   ): Promise<string | SearchPageResolution | null> {
     const pageText = $.root().text();
     if (pageText.includes("Access denied")) {
-      throw new SiteError("cloudflare", "FC2HUB access denied");
+      throw new SiteError("cloudflare", "FC2HUB 拒绝访问");
     }
 
     const metaUrl = extractDetailUrlFromMeta($, context.number);

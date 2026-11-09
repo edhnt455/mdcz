@@ -173,7 +173,7 @@ export class PersistentCooldownStore {
   }
 
   private requireEntry(entry: CooldownEntry | undefined, operation: string, key: string): CooldownEntry {
-    if (!entry) throw new Error(`PersistentCooldownStore.${operation} produced no entry for ${key}`);
+    if (!entry) throw new Error(`PersistentCooldownStore.${operation} 未生成 ${key} 的记录`);
     return entry;
   }
 
@@ -203,7 +203,7 @@ export class PersistentCooldownStore {
         this.entries.set(key, entry);
       }
     } catch (error) {
-      this.logger.warn(`Failed to load cooldown store ${this.filePath}: ${toErrorMessage(error)}`);
+      this.logger.warn(`加载冷却状态文件 ${this.filePath} 失败：${toErrorMessage(error)}`);
     }
   }
 
@@ -232,7 +232,7 @@ export class PersistentCooldownStore {
     this.writePromise = this.writePromise
       .then(() => this.persist())
       .catch((error) => {
-        this.logger.warn(`Failed to persist cooldown store ${this.filePath}: ${toErrorMessage(error)}`);
+        this.logger.warn(`保存冷却状态文件 ${this.filePath} 失败：${toErrorMessage(error)}`);
       });
   }
 

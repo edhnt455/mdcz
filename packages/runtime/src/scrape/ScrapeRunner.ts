@@ -261,14 +261,14 @@ export class ScrapeRunner {
         await this.deps.onTerminal?.(run, dto);
       },
       onError: async (runId, error) => {
-        this.logger.error(`Scrape execution failed for ${runId}: ${toErrorMessage(error)}`);
+        this.logger.error(`刮削任务 ${runId} 执行失败：${toErrorMessage(error)}`);
         await this.deps.onError?.(runId, error);
       },
     };
   }
 
   async start(input: ScrapeStartInput): Promise<StartScrapeResult> {
-    if (this.closed) throw new Error("Scrape queue is closing");
+    if (this.closed) throw new Error("刮削队列正在关闭");
     const configuration = structuredClone(await this.deps.getConfiguration());
     const normalized = await this.normalizeStartInput(input, configuration);
     const snapshot = await this.claimCoordinator().start({ normalized, configuration });
@@ -306,13 +306,13 @@ export class ScrapeRunner {
 
   async pause(runId?: string): Promise<void> {
     const target = this.liveRun(runId);
-    if (!target) throw new Error("No live scrape task to pause");
+    if (!target) throw new Error("没有可暂停的活动刮削任务");
     await this.coordinatorInstance?.pause(target.run.id);
   }
 
   async resume(runId?: string): Promise<void> {
     const target = this.liveRun(runId);
-    if (!target) throw new Error("No live scrape task to resume");
+    if (!target) throw new Error("没有可恢复的活动刮削任务");
     await this.coordinatorInstance?.resume(target.run.id);
   }
 
@@ -322,10 +322,10 @@ export class ScrapeRunner {
 
   async shutdown(options: { timeoutMs?: number } = {}): Promise<void> {
     const timeoutMs = Math.max(0, Math.trunc(options.timeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS));
-    this.logger.info("Shutting down scrape runner");
+    this.logger.info("正在关闭刮削执行器");
     this.closed = true;
     if (this.coordinatorInstance && (await didPromiseTimeout(this.coordinatorInstance.abortForShutdown(), timeoutMs))) {
-      this.logger.warn(`Timed out waiting ${timeoutMs}ms for scrape runner shutdown`);
+      this.logger.warn(`等待刮削执行器关闭超时（${timeoutMs} 毫秒）`);
     }
     await (this.deps.imageHostCooldownStore as { flush?: () => Promise<void> }).flush?.();
   }
@@ -491,7 +491,7 @@ export class ScrapeRunner {
       };
     }
 
-    throw new Error(`Scrape result not found: ${id}`);
+    throw new Error(`未找到刮削结果：${id}`);
   }
 
   recordLog(
@@ -505,7 +505,7 @@ export class ScrapeRunner {
   }
 
   private claimCoordinator(): RunnerCoordinator {
-    if (this.closed) throw new Error("Scrape queue is closing");
+    if (this.closed) throw new Error("刮削队列正在关闭");
     this.deps.taskGate.assertAvailable("scrape");
     this.coordinatorInstance ??= new ScrapeCoordinator(this.deps.persistence.scrapeRuns, this.host);
     return this.coordinatorInstance;
@@ -528,9 +528,9 @@ export class ScrapeRunner {
       return { library, mode: "directory", scope: directoryScope, rootId: scan.root.id };
     }
 
-    if (!input.refs[0]) throw new ScrapeRunnerError("NO_FILES", "No files selected");
+    if (!input.refs[0]) throw new ScrapeRunnerError("NO_FILES", "未选择文件");
     if (input.executionMode === "single" && input.refs.length !== 1)
-      throw new ScrapeRunnerError("INVALID_ARGUMENT", "A single scrape takes exactly one file");
+      throw new ScrapeRunnerError("INVALID_ARGUMENT", "单文件刮削必须且只能选择一个文件");
     return {
       library,
       mode: input.executionMode,
@@ -582,7 +582,7 @@ export class ScrapeRunner {
 
     const members = groups.flatMap((group) => group.members);
     const rootId = members[0]?.source.rootId ?? canonicalRefs[0]?.rootId;
-    if (!rootId) throw new ScrapeRunnerError("NO_FILES", "No files selected");
+    if (!rootId) throw new ScrapeRunnerError("NO_FILES", "未选择文件");
     const root = await this.deps.persistence.mediaRoots.get(rootId);
     this.rootDisplayNames.set(root.id, root.displayName);
 
@@ -607,18 +607,17 @@ export class ScrapeRunner {
 
   /** Retries and reruns publish with the library's current settings, like a new run. */
   private async runLibrary(run: ScrapeRunRecord): Promise<MediaLibrary> {
-    if (!run.libraryId) throw new Error("This scrape run has no library; start a new scrape instead");
+    if (!run.libraryId) throw new Error("此刮削任务未关联媒体库，请新建刮削任务");
     return this.deps.libraries.get(run.libraryId);
   }
 
   private async createRetryRun(runId: string, itemIds?: readonly string[]): Promise<ScrapeRunManifest> {
     const run = await this.deps.persistence.scrapeRuns.get(runId);
     if (!run.disposition || run.disposition === "interrupted") {
-      throw new Error(`Only completed, failed, or stopped scrape runs can be retried: ${run.id}`);
+      throw new Error(`只能重试已完成、失败或停止的刮削任务：${run.id}`);
     }
-    if (!run.manifestFixedAt)
-      throw new Error("Directory file list has not been generated; cannot retry, please rescan directory");
-    if (itemIds?.length === 0) throw new Error(`Scrape retry requires at least one item: ${run.id}`);
+    if (!run.manifestFixedAt) throw new Error("目录文件列表尚未生成，无法重试，请重新扫描目录");
+    if (itemIds?.length === 0) throw new Error(`刮削重试至少需要一个条目：${run.id}`);
 
     // A retry run only holds the retried items, so the batch is the union of the whole retry chain with newer runs winning.
     const lineage = [run];
@@ -658,15 +657,14 @@ export class ScrapeRunner {
     if (itemIds) {
       for (const itemId of itemIds) {
         const item = itemsById.get(itemId);
-        if (!item) throw new Error(`Scrape item does not belong to run ${run.id}: ${itemId}`);
+        if (!item) throw new Error(`刮削条目不属于任务 ${run.id}：${itemId}`);
         seedKeys.add(itemKey(item));
       }
     } else {
       const statusByKey = new Map<string, string>();
       for (const ancestor of lineage) {
         const snapshot = this.terminalSnapshots.get(ancestor.id);
-        if (!snapshot && ancestor === run)
-          throw new Error("Task results are no longer in this session; please rescan directory");
+        if (!snapshot && ancestor === run) throw new Error("任务结果已不在当前会话中，请重新扫描目录");
         for (const item of snapshot?.items ?? []) statusByKey.set(itemKey(item), item.status);
       }
       for (const [key, status] of statusByKey) if (status === "failed" || status === "skipped") seedKeys.add(key);
@@ -686,15 +684,25 @@ export class ScrapeRunner {
         configuration.scrape.filenameIgnoreTokens,
         (item) => {
           const directory = directories.get(item.id);
-          if (!directory) throw new Error(`Retry item has no directory identity: ${item.id}`);
+          if (!directory) throw new Error(`重试条目缺少目录身份：${item.id}`);
           return directory;
         },
         configuration.scrape,
       ),
     );
-    const itemsToRetry = [...batchItems.values()].filter((item) => retryIds.has(item.id));
-    if (itemsToRetry.length === 0) throw new Error(`Scrape run has no failed or skipped items to retry: ${run.id}`);
     const library = await this.runLibrary(run);
+    const itemsToRetry = [...batchItems.values()].filter((item) => {
+      if (!retryIds.has(item.id)) return false;
+      const fileInfo = inventory.fileInfo(item.relativePath, configuration.scrape);
+      // Standalone STRM duplicates are resolved individually; retries must not pull in the remaining copies.
+      return (
+        library.placement !== "copy" ||
+        fileInfo.extension.toLowerCase() !== ".strm" ||
+        Boolean(fileInfo.part) ||
+        seedKeys.has(itemKey(item))
+      );
+    });
+    if (itemsToRetry.length === 0) throw new Error(`刮削任务没有可重试的失败或跳过条目：${run.id}`);
     const target = toPublicationTarget(library);
     assertTargetLayout(configuration, target);
     const groups = await admitScrapeGroups({
@@ -741,9 +749,9 @@ export class ScrapeRunner {
     signal: AbortSignal,
     onProgress: (progress: DiscoveryProgress) => void,
   ): Promise<ScrapeRunManifest> {
-    if (!run.directoryScopeJson) throw new Error("Directory run is missing its scope");
+    if (!run.directoryScopeJson) throw new Error("目录任务缺少扫描范围");
     const context = this.runContexts.get(run.id);
-    if (!context) throw new Error(`Scrape run is not prepared: ${run.id}`);
+    if (!context) throw new Error(`刮削任务尚未准备完成：${run.id}`);
 
     const repository = this.deps.persistence;
     const checkRoots = repository.mediaRoots.rootIntegrityGuard();
@@ -761,7 +769,7 @@ export class ScrapeRunner {
     const identities = await Promise.all(
       found.refs.map(async (ref) => {
         const root = roots.get(ref.rootId);
-        if (!root) throw new Error(`Media root not found: ${ref.rootId}`);
+        if (!root) throw new Error(`未找到媒体根目录：${ref.rootId}`);
         return filesystemPathKey(await found.inventory.entryPath(resolveRootRelativePath(root, ref.relativePath)));
       }),
     );
@@ -802,7 +810,7 @@ export class ScrapeRunner {
   ): Promise<ScrapeRunExecution<RunnerScrapeItem, PreparedMovieGroup>> {
     const outputRootIds = manifest.requestedOutputRootId ? [manifest.requestedOutputRootId] : [];
     const context = this.runContexts.get(manifest.id);
-    if (!context?.inventory || !context.groups) throw new Error(`Scrape run is not prepared: ${manifest.id}`);
+    if (!context?.inventory || !context.groups) throw new Error(`刮削任务尚未准备完成：${manifest.id}`);
     const checkRoots = context.rootGuard ?? this.deps.persistence.mediaRoots.rootIntegrityGuard();
     const { inventory } = context;
     this.runContexts.delete(manifest.id);
@@ -845,7 +853,7 @@ export class ScrapeRunner {
         roots.set(item.rootId, await this.deps.persistence.mediaRoots.get(item.rootId));
       }
     }
-    if (!manifest.requestedOutputRootId) throw new Error(`Scrape run has no output root: ${manifest.id}`);
+    if (!manifest.requestedOutputRootId) throw new Error(`刮削任务缺少输出根目录：${manifest.id}`);
     const outputRoot = await this.deps.persistence.mediaRoots.get(manifest.requestedOutputRootId);
     roots.set(outputRoot.id, outputRoot);
 
@@ -911,7 +919,7 @@ export class ScrapeRunner {
         postProcessAssets: this.deps.postProcessAssets,
         probeVideoMetadata: async (sourcePath) =>
           await this.probeVideo(sourcePath).catch((error: unknown) => {
-            this.logger.warn(`Video probe failed: ${toErrorMessage(error)}`);
+            this.logger.warn(`视频探测失败：${toErrorMessage(error)}`);
             return undefined;
           }),
       },
@@ -924,7 +932,7 @@ export class ScrapeRunner {
 
     const requireRoot = (id: string): MediaRoot => {
       const root = roots.get(id);
-      if (!root) throw new Error(`Media root not found: ${id}`);
+      if (!root) throw new Error(`未找到媒体根目录：${id}`);
       return root;
     };
     const scrapeOptions = {
@@ -956,14 +964,17 @@ export class ScrapeRunner {
 
     return {
       concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
-      movieGroups,
+      movieGroups: movieGroups.flatMap((group) =>
+        target.placement === "copy" &&
+        !group.error &&
+        group.members.every((member) => member.fileInfo.extension.toLowerCase() === ".strm" && !member.fileInfo.part)
+          ? group.members.map((member) => ({ ...group, members: [member] }))
+          : [group],
+      ),
       prepareGroup: async (group, signal) => {
         if (!configuration.scrape.aiNumberFallback) await policy.restGate?.waitBeforeStart(signal);
         const resolved = await numberResolver.resolveGroups([group], signal);
-        const error =
-          resolved.length !== 1
-            ? "Files of the same movie resolved to different numbers; please check manually"
-            : resolved[0].error;
+        const error = resolved.length !== 1 ? "同一影片的文件识别出不同番号，请人工检查" : resolved[0].error;
         if (error) {
           const item = group.members[0];
           return {
@@ -1022,6 +1033,7 @@ export class ScrapeRunner {
       checkTargets: async (preparedGroups) => {
         await checkScrapeTargets(
           preparedGroups.map(({ prepared }) => ({
+            movieId: prepared.movieId,
             members: prepared.members.map((member) => ({
               itemId: member.itemId,
               sourcePath: member.fileInfo.filePath,
@@ -1052,7 +1064,7 @@ export class ScrapeRunner {
         if (!output) {
           let added = 0;
           const committed = entries.map((entry) => {
-            if (!entry.result) throw new Error(`Scrape item has no terminal result: ${entry.item.id}`);
+            if (!entry.result) throw new Error(`刮削条目缺少结束结果：${entry.item.id}`);
             const result = { ...entry.result, resultId: entry.item.id };
             if (result.status === "failed") {
               const pending = result.pending ?? { kind: "failed", number: entry.item.fileInfo.number || undefined };
@@ -1077,16 +1089,16 @@ export class ScrapeRunner {
           return committed;
         }
 
-        if (!output.scrape) throw new Error("Scrape output requires movie metadata");
+        if (!output.scrape) throw new Error("刮削输出需要影片元数据");
         const committedMovie = toCommittedMovie(output, output.scrape);
         const completedAt = new Date();
         const committedFiles = new Map(committedMovie.files.map((file) => [file.fileId, file]));
 
         const libraryEntries = output.files.map((video) => {
           const facts = video.scrape;
-          if (!facts) throw new Error("Scrape file has no prepared facts");
+          if (!facts) throw new Error("刮削文件缺少预备信息");
           const file = committedFiles.get(video.fileId);
-          if (!file) throw new Error(`Committed movie omitted file: ${video.fileId}`);
+          if (!file) throw new Error(`提交的影片遗漏了文件：${video.fileId}`);
           return {
             fileId: file.fileId,
             entryIdentity: file.entryIdentity,
@@ -1193,11 +1205,11 @@ export class ScrapeRunner {
         return entries.map((entry) => {
           const video = output.files.find((f) => f.scrape?.itemId === entry.item.id);
           if (!video) {
-            if (!entry.result) throw new Error(`Scrape output omitted item: ${entry.item.id}`);
+            if (!entry.result) throw new Error(`刮削输出遗漏了条目：${entry.item.id}`);
             return { itemId: entry.item.id, result: entry.result };
           }
           const facts = video.scrape;
-          if (!facts) throw new Error(`Scrape output file has no prepared facts: ${video.fileId}`);
+          if (!facts) throw new Error(`刮削输出文件缺少预备信息：${video.fileId}`);
           const result: ScrapeResult = {
             ...facts.identity,
             fileId: libraryEntries[output.files.indexOf(video)].fileId,
@@ -1215,7 +1227,7 @@ export class ScrapeRunner {
           try {
             this.deps.onCommitted?.(manifest.id, result);
           } catch (error) {
-            this.logger.warn(`Scrape committed but notification failed: ${toErrorMessage(error)}`);
+            this.logger.warn(`刮削已提交，但通知失败：${toErrorMessage(error)}`);
           }
           return { itemId: entry.item.id, result };
         });
@@ -1287,8 +1299,8 @@ export class ScrapeRunner {
   }
 
   private async bindExistingRun(runId: string): Promise<void> {
-    if (!runId.trim()) throw new ScrapeRunnerError("NO_FILES", "No scrape run selected");
-    if (this.closed) throw new Error("Scrape queue is closing");
+    if (!runId.trim()) throw new ScrapeRunnerError("NO_FILES", "未选择刮削任务");
+    if (this.closed) throw new Error("刮削队列正在关闭");
     this.deps.imageHostCooldownStore.clear?.();
     const previousRun = await this.deps.persistence.scrapeRuns.get(runId);
     const root = await this.deps.persistence.mediaRoots.get(previousRun.rootId);
@@ -1297,7 +1309,7 @@ export class ScrapeRunner {
 
   private async accepted(runId: string, action: string, totalFiles: number | null): Promise<StartScrapeResult> {
     const snapshot = await this.getSnapshot(runId);
-    if (!snapshot) throw new Error(`Scrape task disappeared after ${action}: ${runId}`);
+    if (!snapshot) throw new Error(`执行 ${action} 后刮削任务消失：${runId}`);
     return { taskId: runId, totalFiles, snapshot };
   }
 }

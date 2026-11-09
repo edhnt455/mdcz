@@ -218,6 +218,7 @@ export const pendingItems = sqliteTable(
     detail: text("detail"),
     candidatesJson: text("candidates_json"),
     numberRecognitionJson: text("number_recognition_json"),
+    deletionJson: text("deletion_json"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },

@@ -305,7 +305,7 @@ describe("AI movie code fallback", () => {
         previousNumber: null,
         parentDirectory: "ABC-123",
         systemPrompt: "Shared context",
-        error: valid ? null : expect.stringContaining("valid source evidence"),
+        error: valid ? null : expect.stringContaining("有效来源依据"),
       });
       const request = generateText.mock.calls[0]?.[0];
       expect(request.systemPrompt).toBe("Shared context");

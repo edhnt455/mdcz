@@ -58,13 +58,11 @@ describe("inventory target conflicts", () => {
       conflicts: [
         expect.objectContaining({
           itemId: "one",
-          message:
-            "Multiple videos of the same movie get the same target name and their resolution cannot tell them apart; please adjust naming rules",
+          message: "同一影片的多个视频生成了相同目标文件名，且无法通过分辨率区分，请调整命名规则",
         }),
         expect.objectContaining({
           itemId: "two",
-          message:
-            "Multiple videos of the same movie get the same target name and their resolution cannot tell them apart; please adjust naming rules",
+          message: "同一影片的多个视频生成了相同目标文件名，且无法通过分辨率区分，请调整命名规则",
         }),
       ],
     });
@@ -90,6 +88,25 @@ describe("inventory target conflicts", () => {
       });
     }
     expect(stats).not.toHaveBeenCalled();
+    const sharedArtifacts = [join(root, "output", "movie.nfo"), join(root, "output", "poster.jpg")];
+    const versions = ["one", "two", "three"].map((id) => ({
+      movieId: "same-movie",
+      members: [target(id, join(root, `${id}.strm`), join(root, "output", "ABC-123.strm"), sharedArtifacts)],
+    }));
+    await expect(checkScrapeTargets(versions, inventory)).rejects.toMatchObject({
+      conflicts: [
+        expect.objectContaining({ itemId: "two", existingMovie: true }),
+        expect.objectContaining({ itemId: "three", existingMovie: true }),
+      ],
+    });
+    await expect(
+      checkScrapeTargets([versions[0], { ...versions[1], movieId: "another-movie" }], inventory),
+    ).rejects.toMatchObject({
+      conflicts: [
+        expect.objectContaining({ itemId: "one", message: "多部影片的目标文件名相同" }),
+        expect.objectContaining({ itemId: "two", message: "多部影片的目标文件名相同" }),
+      ],
+    });
   });
 
   it("allows in-place alias rescrapes, multipart targets, separate directories, and generated sidecars", async () => {

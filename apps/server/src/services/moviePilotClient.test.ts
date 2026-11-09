@@ -111,10 +111,10 @@ describe("MoviePilot storage contract", () => {
       "secret-test-token",
       fetcher,
     );
-    await expect(client.deleteFile(files[0])).rejects.toThrow("unsuccessful business response");
-    await expect(client.deleteFile(files[0])).rejects.toThrow("connection failed or response lost");
+    await expect(client.deleteFile(files[0])).rejects.toThrow("业务请求未成功");
+    await expect(client.deleteFile(files[0])).rejects.toThrow("连接失败或响应丢失");
     expect(fetcher).toHaveBeenCalledTimes(2);
-    await expect(client.deleteFile(directory)).rejects.toThrow("verified file identity");
+    await expect(client.deleteFile(directory)).rejects.toThrow("已核验的文件身份");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });

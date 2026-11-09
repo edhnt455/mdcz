@@ -15,7 +15,7 @@ import {
 const OPENAI_RETRY_STATUS_CODE = 429;
 const RETRY_AFTER_CAP_MS = 15_000;
 const REQUEST_TIMEOUT_PATTERN =
-  /request timeout|timed ?out|timeout \(\d+ ms\)|error reading response stream|kind: *body|econnreset|etimedout/iu;
+  /请求超时|request timeout|timed ?out|timeout \(\d+ ms\)|error reading response stream|kind: *body|econnreset|etimedout/iu;
 interface RetryDecision {
   delayMs: number;
   reason: string;
@@ -86,7 +86,7 @@ export class LlmRequestService {
 
         attempt += 1;
         this.logger.warn(
-          `LLM request retrying after ${retryDecision.reason} (${attempt}/${maxRetryCount}) in ${retryDecision.delayMs}ms`,
+          `大模型请求因${retryDecision.reason}而重试（${attempt}/${maxRetryCount}），将在 ${retryDecision.delayMs} 毫秒后执行`,
         );
         await sleep(retryDecision.delayMs, undefined, signal ? { signal } : undefined);
       }
@@ -95,10 +95,10 @@ export class LlmRequestService {
 
   private getRetryDecision(error: unknown, attempt: number): RetryDecision | null {
     if (error instanceof LlmEmptyResponseError) {
-      return { delayMs: this.getExponentialDelayMs(attempt), reason: "empty response" };
+      return { delayMs: this.getExponentialDelayMs(attempt), reason: "空响应" };
     }
     if (error instanceof LlmTransportError) {
-      return { delayMs: this.getExponentialDelayMs(attempt), reason: "transport error" };
+      return { delayMs: this.getExponentialDelayMs(attempt), reason: "传输错误" };
     }
 
     if (!error || typeof error !== "object") {

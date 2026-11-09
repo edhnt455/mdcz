@@ -357,7 +357,7 @@ describe("NfoGenerator", () => {
     expect(all).toContain("<fanart>");
     expect(all).toContain("<scene_images>");
     expect(all).toContain("<trailer>trailer.mp4</trailer>");
-    expect(all).toContain("Aggregation Sources:");
+    expect(all).toContain("聚合来源：");
     expect(all).toContain("<streamdetails>");
     expect(all).toContain("<actor>");
 
@@ -387,7 +387,7 @@ describe("NfoGenerator", () => {
       fanart: ["<fanart>", "<fanart_source_url>"],
       sceneImages: ["<scene_images>"],
       trailer: ["<trailer>", "<trailer_source_url>"],
-      sourceComment: ["Aggregation Sources:"],
+      sourceComment: ["聚合来源："],
     };
 
     const omittedPolicy = generator.buildXml(data, {

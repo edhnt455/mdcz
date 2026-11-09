@@ -137,7 +137,7 @@ export class TranslateService {
         if (fields.title.source) failures.title = translationError;
         if (fields.plot.source) failures.plot = translationError;
         if (genres.unresolvedEntries.length) failures.genres = translationError;
-        this.logger.warn(`Translation failed for ${data.number}: ${translationError}`);
+        this.logger.warn(`${data.number} 翻译失败：${translationError}`);
       }
     }
     const mappedGenres = translateGenres
@@ -153,7 +153,7 @@ export class TranslateService {
         delete failures[field];
         continue;
       }
-      const message = `Translation engine failed for ${field} (${data.number}), returning original text: ${returned ? "source echoed" : "engine returned no translation"}`;
+      const message = `翻译引擎未能翻译 ${field}（${data.number}），将返回原文：${returned ? "返回了原文" : "引擎未返回译文"}`;
       this.logger.warn(message);
       failures[field] = message;
     }
@@ -165,7 +165,7 @@ export class TranslateService {
       ) {
         delete failures.genres;
       } else if (genres.unresolvedEntries.length) {
-        failures.genres = "Translation engine returned incomplete genres";
+        failures.genres = "翻译引擎返回的类别不完整";
       }
     }
     const { translation_failures: _previousFailures, ...sourceData } = data;
@@ -242,7 +242,7 @@ export class TranslateService {
     );
     if (translated?.trim() && translated.trim() !== text) return ensureTargetChinese(translated.trim(), target);
 
-    this.logger.warn(`Translation engine ${engine} returned no translated text; returning original text`);
+    this.logger.warn(`翻译引擎 ${engine} 未返回译文，将返回原文`);
     return text;
   }
 }

@@ -62,19 +62,18 @@ export const runMediaServerPhotoSync = async <TPerson>(
       !options.shouldProcess || options.shouldProcess(options.getPersonId(person), options.getPersonName(person)),
   );
   if (persons.length === 0) {
-    if (!options.shouldProcess)
-      options.signalService.showLogText(`${options.serviceName} returned no actors to sync`, "warn");
+    if (!options.shouldProcess) options.signalService.showLogText(`${options.serviceName} 未返回可同步的演员`, "warn");
     return createEmptyPersonSyncResult();
   }
 
-  let stage = "resolve photo source";
+  let stage = "查找照片来源";
   const failures: PersonSyncFailure[] = [];
   const result = await runPersonSyncBatch({
     items: persons,
     signalService: options.signalService,
     processItem: async (person) => {
       if (options.canContinue && !options.canContinue()) return "skipped";
-      stage = "resolve photo source";
+      stage = "查找照片来源";
       const actorName = options.getPersonName(person).trim();
       if (!actorName) {
         return "skipped";
@@ -90,57 +89,48 @@ export const runMediaServerPhotoSync = async <TPerson>(
         ...(options.sourceHints ? { sourceHints: options.sourceHints(actorName) } : {}),
       });
       const sourceTrace = actorSource.sourceResults.map((result) => {
-        const outcome = !result.success
-          ? "lookup failed"
-          : result.profile?.photo_url?.trim()
-            ? "photo found"
-            : "no photo found";
+        const outcome = !result.success ? "查询失败" : result.profile?.photo_url?.trim() ? "找到照片" : "未找到照片";
         const warnings = result.warnings.length ? ` (${result.warnings.join("; ")})` : "";
         const sites = result.siteResults?.map(
-          (site) =>
-            `${site.site}: ${!site.success ? "lookup failed" : site.photoFound ? "photo found" : "no photo found"}`,
+          (site) => `${site.site}：${!site.success ? "查询失败" : site.photoFound ? "找到照片" : "未找到照片"}`,
         );
         const siteTrace = sites?.length ? ` [${sites.join("; ")}]` : "";
         return `${result.source}: ${outcome}${siteTrace}${warnings}`;
       });
       options.signalService.showLogText(
-        `${options.serviceName} actor photo lookup for ${actorName}: ${sourceTrace.join(" → ") || "no photo sources queried"}`,
+        `${options.serviceName} 演员 ${actorName} 的照片查询：${sourceTrace.join(" → ") || "未查询任何照片来源"}`,
         actorSource.sourceResults.some((result) => !result.success || result.warnings.length) ? "warn" : "info",
       );
       const source = actorSource.profile.photo_url;
-      stage = source && /^https?:\/\//iu.test(source) ? "download photo" : "read local photo";
-      if (source && stage === "read local photo") {
-        options.signalService.showLogText(`Using local ${options.serviceName} actor photo for ${actorName}: ${source}`);
+      stage = source && /^https?:\/\//iu.test(source) ? "下载照片" : "读取本地照片";
+      if (source && stage === "读取本地照片") {
+        options.signalService.showLogText(`使用 ${actorName} 的本地 ${options.serviceName} 演员照片：${source}`);
       }
       const image = await loadPrimaryImageFromSource(options.networkClient, actorSource.profile.photo_url);
 
       if (!image) {
-        options.signalService.showLogText(
-          `No ${options.serviceName} actor photo source found for ${actorName}`,
-          "warn",
-        );
+        options.signalService.showLogText(`未找到 ${actorName} 的 ${options.serviceName} 演员照片来源`, "warn");
         return "skipped";
       }
 
       if (options.canContinue && !options.canContinue()) return "skipped";
       if (options.mode === "missing" && options.hasPrimaryImageNow) {
-        stage = "check current photo";
+        stage = "检查当前照片";
         if (await options.hasPrimaryImageNow(person)) {
           return "skipped";
         }
       }
       if (options.canContinue && !options.canContinue()) return "skipped";
-      stage = "upload photo";
+      stage = "上传照片";
       await options.uploadPrimaryImage(options.getPersonId(person), image.content, image.contentType);
 
-      options.signalService.showLogText(`Updated ${options.serviceName} actor photo: ${actorName}`);
+      options.signalService.showLogText(`已更新 ${options.serviceName} 演员照片：${actorName}`);
       return "processed";
     },
     onError: (person, error) => {
       const actorName = options.getPersonName(person).trim() || options.getPersonName(person);
       const status = error instanceof MediaServerServiceError ? error.status : getHttpStatus(error);
-      if ((stage === "upload photo" || stage === "check current photo") && (status === 401 || status === 403))
-        throw error;
+      if ((stage === "上传照片" || stage === "检查当前照片") && (status === 401 || status === 403)) throw error;
       failures.push({
         personId: options.getPersonId(person),
         name: actorName,
@@ -148,14 +138,14 @@ export const runMediaServerPhotoSync = async <TPerson>(
         message: formatPersonSyncError(error, options.configuration),
       });
       options.logger.warn(
-        `Failed to update ${options.serviceName} actor photo for ${actorName} (${stage}): ${formatPersonSyncError(error, options.configuration)}`,
+        `更新 ${options.serviceName} 演员 ${actorName} 的照片失败（${stage}）：${formatPersonSyncError(error, options.configuration)}`,
       );
     },
   });
 
   options.signalService.showLogText(
     options.buildCompletionMessage?.(result, persons.length) ??
-      `${options.serviceName} actor photo sync completed. Success: ${result.processedCount}, Failed: ${result.failedCount}, Skipped: ${result.skippedCount}`,
+      `${options.serviceName} 演员照片同步完成。成功：${result.processedCount}，失败：${result.failedCount}，跳过：${result.skippedCount}`,
   );
 
   return failures.length ? { ...result, failures } : result;

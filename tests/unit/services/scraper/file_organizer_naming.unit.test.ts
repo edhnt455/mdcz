@@ -558,6 +558,6 @@ describe("FileOrganizer naming rules", () => {
         data,
         ...createConfig({ target: { placement: "symlink", outputPath: resolve("/input") } }),
       ),
-    ).toThrow("cannot be the same as or contain");
+    ).toThrow("不能与视频目录相同，也不能包含视频目录");
   });
 });

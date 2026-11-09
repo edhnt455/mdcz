@@ -186,7 +186,7 @@ export const settings: Messages["settings"] = {
     address: "Emby Webhook 地址",
     copy: "复制地址",
     copied: "地址已复制",
-    serverId: "Emby Server ID",
+    serverId: "Emby 服务器 ID",
     mode: "处理模式",
     modes: { off: "关闭", observe: "观察（只记录）", delete: "自动清理" },
     libraries: "允许联动的移动或复制 STRM 媒体库",
@@ -196,10 +196,10 @@ export const settings: Messages["settings"] = {
     moviePilot: {
       title: "MoviePilot · 115 STRM 联动",
       description:
-        "使用已验证的 u115 存储。先保存 MP 连接，再选择复制媒体库并保存联动设置，最后核验来源关联。手动处理重复可保持模式「关闭」，无需 Emby Server ID 或 Webhook。",
+        "使用已验证的 u115 存储。先保存 MP 连接，再选择复制媒体库并保存联动设置，最后核验来源关联。手动处理重复可保持模式「关闭」，无需 Emby 服务器 ID 或 Webhook。",
       baseUrl: "MP 地址",
       rootPath: "115 允许根目录",
-      token: "MP API_TOKEN",
+      token: "MoviePilot API 令牌",
       tokenHint:
         "凭据写入当前配置文件（默认 config/default.toml），不回显；留空保留已保存凭据。更换连接后必须重新核验来源。",
       save: "保存并验证 MP",
@@ -218,7 +218,7 @@ export const settings: Messages["settings"] = {
     results: {
       shared_resource_retained: "已清理当前影片记录，保留其他影片仍在使用的共享资源",
       sync_disabled: "删除联动已关闭",
-      server_not_allowed: "Emby Server ID 不匹配",
+      server_not_allowed: "Emby 服务器 ID 不匹配",
       event_not_supported: "非删除事件",
       item_not_a_movie_file: "非电影文件事件",
       event_date_missing: "缺少事件时间，需要检查 Emby 通知格式",

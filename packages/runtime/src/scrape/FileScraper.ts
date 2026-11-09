@@ -208,7 +208,7 @@ export class FileScraper {
         relativePath: "",
         fileName: "",
         status: "skipped",
-        error: "Movie group is empty",
+        error: "影片组为空",
         assets: [],
       };
     }
@@ -235,19 +235,16 @@ export class FileScraper {
       let publishedData: CrawlerData | undefined;
       for (const member of members) {
         const { options, progress, fileInfo: parsedFileInfo } = member;
-        if (!options.roots?.length) throw new Error("Scrape publication requires registered media roots");
+        if (!options.roots?.length) throw new Error("发布刮削结果需要已注册的媒体根目录");
         this.setProgress(progress, 0);
         const facts = await inventory.stats(parsedFileInfo.filePath).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT")
-            throw new Error(
-              `Source file not found: ${parsedFileInfo.filePath} (file may have been moved to target path; please check target directory)`,
-              {
-                cause: error,
-              },
-            );
+            throw new Error(`未找到源文件：${parsedFileInfo.filePath}（文件可能已移动到目标路径，请检查目标目录）`, {
+              cause: error,
+            });
           throw error;
         });
-        if (!facts.isFile()) throw new Error("Scrape source is not a file");
+        if (!facts.isFile()) throw new Error("刮削来源不是文件");
         const resolved = await resolveFileInfoWithSubtitles(parsedFileInfo.filePath, {
           parsedFileInfo,
           inventory,
@@ -273,7 +270,7 @@ export class FileScraper {
       const pin = options.unpin ? undefined : inspected[0].localState?.sourcePin;
       const manualScrape = options.manualScrape ?? (pin ? { site: pin.site, detailUrl: pin.url } : undefined);
       if (!fileInfo.number.trim() && !manualScrape?.detailUrl)
-        throw new ScrapeFailureError("no_number", `No number recognized in ${fileInfo.fileName}`);
+        throw new ScrapeFailureError("no_number", `未能从 ${fileInfo.fileName} 中识别番号`);
       for (const member of inspected) {
         const { sourcePin: _previous, ...rest } = member.localState ?? {};
         const sourcePin = manualScrape?.detailUrl
@@ -283,7 +280,7 @@ export class FileScraper {
       }
       const scrapeSessionId = options.scrapeSessionId ?? this.options.scrapeSessionId;
       signalService.showLogText(
-        `Preparing movie scrape task ${randomUUID()} for ${fileInfo.number} (scrapeSessionId: ${scrapeSessionId ?? "standalone"})`,
+        `正在为 ${fileInfo.number} 准备影片刮削任务 ${randomUUID()}（scrapeSessionId：${scrapeSessionId ?? "独立任务"}）`,
       );
       signalService.showScrapeStep("search");
       const { aggregation, crawlerData } = await prepareOnlineMetadata({
@@ -319,25 +316,28 @@ export class FileScraper {
       for (const plan of renaming ? plans : []) {
         const existing = await this.deps.findExistingMovie?.(plan.targetVideoPath, crawlerData.number, sourcePaths);
         if (!existing) continue;
-        if (occupiedKeys.size && existing.movieId !== movieId)
-          throw new Error("Movie versions belong to different library movies");
+        if (occupiedKeys.size && existing.movieId !== movieId) throw new Error("影片版本属于不同的媒体库影片");
         occupiedKeys.add(versionKey(plan.targetVideoPath));
         movieId = existing.movieId;
         assets = existing.assets;
       }
-      const labels = renaming
-        ? assignVersionLabels(
-            inspected.map((member, index) => ({
-              sourcePath: member.fileInfo.filePath,
-              targetVideoPath: plans[index].targetVideoPath,
-              multipart: Boolean(member.fileInfo.part),
-              height: member.videoMeta?.height,
-              filenameResolution: member.fileInfo.resolution,
-              size: member.size,
-            })),
-            occupiedKeys,
-          )
-        : [];
+      const duplicateStrms =
+        options.target.placement === "copy" &&
+        inspected.every((member) => member.fileInfo.extension.toLowerCase() === ".strm" && !member.fileInfo.part);
+      const labels =
+        renaming && !duplicateStrms
+          ? assignVersionLabels(
+              inspected.map((member, index) => ({
+                sourcePath: member.fileInfo.filePath,
+                targetVideoPath: plans[index].targetVideoPath,
+                multipart: Boolean(member.fileInfo.part),
+                height: member.videoMeta?.height,
+                filenameResolution: member.fileInfo.resolution,
+                size: member.size,
+              })),
+              occupiedKeys,
+            )
+          : [];
       const preparedMembers: PreparedMovieMember[] = [];
       for (const [index, member] of inspected.entries()) {
         const label = labels[index];
@@ -389,7 +389,7 @@ export class FileScraper {
       };
     } catch (error) {
       return isAbortError(error)
-        ? this.skipped(members[0].identity, "Operation aborted")
+        ? this.skipped(members[0].identity, "操作已中止")
         : this.failed(
             members[0].identity,
             members[0].fileInfo,
@@ -446,7 +446,7 @@ export class FileScraper {
       crawlerData = actorOutput.data ?? crawlerData;
       throwIfAborted(signal);
       this.setProgress(progress, 60);
-      if (!crawlerData.website) throw new Error("Scrape crawler website not initialized");
+      if (!crawlerData.website) throw new Error("刮削站点尚未初始化");
       signalService.showScrapeStep("download");
       const downloaded = await downloadCrawlerAssets({
         config: configuration,
@@ -547,14 +547,14 @@ export class FileScraper {
         try {
           await removeStagingDirectory(stagingDir);
         } catch (cleanupError) {
-          throw new AggregateError([error, cleanupError], "Scrape preparation and staging cleanup failed");
+          throw new AggregateError([error, cleanupError], "刮削准备和暂存资源清理均失败");
         }
       }
       return {
         results: prepared.members.map((member) => {
           this.setProgress(member.progress, 100);
           return isAbortError(error)
-            ? this.skipped(member.identity, "Operation aborted")
+            ? this.skipped(member.identity, "操作已中止")
             : this.failed(member.identity, member.fileInfo, toErrorMessage(error), {
                 kind: "failed",
                 number: member.fileInfo.number || undefined,
@@ -570,7 +570,7 @@ export class FileScraper {
     error: string,
     pending: ScrapePendingOutcome,
   ): FileScrapeFailure & { status: "failed" } {
-    this.deps.logger.error(`Scrape failed for ${fileInfo.filePath}: ${error}`);
+    this.deps.logger.error(`${fileInfo.filePath} 刮削失败：${error}`);
     const result = { ...identity, status: "failed" as const, error, pending };
     this.deps.signalService.showFailedInfo({ fileInfo, error });
     return result;

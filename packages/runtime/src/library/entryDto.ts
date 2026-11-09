@@ -48,7 +48,7 @@ export const toLibraryEntryDto = (
     return {
       id: file.id,
       rootId: file.rootId,
-      rootDisplayName: root?.displayName ?? "Unknown media directory",
+      rootDisplayName: root?.displayName ?? "未知媒体目录",
       relativePath: file.rootRelativePath,
       fileName: file.fileName,
       directory: file.directory,

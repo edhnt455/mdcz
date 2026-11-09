@@ -7,7 +7,7 @@ const isWithin = (rootPath: string, candidatePath: string): boolean => {
 };
 
 export const resolveInputRootPath = (filePaths: readonly string[], preferredRootPath?: string): string => {
-  if (filePaths.length === 0) throw new Error("Cannot create a scrape root without files");
+  if (filePaths.length === 0) throw new Error("没有文件，无法创建刮削根目录");
   const preferred = preferredRootPath?.trim();
   if (preferred) {
     const normalized = normalizeHostPath(preferred);
@@ -18,7 +18,7 @@ export const resolveInputRootPath = (filePaths: readonly string[], preferredRoot
     const resolved = path.resolve(filePath);
     while (!isWithin(common, resolved)) {
       const parent = path.dirname(common);
-      if (parent === common) throw new Error("Selected files do not share a filesystem root");
+      if (parent === common) throw new Error("所选文件不在同一文件系统根目录下");
       common = parent;
     }
   }

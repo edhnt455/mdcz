@@ -30,6 +30,6 @@ export const movieNumbersMatch = (actual: string, expected: string): boolean =>
 
 export const verifyMovieNumber = (actual: string, expected: string): void => {
   if (!movieNumbersMatch(actual, expected)) {
-    throw new SiteError("not_found", `Movie number mismatch: requested ${expected}, received ${actual || "no number"}`);
+    throw new SiteError("not_found", `影片番号不匹配：请求 ${expected}，返回 ${actual || "无番号"}`);
   }
 };

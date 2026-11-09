@@ -65,7 +65,7 @@ export class JavdbCrawler extends BaseCrawler {
     }
     // Two works under one number are different movies (SW-133 is a 2012 SWITCH and a 2022 Plum title).
     if (matches.size > 1) {
-      throw new SiteError("ambiguous", `JavDB lists ${matches.size} works under ${context.number}`, {
+      throw new SiteError("ambiguous", `JavDB 在 ${context.number} 下列出 ${matches.size} 部作品`, {
         candidates: [...matches].map(([detailUrl, element]) => {
           const title = $(element).find("div.video-title").clone();
           title.find("strong").remove();
@@ -87,7 +87,7 @@ export class JavdbCrawler extends BaseCrawler {
   // JavDB redirects FC2 and uncensored titles to its sign-in page unless the cookie belongs to a signed-in account.
   protected override classifyDetailFailure(_context: Context, detailHtml: string): SiteError | null {
     return detailHtml.includes('action="/user_sessions"')
-      ? new SiteError("login_wall", "JavDB requires a signed-in cookie for this title")
+      ? new SiteError("login_wall", "JavDB 访问此作品需要已登录的 Cookie")
       : null;
   }
 

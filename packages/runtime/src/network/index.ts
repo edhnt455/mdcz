@@ -166,7 +166,7 @@ export class FetchNetworkClient implements RuntimeNetworkClient {
       signal: init.signal,
     });
     if (!allowNonOk && !response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText} for ${url}`);
+      throw new Error(`请求 ${url} 失败：HTTP ${response.status} ${response.statusText}`);
     }
     return response;
   }

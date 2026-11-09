@@ -16,6 +16,7 @@ export const overview = {
     clearDescription:
       "Clear all finished entries from recent activity? Active tasks, task details and media files will be kept.",
     cleared: "Finished activity cleared",
+    hiddenErrors: (count: number) => `${count} more errors not shown`,
     kinds: { scan: "Scan", scrape: "Scrape", maintenance: "Maintenance" },
     statuses: {
       queued: "Queued",

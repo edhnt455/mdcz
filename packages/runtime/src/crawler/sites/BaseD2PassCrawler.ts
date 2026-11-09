@@ -34,15 +34,15 @@ export abstract class BaseD2PassCrawler implements SiteAdapter {
       const id = input.options?.detailUrl
         ? new URL(input.options.detailUrl).pathname.match(/\/moviepages\/(\d{6})_(\d{2,3})\//u)
         : input.number.match(/(\d{6})[-_](\d{2,3})$/u);
-      if (!id) throw new SiteError("not_found", `Unsupported movie number: ${input.number}`);
+      if (!id) throw new SiteError("not_found", `不支持的影片番号：${input.number}`);
       const data = await this.dependencies.gateway.fetchJson<MovieDetails>(
         `https://${this.domain}/dyn/phpauto/movie_details/movie_id/${id[1]}_${id[2]}.json`,
         { timeout: input.options?.timeoutMs, signal: input.options?.signal },
       );
       const number = typeof data.MovieID === "string" ? `${this.prefix}-${data.MovieID}` : "";
       verifyMovieNumber(number, input.number);
-      if (data.Status === false) throw new SiteError("not_found", `Movie unavailable: ${number}`);
-      if (!data.Title?.trim()) throw new SiteError("parse_error", `Movie title missing: ${number}`);
+      if (data.Status === false) throw new SiteError("not_found", `影片不可用：${number}`);
+      if (!data.Title?.trim()) throw new SiteError("parse_error", `影片缺少标题：${number}`);
       return {
         input,
         elapsedMs: Date.now() - startedAt,

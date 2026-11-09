@@ -124,6 +124,10 @@ export const pending: Messages["pending"] = {
   ignoreTokenPlaceholder: "例如 hhd800.com@",
   saveIgnoreToken: "保存并重试",
   ignore: "忽略",
+  delete: "删除",
+  deleteHint: "直接删除此 STRM 及对应的 115 源文件",
+  deleting: "正在删除…",
+  deleted: "已删除 STRM 和 115 源文件",
   ignoreConfirm: "从待处理列表移除这个文件？文件本身保持不变。",
   confirmTypes: {
     umr: "破解",

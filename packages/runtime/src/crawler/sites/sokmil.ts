@@ -100,7 +100,7 @@ export class SokmilCrawler extends BaseCrawler {
     }
 
     if (isSokmilLoginWall($)) {
-      throw new SiteError("login_wall", "SOKMIL: login wall");
+      throw new SiteError("login_wall", "SOKMIL：需要登录");
     }
 
     const match = $(".product[data-pid]")
@@ -132,7 +132,7 @@ export class SokmilCrawler extends BaseCrawler {
 
   protected async parseDetailPage(context: Context, $: CheerioAPI, _detailUrl: string): Promise<CrawlerData | null> {
     if (isSokmilLoginWall($)) {
-      throw new SiteError("login_wall", "SOKMIL: login wall");
+      throw new SiteError("login_wall", "SOKMIL：需要登录");
     }
 
     const h1 = $("h1").first().text().trim();

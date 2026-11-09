@@ -7,9 +7,9 @@ export type ManualScrapeUrlMode = "site" | "detail";
 export type ManualScrapeUrlInvalidReason = "invalid_url" | "unsupported_site" | "unsupported_path";
 
 const INVALID_REASON_MESSAGES: Record<ManualScrapeUrlInvalidReason, string> = {
-  invalid_url: "Enter a valid URL",
-  unsupported_site: "Unsupported site URL",
-  unsupported_path: "Enter a site home page or detail page URL",
+  invalid_url: "请输入有效的网址",
+  unsupported_site: "不支持此站点网址",
+  unsupported_path: "请输入站点首页或详情页网址",
 };
 
 export const resolveManualScrapeRoute = (

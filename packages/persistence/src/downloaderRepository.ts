@@ -19,7 +19,7 @@ export class DownloaderRepository {
       .from(downloaderSources)
       .where(eq(downloaderSources.key, sourceKey))
       .get();
-    if (!row) throw new Error(`Downloader source not recorded: ${sourceKey}`);
+    if (!row) throw new Error(`下载器来源未记录：${sourceKey}`);
     return row.since;
   }
 

@@ -8,7 +8,7 @@ export const fixtureCaseIdFromNumber = (number: string): string => {
     .replaceAll(/[^a-z0-9._-]+/gu, "-")
     .replaceAll(/^[._-]+|[._-]+$/gu, "")
     .replaceAll(/-{2,}/gu, "-");
-  if (!caseId) throw new Error(`Cannot derive fixture caseId from number "${number}"`);
+  if (!caseId) throw new Error(`无法从番号“${number}”生成测试录制用例 ID`);
   return caseId;
 };
 

@@ -220,8 +220,8 @@ describe("JavbusCrawler", () => {
       throw new Error("expected failure");
     }
 
-    expect(response.result.error).toContain("age/region verification");
-    expect(response.result.error).toContain("forum registration does not resolve this");
+    expect(response.result.error).toContain("年龄或地区验证");
+    expect(response.result.error).toContain("注册论坛账号无法解决此问题");
     expect(response.result.reason).toBe("login_wall");
     for (const actual of ["ABP-0750", "ABP-076", ""]) {
       const network = new FixtureNetworkClient(

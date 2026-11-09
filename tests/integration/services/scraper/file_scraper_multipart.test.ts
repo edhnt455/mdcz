@@ -37,7 +37,7 @@ import {
 
 const installTestOutput = async (input: { output: PreparedMovieOutput; library: LibraryRepository }) => {
   const { output, library } = input;
-  if (!output.scrape) throw new Error("Scrape output requires movie metadata");
+  if (!output.scrape) throw new Error("刮削输出需要影片元数据");
   const committedMovie = toCommittedMovie(output, output.scrape);
   const commit = () => {
     writeCommittedMovie(library, committedMovie);
@@ -477,7 +477,7 @@ describe("FileScraper movie groups", () => {
       nfoNaming: "movie",
       writeNfo: async () => undefined,
     });
-    if (!group.output.scrape) throw new Error("Scrape output requires movie metadata");
+    if (!group.output.scrape) throw new Error("刮削输出需要影片元数据");
     const refreshMovie = toCommittedMovie({ ...refresh, movieId: movie.id }, group.output.scrape);
     await new WriteOutput().install(refresh.artifacts, {
       protectedMediaFiles: refresh.protectedMediaFiles,

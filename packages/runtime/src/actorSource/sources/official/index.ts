@@ -51,7 +51,7 @@ export class OfficialActorSource implements BaseActorSource {
             site: adapter.key,
             success: false,
             result: null,
-            warning: `Failed to load official actor data from ${adapter.key}: ${toErrorMessage(error)}`,
+            warning: `从 ${adapter.key} 加载官网演员数据失败：${toErrorMessage(error)}`,
           };
         }
       }),
@@ -66,7 +66,7 @@ export class OfficialActorSource implements BaseActorSource {
       if (!result) continue;
       const current = mergeActorProfiles(matchedResults.map((item) => item.profile));
       if (current && !actorProfilesAgree(current, result.profile)) {
-        warnings.push(`Conflicting official profile for ${query.name}; skipped`);
+        warnings.push(`${query.name} 的官网档案信息冲突，已跳过`);
         continue;
       }
       siteResult.photoFound = Boolean(result.profile.photo_url?.trim());

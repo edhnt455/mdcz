@@ -82,7 +82,7 @@ export const buildJellyfinHeaders = (configuration: Configuration, headers: Medi
 const getConfiguredJellyfinUserId = (configuration: Configuration): string | undefined => {
   const trimmedUserId = configuration.jellyfin.userId.trim();
   if (trimmedUserId && !isJellyfinUuid(trimmedUserId)) {
-    throw new JellyfinServiceError("JELLYFIN_INVALID_USER_ID", "Jellyfin userId must be a UUID");
+    throw new JellyfinServiceError("JELLYFIN_INVALID_USER_ID", "Jellyfin 用户 ID 必须是 UUID");
   }
   return trimmedUserId || undefined;
 };
@@ -102,22 +102,21 @@ const fetchAutoResolvedJellyfinUserId = async (
       createMissingUserContextError: () =>
         new JellyfinServiceError(
           "JELLYFIN_USER_CONTEXT_REQUIRED",
-          "Current Jellyfin server requires user context; please configure Jellyfin user ID in settings and retry",
+          "当前 Jellyfin 服务器需要用户身份，请在设置中配置 Jellyfin 用户 ID 后重试",
         ),
       toServiceError: toJellyfinServiceError,
     },
     {
       statusMappings: {
-        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin API key is invalid; cannot read user list" },
+        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin API 密钥无效，无法读取用户列表" },
         403: {
           code: "JELLYFIN_PERMISSION_DENIED",
-          message: "Current Jellyfin credentials lack permission to read user list",
+          message: "当前 Jellyfin 凭证无权读取用户列表",
         },
       },
       fallback: {
         code: "JELLYFIN_USER_CONTEXT_REQUIRED",
-        message:
-          "Current Jellyfin server requires user context; please configure Jellyfin user ID in settings and retry",
+        message: "当前 Jellyfin 服务器需要用户身份，请在设置中配置 Jellyfin 用户 ID 后重试",
       },
     },
   );
@@ -219,16 +218,16 @@ export const fetchJellyfinPersons = async (
     },
     {
       statusMappings: {
-        400: { code: "JELLYFIN_BAD_REQUEST", message: "Invalid Jellyfin person request parameters" },
-        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin API key is invalid or expired" },
+        400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin 人物请求参数无效" },
+        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin API 密钥无效或已过期" },
         403: {
           code: "JELLYFIN_PERMISSION_DENIED",
-          message: "Current Jellyfin credentials lack person read permissions",
+          message: "当前 Jellyfin 凭证无权读取人物信息",
         },
       },
       fallback: {
         code: "JELLYFIN_UNREACHABLE",
-        message: "Failed to read Jellyfin person list",
+        message: "读取 Jellyfin 人物列表失败",
       },
     },
   );
@@ -252,7 +251,7 @@ export const fetchJellyfinPersonDetail = async (
       createMissingUserContextError: () =>
         new JellyfinServiceError(
           "JELLYFIN_USER_CONTEXT_REQUIRED",
-          "Current Jellyfin server requires user context; please configure Jellyfin user ID in settings and retry",
+          "当前 Jellyfin 服务器需要用户身份，请在设置中配置 Jellyfin 用户 ID 后重试",
         ),
       toServiceError: toJellyfinServiceError,
     },
@@ -260,17 +259,17 @@ export const fetchJellyfinPersonDetail = async (
       statusMappings: {
         401: {
           code: "JELLYFIN_AUTH_FAILED",
-          message: `Failed to read person details: Jellyfin API key is invalid; cannot access ${person.Name}`,
+          message: `读取人物详情失败：Jellyfin API 密钥无效，无法访问 ${person.Name}`,
         },
         403: {
           code: "JELLYFIN_PERMISSION_DENIED",
-          message: `Failed to read person details: current Jellyfin API key has no permission to access ${person.Name}`,
+          message: `读取人物详情失败：当前 Jellyfin API 密钥无权访问 ${person.Name}`,
         },
-        404: { code: "JELLYFIN_NOT_FOUND", message: `Person ${person.Name} does not exist in Jellyfin` },
+        404: { code: "JELLYFIN_NOT_FOUND", message: `Jellyfin 中不存在人物 ${person.Name}` },
       },
       fallback: {
         code: "JELLYFIN_UNREACHABLE",
-        message: `Failed to read Jellyfin person details: ${person.Name}`,
+        message: `读取 Jellyfin 人物详情失败：${person.Name}`,
       },
     },
   );
@@ -296,17 +295,17 @@ export const fetchJellyfinMetadataEditorInfo = async (
       statusMappings: {
         401: {
           code: "JELLYFIN_AUTH_FAILED",
-          message: "Jellyfin credentials are invalid; cannot verify person write permissions",
+          message: "Jellyfin 凭证无效，无法核验人物写入权限",
         },
         403: {
           code: "JELLYFIN_PERMISSION_DENIED",
-          message: "Current Jellyfin credentials lack person write permissions",
+          message: "当前 Jellyfin 凭证无权写入人物信息",
         },
-        404: { code: "JELLYFIN_NOT_FOUND", message: "Jellyfin cannot retrieve metadata editor info for person" },
+        404: { code: "JELLYFIN_NOT_FOUND", message: "Jellyfin 无法获取人物元数据编辑信息" },
       },
       fallback: {
         code: "JELLYFIN_UNREACHABLE",
-        message: "Failed to read Jellyfin metadata editor info for person",
+        message: "读取 Jellyfin 人物元数据编辑信息失败",
       },
     },
   );
@@ -331,17 +330,17 @@ export const updateJellyfinPersonInfo = async (
     },
     {
       statusMappings: {
-        400: { code: "JELLYFIN_BAD_REQUEST", message: `Jellyfin rejected person update: ${person.Name}` },
-        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin credentials are invalid; cannot write person info" },
+        400: { code: "JELLYFIN_BAD_REQUEST", message: `Jellyfin 拒绝更新人物：${person.Name}` },
+        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin 凭证无效，无法写入人物信息" },
         403: {
           code: "JELLYFIN_PERMISSION_DENIED",
-          message: "Current Jellyfin credentials lack person write permissions",
+          message: "当前 Jellyfin 凭证无权写入人物信息",
         },
-        404: { code: "JELLYFIN_NOT_FOUND", message: `Person ${person.Name} does not exist in Jellyfin` },
+        404: { code: "JELLYFIN_NOT_FOUND", message: `Jellyfin 中不存在人物 ${person.Name}` },
       },
       fallback: {
         code: "JELLYFIN_WRITE_FAILED",
-        message: `Failed to write Jellyfin person info: ${person.Name}`,
+        message: `写入 Jellyfin 人物信息失败：${person.Name}`,
       },
     },
   );
@@ -369,17 +368,17 @@ export const uploadJellyfinPrimaryImage = async (
     },
     {
       statusMappings: {
-        400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin rejected person photo upload request" },
-        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin credentials are invalid; cannot upload person photo" },
+        400: { code: "JELLYFIN_BAD_REQUEST", message: "Jellyfin 拒绝人物照片上传请求" },
+        401: { code: "JELLYFIN_AUTH_FAILED", message: "Jellyfin 凭证无效，无法上传人物照片" },
         403: {
           code: "JELLYFIN_PERMISSION_DENIED",
-          message: "Current Jellyfin credentials lack person photo write permissions",
+          message: "当前 Jellyfin 凭证无权写入人物照片",
         },
-        415: { code: "JELLYFIN_UNSUPPORTED_MEDIA", message: "Jellyfin does not accept the current photo file type" },
+        415: { code: "JELLYFIN_UNSUPPORTED_MEDIA", message: "Jellyfin 不支持当前照片文件类型" },
       },
       fallback: {
         code: "JELLYFIN_WRITE_FAILED",
-        message: "Failed to upload Jellyfin person photo",
+        message: "上传 Jellyfin 人物照片失败",
       },
     },
   );

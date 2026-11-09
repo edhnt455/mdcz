@@ -75,7 +75,7 @@ export class ScrapeConflictService {
         fileName: path.basename(saved.sourceRef.relativePath),
         status: "failed",
         conflict: { sourcePath: saved.incoming.cloud.source.sourcePath, targetPath: saved.existingLinkPath },
-        error: "Target directory already contains a movie with the same name",
+        error: "目标目录中已存在同名影片",
         crawlerData: null,
         nfoRootId: null,
         nfoRelativePath: null,
@@ -89,11 +89,11 @@ export class ScrapeConflictService {
   }
 
   async preview(input: ScrapeConflictInput): Promise<ScrapeConflictPreview> {
-    if (this.running.has(input.itemId)) throw new Error("Duplicate resolution is already running");
+    if (this.running.has(input.itemId)) throw new Error("重复版本处理正在运行");
     const state = await this.deps.persistence.getState();
     const jobs = new ScrapeConflictRepository(state.database);
     const saved = jobs.get(input.itemId);
-    if (saved && saved.taskId !== input.taskId) throw new Error("Duplicate resolution belongs to another task");
+    if (saved && saved.taskId !== input.taskId) throw new Error("重复版本处理属于其他任务");
     if (saved?.keep)
       return this.toPreview(
         JSON.parse(saved.snapshotJson) as ScrapeConflictSnapshot,
@@ -104,7 +104,7 @@ export class ScrapeConflictService {
     const run = await this.deps.snapshot(input);
     const item = run.items.find((candidate) => candidate.id === input.itemId);
     if (run.task.continuity === "live" || item?.status !== "failed" || !item.conflict || !run.task.libraryId)
-      throw new Error("Select a completed STRM duplicate conflict");
+      throw new Error("请选择一个已结束的 STRM 重复冲突条目");
     const configuration = await this.deps.config.get();
     const connection = configuration.embyDeletion.moviePilot;
     const library = configuration.embyDeletion.libraries.find((candidate) => candidate.id === run.task.libraryId);
@@ -120,11 +120,11 @@ export class ScrapeConflictService {
     const repository = new EmbyDeletionRepository(state.database);
     const root = await state.repositories.mediaRoots.get(item.rootId);
     const sourcePath = filesystemPathKey(path.resolve(root.realPath ?? root.hostPath, item.relativePath));
-    if (sourcePath !== filesystemPathKey(item.conflict.sourcePath)) throw new Error("Conflict source identity changed");
+    if (sourcePath !== filesystemPathKey(item.conflict.sourcePath)) throw new Error("冲突来源身份已变化");
     const targetPath = filesystemPathKey(item.conflict.targetPath);
-    if (!isPathInside(library.realPath, targetPath)) throw new Error("Conflict target is outside this library");
+    if (!isPathInside(library.realPath, targetPath)) throw new Error("冲突目标不在此媒体库内");
     const existingFile = repository.findFile(targetPath);
-    if (!existingFile) throw new Error("Existing Link STRM has no library record; scan it first");
+    if (!existingFile) throw new Error("现有 Link STRM 没有媒体库记录，请先扫描入库");
     const binding = readStrmBinding(repository, existingFile.id);
     const source =
       binding?.connectionId === connection.id && binding.fileUpdatedAt === existingFile.updatedAt.getTime()
@@ -132,7 +132,7 @@ export class ScrapeConflictService {
         : existingFile.strmSourceJson
           ? (JSON.parse(existingFile.strmSourceJson) as StrmSourceSnapshot)
           : undefined;
-    if (!source) throw new Error("Existing STRM has no recorded Normal source; verify its association first");
+    if (!source) throw new Error("现有 STRM 没有已记录的 Normal 来源，请先核验关联");
     const strm = new StrmDeletionService(() => configuration.embyDeletion);
     await strm.assertMounts(library);
     const client = new MoviePilotClient(connection, connection.token, this.deps.moviePilotFetch);
@@ -140,7 +140,7 @@ export class ScrapeConflictService {
     const versions: Version[] = [];
     for (const normalPath of [source.sourcePath, sourcePath]) {
       if (!isPathInside(library.source.realPath, filesystemPathKey(normalPath)))
-        throw new Error("Normal STRM is outside this library");
+        throw new Error("Normal STRM 不在此媒体库内");
       const stat = await lstat(normalPath);
       if (
         path.extname(normalPath).toLowerCase() !== ".strm" ||
@@ -148,17 +148,17 @@ export class ScrapeConflictService {
         stat.size > 64 * 1024 ||
         !isPathInside(library.source.realPath, filesystemPathKey(await realpath(normalPath)))
       )
-        throw new Error("Normal STRM file type or location changed");
+        throw new Error("Normal STRM 文件类型或位置已变化");
       const content = await readFile(normalPath);
       const playback = parseStrmTarget(content.toString("utf8"));
       const resourceIdentity = playback ? moviePilotResourceIdentity(playback) : undefined;
       const expected = new URL("api/v1/plugin/P115StrmHelper/redirect_url", `${connection.baseUrl}/`);
       if (!resourceIdentity?.startsWith(`${expected.origin}${expected.pathname}?pickcode=`))
-        throw new Error("STRM does not identify a file on the configured MoviePilot server");
+        throw new Error("STRM 未指向已配置 MoviePilot 服务器上的文件");
       const pickcode = new URL(resourceIdentity).searchParams.get("pickcode") ?? "";
       const candidates = index.get(pickcode) ?? [];
-      if (candidates.length !== 1) throw new Error("115 source could not be uniquely verified");
-      if (candidates[0].target.size == null) throw new Error("115 source size is unavailable");
+      if (candidates.length !== 1) throw new Error("无法唯一核验 115 来源");
+      if (candidates[0].target.size == null) throw new Error("无法获取 115 来源文件大小");
       versions.push({
         cloud: {
           connectionId: connection.id,
@@ -172,7 +172,7 @@ export class ScrapeConflictService {
       });
     }
     const [existing, incoming] = versions;
-    if (source.sha256 !== existing.cloud.source.sha256) throw new Error("Recorded Normal STRM was replaced");
+    if (source.sha256 !== existing.cloud.source.sha256) throw new Error("已记录的 Normal STRM 已被替换");
     const linkStat = await lstat(targetPath);
     if (
       path.extname(targetPath).toLowerCase() !== ".strm" ||
@@ -180,10 +180,9 @@ export class ScrapeConflictService {
       linkStat.size > 64 * 1024 ||
       !isPathInside(library.realPath, filesystemPathKey(await realpath(targetPath)))
     )
-      throw new Error("Link STRM file type or location changed");
+      throw new Error("Link STRM 文件类型或位置已变化");
     existing.linkHash = hash(await readFile(targetPath));
-    if (existing.linkHash !== existing.cloud.source.sha256)
-      throw new Error("Normal and Link refer to different resources");
+    if (existing.linkHash !== existing.cloud.source.sha256) throw new Error("Normal 和 Link 指向不同资源");
     existing.fileId = existingFile.id;
     existing.fileUpdatedAt = existingFile.updatedAt.getTime();
     const snapshot: ScrapeConflictSnapshot = {
@@ -221,7 +220,7 @@ export class ScrapeConflictService {
     step: string | null,
   ): ScrapeConflictPreview {
     const version = (entry: Version): ScrapeConflictVersion => {
-      if (entry.cloud.target.size == null) throw new Error("115 source size is unavailable");
+      if (entry.cloud.target.size == null) throw new Error("无法获取 115 来源文件大小");
       return {
         name: entry.cloud.target.name ?? path.posix.basename(entry.cloud.target.path),
         size: entry.cloud.target.size,
@@ -241,7 +240,7 @@ export class ScrapeConflictService {
   }
 
   async resolve(input: ScrapeConflictResolveInput, automatic = false): Promise<ScrapeConflictResolution> {
-    if (this.running.has(input.itemId)) throw new Error("Duplicate resolution is already running");
+    if (this.running.has(input.itemId)) throw new Error("重复版本处理正在运行");
     this.running.add(input.itemId);
     let release: (() => void) | undefined;
     try {
@@ -249,8 +248,8 @@ export class ScrapeConflictService {
       const jobs = new ScrapeConflictRepository(state.database);
       const job = jobs.get(input.itemId);
       if (!job || job.taskId !== input.taskId || job.token !== input.token)
-        throw new Error("Refresh the duplicate preview before deleting");
-      if (job.keep && job.keep !== input.keep) throw new Error("Continue the previously selected resolution");
+        throw new Error("请刷新重复版本预览后再删除");
+      if (job.keep && job.keep !== input.keep) throw new Error("请继续此前选择的处理方式");
       if (job.step === "completed") return { runId: job.retryRunId };
       jobs.update(input.itemId, { keep: input.keep, error: null });
       const snapshot = JSON.parse(job.snapshotJson) as ScrapeConflictSnapshot;
@@ -271,7 +270,7 @@ export class ScrapeConflictService {
       const configuration = await this.deps.config.get();
       const connection = configuration.embyDeletion.moviePilot;
       if (!connection || connection.id !== snapshot.existing.cloud.connectionId)
-        throw new Error("MoviePilot connection changed; review required");
+        throw new Error("MoviePilot 连接已变化，需要检查");
       const repository = new EmbyDeletionRepository(state.database);
       const selected = input.keep === "existing" ? snapshot.incoming : snapshot.existing;
       const retained = input.keep === "existing" ? snapshot.existing : snapshot.incoming;
@@ -285,11 +284,10 @@ export class ScrapeConflictService {
       const assertActive = async () => {
         const currentConfiguration = await this.deps.config.get();
         if (automatic && !currentConfiguration.scrape.autoResolveDuplicates)
-          throw new Error("Automatic duplicate resolution is disabled; continue manually");
+          throw new Error("自动处理重复版本已关闭，请手动继续");
         const current = currentConfiguration.embyDeletion;
         const library = await this.deps.libraries.get(snapshot.library.id);
-        if (this.deps.isBusy() || repository.hasLiveScrapes())
-          throw new Error("Wait for active media tasks before resolving duplicates");
+        if (this.deps.isBusy() || repository.hasLiveScrapes()) throw new Error("请等待媒体任务结束后再处理重复版本");
         if (
           current.moviePilot?.id !== connection.id ||
           JSON.stringify(current.libraries.find((entry) => entry.id === snapshot.library.id)) !==
@@ -298,18 +296,17 @@ export class ScrapeConflictService {
           filesystemPathKey(library.sourcePath) !== snapshot.library.source?.path ||
           filesystemPathKey(library.outputPath) !== snapshot.library.outputPath
         )
-          throw new Error("STRM library settings changed; review required");
+          throw new Error("STRM 媒体库设置已变化，需要检查");
         await strm.assertMounts(snapshot.library);
       };
       await assertActive();
       await strm.assertSource(snapshot.library, retained.cloud, false);
-      if (!(await client.verify(connection, retained.cloud)))
-        throw new Error("The version to keep is no longer available on 115");
+      if (!(await client.verify(connection, retained.cloud))) throw new Error("要保留的版本已不在 115 中");
       let step: string = job.step;
       if (step === "validating" || step === "deleting_cloud") {
         const file = repository.findFile(linkPath);
         if (file?.id !== snapshot.existing.fileId || file.updatedAt.getTime() !== snapshot.existing.fileUpdatedAt)
-          throw new Error("Existing library file changed; refresh the preview");
+          throw new Error("现有媒体库文件已变化，请刷新预览");
         await strm.assertSource(snapshot.library, selected.cloud, false);
         await this.assertLink(strm, snapshot, false);
         if (!shared) {
@@ -322,8 +319,7 @@ export class ScrapeConflictService {
           if (other) throw new Error(`${strmReferenceErrors.shared}\n${other}`);
         }
         const target = shared ? undefined : await client.verify(connection, selected.cloud);
-        if (!shared && !target)
-          throw new Error("115 file is absent without a saved deletion acknowledgement; review required");
+        if (!shared && !target) throw new Error("115 文件已不存在，但没有已保存的删除确认记录，需要检查");
         await assertActive();
         await strm.assertSource(snapshot.library, retained.cloud, false);
         await strm.assertSource(snapshot.library, selected.cloud, false);
@@ -359,7 +355,7 @@ export class ScrapeConflictService {
         await assertActive();
         await client.test();
         if (await client.verify(connection, selected.cloud))
-          throw new Error("115 deletion was acknowledged but the video is still listed; retry later");
+          throw new Error("115 已确认删除，但视频仍在列表中，请稍后重试");
         jobs.update(input.itemId, { step: "cleaning_local" });
         step = "cleaning_local";
       }
@@ -368,7 +364,7 @@ export class ScrapeConflictService {
         if (selected.cloud.source.sourcePath !== retained.cloud.source.sourcePath) {
           await strm.removeSource(input.itemId, snapshot.library, selected.cloud, () => {
             if (this.deps.isBusy() || repository.hasLiveScrapes())
-              throw new Error("Media tasks started during deletion; retry when idle");
+              throw new Error("删除期间启动了媒体任务，请在空闲时重试");
             return true;
           });
         }
@@ -388,14 +384,14 @@ export class ScrapeConflictService {
             { ...selected.cloud, source: { sourcePath: linkPath, sha256: snapshot.existing.linkHash ?? "" } },
             () => {
               if (this.deps.isBusy() || repository.hasLiveScrapes())
-                throw new Error("Media tasks started during deletion; retry when idle");
+                throw new Error("删除期间启动了媒体任务，请在空闲时重试");
               return true;
             },
           );
           const file = repository.findFile(linkPath);
           if (file) {
             if (file.id !== selected.fileId || file.updatedAt.getTime() !== selected.fileUpdatedAt)
-              throw new Error("Library record changed during deletion; review required");
+              throw new Error("删除期间媒体库记录已变化，需要检查");
             state.repositories.library.removeFile(file.id);
           }
         } else {

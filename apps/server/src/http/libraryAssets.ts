@@ -120,15 +120,15 @@ const parseVariant = (
   }
   const width = Number(query.w);
   if (!Number.isInteger(width) || width < 64 || width > 1600) {
-    throw new StorageError(storageErrorCodes.UnsupportedOperation, "Asset width must be an integer from 64 to 1600");
+    throw new StorageError(storageErrorCodes.UnsupportedOperation, "资源宽度必须是 64 到 1600 之间的整数");
   }
   const requestedFormat = typeof query.format === "string" ? query.format.trim().toLowerCase() : "source";
   if (!["source", "webp", "avif"].includes(requestedFormat)) {
-    throw new StorageError(storageErrorCodes.UnsupportedOperation, "Unsupported asset format");
+    throw new StorageError(storageErrorCodes.UnsupportedOperation, "不支持的资源格式");
   }
   const format = requestedFormat === "source" ? sharpFormats[sourceExtension] : (requestedFormat as "avif" | "webp");
   if (!format) {
-    throw new StorageError(storageErrorCodes.UnsupportedOperation, "Unsupported source image format");
+    throw new StorageError(storageErrorCodes.UnsupportedOperation, "不支持的源图片格式");
   }
   const extension = requestedFormat === "source" ? sourceExtension : `.${requestedFormat}`;
   const revision = parseRevision(query);
@@ -227,7 +227,7 @@ export const registerLibraryAssets = (fastify: FastifyInstance, services: Server
     try {
       await services.auth.assertAuthenticated(getBearerToken(request));
     } catch (error) {
-      return sendError(reply, 401, error instanceof Error ? error.message : "Authentication required");
+      return sendError(reply, 401, error instanceof Error ? error.message : "请先登录");
     }
 
     const params = request.params as { "*": string; rootId: string };
@@ -235,24 +235,24 @@ export const registerLibraryAssets = (fastify: FastifyInstance, services: Server
     try {
       relativePath = normalizeRootRelativePath(params["*"]);
     } catch (error) {
-      return sendError(reply, toStatusCode(error), error instanceof Error ? error.message : "Invalid asset path");
+      return sendError(reply, toStatusCode(error), error instanceof Error ? error.message : "资源路径无效");
     }
 
     const sourceExtension = path.extname(relativePath).toLowerCase();
     const sourceContentType = assetContentTypes[sourceExtension];
     if (!sourceContentType) {
-      return sendError(reply, 415, "Unsupported library asset type");
+      return sendError(reply, 415, "不支持的媒体库资源类型");
     }
 
     try {
       const root = await services.mediaRoots.get(params.rootId);
       const source = await statRootPath(root, relativePath);
       if (source.kind !== "file") {
-        return sendError(reply, 415, "Library asset is not a file");
+        return sendError(reply, 415, "媒体库资源不是文件");
       }
       const query = request.query as Record<string, unknown>;
       if (sourceContentType.startsWith("video/") && (query.w !== undefined || query.format !== undefined)) {
-        return sendError(reply, 400, "Video assets do not support image variants");
+        return sendError(reply, 400, "视频资源不支持图片变体");
       }
       const variant = parseVariant(query, sourceExtension);
       const sourcePath = resolveRootRelativePath(root, relativePath);
@@ -325,7 +325,7 @@ export const registerLibraryAssets = (fastify: FastifyInstance, services: Server
       }
       return reply.send(createReadStream(cachePath));
     } catch (error) {
-      return sendError(reply, toStatusCode(error), error instanceof Error ? error.message : "Failed to read asset");
+      return sendError(reply, toStatusCode(error), error instanceof Error ? error.message : "读取资源失败");
     }
   });
 };

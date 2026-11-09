@@ -42,16 +42,15 @@ export class WriteOutput {
     const consumedSources = new Map<string, WriteArtifact>();
     for (const artifact of artifacts) {
       const target = pathKey(artifact.targetPath);
-      if (protectedMedia.has(target))
-        throw new Error(`Write output target cannot overwrite a source media file: ${artifact.targetPath}`);
-      if (targets.has(target)) throw new Error(`Duplicate artifact target: ${artifact.targetPath}`);
+      if (protectedMedia.has(target)) throw new Error(`输出目标不能覆盖源媒体文件：${artifact.targetPath}`);
+      if (targets.has(target)) throw new Error(`资源目标重复：${artifact.targetPath}`);
       targets.add(target);
     }
     for (const artifact of artifacts) {
       if (!("sourcePath" in artifact) || !artifact.consume) continue;
       const source = pathKey(artifact.sourcePath);
       if (protectedMedia.has(source) || targets.has(source))
-        throw new Error(`Cannot consume a media file or final artifact: ${artifact.sourcePath}`);
+        throw new Error(`不能消耗媒体文件或最终资源：${artifact.sourcePath}`);
       consumedSources.set(source, artifact);
     }
     try {
@@ -65,7 +64,7 @@ export class WriteOutput {
             ? artifact.sourcePath
             : `${artifact.targetPath}.mdcz-staging-${stagingId}.part`;
         if (consuming && !(await this.fileSystem.lstat(temporaryPath)).isFile())
-          throw new Error(`Consumed staging must be a regular file: ${temporaryPath}`);
+          throw new Error(`暂存来源必须是普通文件：${temporaryPath}`);
         temporaryPaths.add(temporaryPath);
         if ("symlinkTo" in artifact) {
           await this.fileSystem.symlink(artifact.symlinkTo, temporaryPath);
@@ -84,12 +83,12 @@ export class WriteOutput {
         } else {
           const source = await this.fileSystem.stat(artifact.sourcePath);
           if (!source.isFile() || source.size !== artifact.size)
-            throw new Error(`Artifact source changed: ${artifact.sourcePath}`);
+            throw new Error(`资源来源已变化：${artifact.sourcePath}`);
           if (!consuming) await this.fileSystem.copyFile(artifact.sourcePath, temporaryPath);
         }
         if (!("data" in artifact)) await this.fileSystem.flush?.(temporaryPath);
         if ((await this.fileSystem.stat(temporaryPath)).size !== expectedSize)
-          throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
+          throw new Error(`暂存资源大小不匹配：${artifact.targetPath}`);
       }
       await options.validate?.();
       await options.beforeCommit?.();
@@ -98,7 +97,7 @@ export class WriteOutput {
         try {
           const existing = await this.fileSystem.lstat(artifact.targetPath);
           if (!existing.isFile() && !existing.isSymbolicLink())
-            throw new Error(`Artifact target is not a file: ${artifact.targetPath}`);
+            throw new Error(`资源目标不是文件：${artifact.targetPath}`);
           existingTarget = existing;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -110,7 +109,7 @@ export class WriteOutput {
           const backupPath = `${artifact.targetPath}.mdcz-backup-${stagingId}`;
           try {
             // link(2) may follow a symlink on some platforms, which would back up the wrong file.
-            if (!existingTarget.isFile()) throw new Error("Only regular files are linked");
+            if (!existingTarget.isFile()) throw new Error("仅支持链接普通文件");
             await this.fileSystem.link(artifact.targetPath, backupPath);
             replacement.linkedBackup = true;
           } catch {
@@ -129,7 +128,7 @@ export class WriteOutput {
           await this.fileSystem.copyFile(artifact.temporaryPath, localStaging);
           await this.fileSystem.flush?.(localStaging);
           if ((await this.fileSystem.stat(localStaging)).size !== artifact.size)
-            throw new Error(`Staged artifact size mismatch: ${artifact.targetPath}`);
+            throw new Error(`暂存资源大小不匹配：${artifact.targetPath}`);
           await this.fileSystem.rename(localStaging, artifact.targetPath);
           temporaryPaths.settle(localStaging);
         }
@@ -149,7 +148,7 @@ export class WriteOutput {
         try {
           await this.fileSystem.rm(sourcePath, { force: true });
         } catch (error) {
-          this.logger.warn(`Published artifacts but failed to remove source ${sourcePath}: ${toErrorMessage(error)}`);
+          this.logger.warn(`资源已发布，但移除来源 ${sourcePath} 失败：${toErrorMessage(error)}`);
         }
       }
       return value;
@@ -164,7 +163,7 @@ export class WriteOutput {
             else if (replacement.installed) await this.fileSystem.rm(targetPath, { force: true });
           } catch (restoreError) {
             this.logger.warn(
-              `Failed to restore artifact ${targetPath}${backupPath ? ` from ${backupPath}` : ""}: ${toErrorMessage(restoreError)}`,
+              `恢复资源 ${targetPath}${backupPath ? `（备份：${backupPath}）` : ""} 失败：${toErrorMessage(restoreError)}`,
             );
           }
         }

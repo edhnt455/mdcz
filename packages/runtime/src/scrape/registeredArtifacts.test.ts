@@ -28,7 +28,7 @@ describe("registeredPosterCropContext", () => {
       await expect(result).resolves.toMatchObject({ assets: {}, movieId: "movie-a" });
       expect(library.getEntryById).toHaveBeenCalledWith("movie-a");
     } else {
-      await expect(result).rejects.toThrow(owners.length ? "referenced by multiple library movies" : "not in library");
+      await expect(result).rejects.toThrow(owners.length ? "被多个媒体库影片引用" : "未入库");
       expect(library.getEntryById).not.toHaveBeenCalled();
     }
   });

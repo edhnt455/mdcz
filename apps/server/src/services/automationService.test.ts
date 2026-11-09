@@ -75,7 +75,7 @@ describe("AutomationService webhook delivery", () => {
     await expect.poll(() => delivered(service)).toBe(2);
     await expect.poll(() => fetchMock.mock.calls.filter(([url]) => url !== WEBHOOK_URL).length).toBe(2);
     expect(fetchMock.mock.calls.find(([url]) => url === "http://ntfy.test/mdcz")?.[1]).toMatchObject({
-      body: "Scrape finished: 3 succeeded, 1 failed; 2 new in the pending list",
+      body: "刮削结束：成功 3 项，失败 1 项; 待处理列表新增 2 项",
     });
 
     expect(requestBodies(fetchMock)).toEqual([
@@ -166,7 +166,7 @@ describe("AutomationService webhook delivery", () => {
     }
 
     await expect.poll(() => fetchMock.mock.calls.length).toBe(1);
-    expect((await service.deliveryStatus()).webhook).toMatchObject({ lastError: "Notification queue is full" });
+    expect((await service.deliveryStatus()).webhook).toMatchObject({ lastError: "通知队列已满" });
   });
 });
 

@@ -50,11 +50,11 @@ const javbusBlockedPageError = (html: string): SiteError | null => {
   if (page === "verification_required") {
     return new SiteError(
       "login_wall",
-      "JavBus requires age/region verification. Complete it in your browser and copy the cookies; forum registration does not resolve this.",
+      "JavBus 需要年龄或地区验证。请在浏览器完成验证并复制 Cookie，注册论坛账号无法解决此问题。",
     );
   }
   if (page === "login_wall") {
-    return new SiteError("login_wall", "JavBus login wall; the current cookie cannot access film content.");
+    return new SiteError("login_wall", "JavBus 要求登录，当前 Cookie 无法访问影片内容。");
   }
   return null;
 };

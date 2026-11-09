@@ -129,7 +129,7 @@ export class Fc2Crawler extends BaseFc2Crawler {
 
   protected override classifyDetailFailure(_context: Context, _detailHtml: string, $: CheerioAPI): SiteError | null {
     if (isFc2NotFoundPage($)) {
-      return new SiteError("not_found", "Product not found on FC2 official site");
+      return new SiteError("not_found", "FC2 官网未找到此作品");
     }
 
     return null;

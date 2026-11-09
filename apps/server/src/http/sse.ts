@@ -22,9 +22,7 @@ export async function writeTaskEventsStream(
     if (!raw.write(chunk)) {
       // Runtime warnings are streamed too; unsubscribe before logging a stalled stream.
       closeStream();
-      runtimeLoggerService
-        .getLogger("task-sse")
-        .warn("Task SSE output is backpressured; closing the stream for a full resync");
+      runtimeLoggerService.getLogger("task-sse").warn("任务 SSE 输出阻塞，正在关闭连接以便完整重新同步");
     }
   };
 

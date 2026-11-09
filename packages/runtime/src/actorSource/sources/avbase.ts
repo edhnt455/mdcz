@@ -273,7 +273,7 @@ export class AvbaseActorSource implements BaseActorSource {
       return {
         source: this.name,
         success: false,
-        warnings: [`Failed to load AVBase actor data: ${message}`],
+        warnings: [`加载 AVBase 演员数据失败：${message}`],
       };
     }
   }

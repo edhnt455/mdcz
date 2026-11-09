@@ -467,9 +467,9 @@ describe("Emby actor services", () => {
                 success: !failed,
                 profile: source === matchedSource ? { name: "神木麗", photo_url: photoUrl } : undefined,
                 warnings: officialFailed
-                  ? ["Failed to load official actor data from life: HTTP 403 Forbidden"]
+                  ? ["从 life 加载官网演员数据失败：HTTP 403 Forbidden"]
                   : failed
-                    ? ["Failed to load AVBase actor data: HTTP 403 Forbidden"]
+                    ? ["加载 AVBase 演员数据失败：HTTP 403 Forbidden"]
                     : [],
                 siteResults:
                   source === "official"
@@ -509,23 +509,23 @@ describe("Emby actor services", () => {
         .map((source) => {
           const outcome =
             source === matchedSource
-              ? `${source}: photo found`
+              ? `${source}: 找到照片`
               : source === "avbase"
-                ? "avbase: lookup failed (Failed to load AVBase actor data: HTTP 403 Forbidden)"
-                : `${source}: no photo found`;
+                ? "avbase: 查询失败 (加载 AVBase 演员数据失败：HTTP 403 Forbidden)"
+                : `${source}: 未找到照片`;
           if (source !== "official") return outcome;
           const sites = ["tpowers", "cmore", "nax", "mines", "alive", "life"].map(
             (site) =>
-              `${site}: ${site === "life" && !matchedSource ? "lookup failed" : site === "nax" && matchedSource === "official" ? "photo found" : "no photo found"}`,
+              `${site}：${site === "life" && !matchedSource ? "查询失败" : site === "nax" && matchedSource === "official" ? "找到照片" : "未找到照片"}`,
           );
           if (!matchedSource) {
-            return `official: lookup failed [${sites.join("; ")}] (Failed to load official actor data from life: HTTP 403 Forbidden)`;
+            return `official: 查询失败 [${sites.join("; ")}] (从 life 加载官网演员数据失败：HTTP 403 Forbidden)`;
           }
           return `${outcome} [${sites.join("; ")}]`;
         })
         .join(" → ");
       expect(signalService.showLogText).toHaveBeenCalledWith(
-        `Emby actor photo lookup for 神木麗: ${trace}`,
+        `Emby 演员 神木麗 的照片查询：${trace}`,
         matchedSource ? "info" : "warn",
       );
       if (!matchedSource) {
@@ -536,9 +536,7 @@ describe("Emby actor services", () => {
       }
       expect(result).toEqual({ processedCount: 1, failedCount: 0, skippedCount: 0 });
       if (matchedSource === "local") {
-        expect(signalService.showLogText).toHaveBeenCalledWith(
-          `Using local Emby actor photo for 神木麗: ${localPhotoPath}`,
-        );
+        expect(signalService.showLogText).toHaveBeenCalledWith(`使用 神木麗 的本地 Emby 演员照片：${localPhotoPath}`);
         expect(networkClient.getContent).not.toHaveBeenCalled();
       } else {
         expect(networkClient.getContent).toHaveBeenCalledWith(photoUrl, {
@@ -547,7 +545,7 @@ describe("Emby actor services", () => {
           },
         });
       }
-      expect(signalService.showLogText).toHaveBeenCalledWith("Updated Emby actor photo: 神木麗");
+      expect(signalService.showLogText).toHaveBeenCalledWith("已更新 Emby 演员照片：神木麗");
       expect(networkClient.postText).toHaveBeenCalledTimes(1);
       expect(networkClient.postText.mock.calls[0]?.[0]).toMatch(/\/Items\/person-1\/Images\/Primary$/u);
       for (const [, init] of networkClient.getJson.mock.calls) expect(init?.useProxy).toBe(false);
@@ -758,7 +756,7 @@ describe("Emby actor services", () => {
     const result = await service.run(createEmbyConfig(), "all");
 
     expect(result).toEqual({ processedCount: 0, failedCount: 0, skippedCount: 0 });
-    expect(signalService.showLogText).toHaveBeenCalledWith("Emby returned no actors to sync", "warn");
+    expect(signalService.showLogText).toHaveBeenCalledWith("Emby 未返回可同步的演员", "warn");
     expect(actorSourceProvider.lookup).not.toHaveBeenCalled();
     expect(networkClient.postText).not.toHaveBeenCalled();
     expect(

@@ -212,9 +212,7 @@ export class NetworkFixtureClient extends NetworkClient implements ScrapeItemObs
     const context = getNetworkRequestExecutionContext();
     if (!context) {
       if (this.fixture.allowUnscopedLive) return await dispatch();
-      throw new NetworkFixtureReplayError(
-        "Network fixtures require an active scrape channel; public network fallback is disabled",
-      );
+      throw new NetworkFixtureReplayError("网络测试录制需要活动刮削通道，已禁用公网回退");
     }
     return this.fixture.mode(context.caseId) === "record"
       ? await this.record(context, request, dispatch)
@@ -370,12 +368,12 @@ export class NetworkFixtureClient extends NetworkClient implements ScrapeItemObs
   ): Promise<RawNetworkResponse> {
     const caseState = await this.replayState(context.execution, context.caseId);
     if (!caseState) {
-      throw new NetworkFixtureReplayError(`No network recording for ${context.caseId}; record it first`);
+      throw new NetworkFixtureReplayError(`${context.caseId} 没有网络录制，请先录制`);
     }
     const site = crawlerSite(context.channel);
     const skipped = caseState.manifest.skippedSites.find((entry) => entry.site === site);
     if (skipped) {
-      throw new SiteError(skipped.reason, `${site} was ${skipped.reason} when ${context.caseId} was recorded`);
+      throw new SiteError(skipped.reason, `录制 ${context.caseId} 时，${site} 的状态为 ${skipped.reason}`);
     }
 
     let matched = await this.findInteraction(request, context.channel, caseState, true);
@@ -390,7 +388,7 @@ export class NetworkFixtureClient extends NetworkClient implements ScrapeItemObs
       const missing = `${context.caseId}/${context.channel}: ${identity.method} ${identity.url}`;
       this.missingInteractions.push(missing);
       throw new NetworkFixtureReplayError(
-        `Missing network fixture interaction for ${missing}${this.describeClosest(identity, context.channel, caseState)}`,
+        `缺少网络录制交互：${missing}${this.describeClosest(identity, context.channel, caseState)}`,
       );
     }
 
@@ -401,7 +399,7 @@ export class NetworkFixtureClient extends NetworkClient implements ScrapeItemObs
       throw error;
     }
     const response = matched.response;
-    if (!response) throw new Error(`Network fixture interaction ${matched.sequence} has no outcome`);
+    if (!response) throw new Error(`网络录制交互 ${matched.sequence} 没有结果`);
     const bytes =
       response.body.kind === "file"
         ? await this.readFileBody(state, matched, response.body)
@@ -441,14 +439,13 @@ export class NetworkFixtureClient extends NetworkClient implements ScrapeItemObs
         score: commonPrefixLength(normalizeFixtureUrl(candidate.request.url), target),
       }))
       .sort((left, right) => right.score - left.score)[0]?.candidate;
-    if (!closest)
-      return `; the recording has no unconsumed ${channel} requests. Re-record with -u if the crawler changed`;
+    if (!closest) return `；录制中没有剩余的 ${channel} 请求。如果刮削器已变化，请使用 -u 重新录制`;
     const differences = [
       closest.request.method.toUpperCase() !== identity.method ? `method ${closest.request.method}` : "",
       normalizeFixtureUrl(closest.request.url) !== target ? `url ${closest.request.url}` : "",
       closest.request.bodyBase64 !== identity.bodyBase64 ? "body" : "",
     ].filter(Boolean);
-    return `; closest recorded request differs in ${differences.join(", ")}. Re-record with -u if the crawler changed`;
+    return `；最接近的已录制请求在 ${differences.join(", ")} 上存在差异。如果刮削器已变化，请使用 -u 重新录制`;
   }
 
   private async replayState(execution: object, caseId: string): Promise<ReplayState | undefined> {
@@ -489,9 +486,7 @@ export class NetworkFixtureClient extends NetworkClient implements ScrapeItemObs
       path.join(resolveNetworkFixtureDirectory(state.root, state.manifest.caseId), body.path),
     );
     if (bytes.byteLength !== body.byteLength || sha256Hex(bytes) !== body.sha256) {
-      throw new Error(
-        `Network fixture response body mismatch at ${state.manifest.caseId}/${interaction.channel}#${interaction.sequence}`,
-      );
+      throw new Error(`网络录制响应体不匹配：${state.manifest.caseId}/${interaction.channel}#${interaction.sequence}`);
     }
     return new Uint8Array(bytes);
   }

@@ -1,8 +1,8 @@
 export type LibraryTaskKind = "scrape" | "maintenance";
 
 const CONFLICT_MESSAGES: Record<LibraryTaskKind, string> = {
-  maintenance: "A maintenance task is running; stop it before starting a scrape",
-  scrape: "A scrape task is running; stop it before starting maintenance",
+  maintenance: "维护任务正在运行，请停止后再开始刮削",
+  scrape: "刮削任务正在运行，请停止后再开始维护",
 };
 
 export class LibraryTaskConflictError extends Error {

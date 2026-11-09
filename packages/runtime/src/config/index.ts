@@ -47,16 +47,16 @@ export const formatRuntimeConfigValidationError = (fieldErrors: Record<string, s
     .map(([field, message]) => `${field}: ${message}`)
     .join("; ");
 
-  return details ? `Configuration validation failed: ${details}` : "Configuration validation failed";
+  return details ? `配置校验失败：${details}` : "配置校验失败";
 };
 
 export const normalizeRuntimeProfileName = (name: string): string => {
   const normalized = name.trim();
   if (!normalized) {
-    throw new Error("Profile name is required");
+    throw new Error("请输入档案名称");
   }
   if (!RUNTIME_PROFILE_NAME_PATTERN.test(normalized)) {
-    throw new Error('Profile name can only contain letters, numbers, "_" and "-"');
+    throw new Error("档案名称只能包含字母、数字、“_”和“-”");
   }
   return normalized;
 };
@@ -123,7 +123,7 @@ export const parseRuntimeConfigurationContent = (content: string, format: Config
     for (const issue of issues) {
       const issuePath = Array.isArray(issue.path) ? issue.path.join(".") : "";
       if (issuePath && !(issuePath in fieldErrors)) {
-        fieldErrors[issuePath] = typeof issue.message === "string" ? issue.message : "Invalid value";
+        fieldErrors[issuePath] = typeof issue.message === "string" ? issue.message : "值无效";
       }
     }
     throw new RuntimeConfigValidationError(
@@ -340,7 +340,7 @@ export class RuntimeConfigService {
     return this.write(() =>
       this.runWithValidation(async () => {
         const current = await this.get();
-        if (expected && current !== expected) throw new Error("Configuration changed while saving; try again");
+        if (expected && current !== expected) throw new Error("保存期间配置已变化，请重试");
         const { actorAliases, ...personSync } = patch.personSync ?? {};
         const base = mergeRuntimeConfig(current, { ...patch, ...(patch.personSync ? { personSync } : {}) });
         const merged =
@@ -357,7 +357,7 @@ export class RuntimeConfigService {
 
     const resetDefault = getConfigurationPathDefault(propertyPath);
     if (!resetDefault.found) {
-      throw new Error(`Path not found: ${propertyPath}`);
+      throw new Error(`未找到路径：${propertyPath}`);
     }
 
     return this.write(() =>
@@ -613,7 +613,7 @@ export class RuntimeConfigProfileStore {
     const profileName = normalizeRuntimeProfileName(name);
     const filePath = this.getProfilePath(profileName);
     if (existsSync(filePath) || existsSync(this.getLegacyProfilePath(profileName))) {
-      throw new Error(`Profile "${profileName}" already exists`);
+      throw new Error(`档案“${profileName}”已存在`);
     }
     await mkdir(this.options.configDir, { recursive: true });
     await this.writeProfile(filePath, defaultConfiguration);
@@ -624,7 +624,7 @@ export class RuntimeConfigProfileStore {
     const profileName = normalizeRuntimeProfileName(name);
     const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new Error(`未找到档案“${profileName}”`);
     }
     this.activeProfileName = profileName;
     this.activeProfileLoaded = true;
@@ -638,11 +638,11 @@ export class RuntimeConfigProfileStore {
       await this.loadActiveProfileName();
     }
     if (profileName === this.activeProfileName) {
-      throw new Error("Cannot delete the active profile");
+      throw new Error("不能删除当前使用的档案");
     }
     const filePath = this.getExistingProfilePath(profileName);
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new Error(`未找到档案“${profileName}”`);
     }
     await unlink(filePath);
     return { profileName };
@@ -685,7 +685,7 @@ export class RuntimeConfigProfileStore {
     const overwritten = existsSync(targetPath) || existsSync(this.getLegacyProfilePath(profileName));
 
     if (overwritten && !input.overwrite) {
-      throw new Error(`Profile "${profileName}" already exists`);
+      throw new Error(`档案“${profileName}”已存在`);
     }
 
     const configuration = parseRuntimeConfigurationContent(
@@ -727,13 +727,11 @@ export class RuntimeConfigProfileStore {
       try {
         await this.readConfigurationFile(filePath);
       } catch {
-        logger?.info(`Removing legacy config file: ${entry}`);
+        logger?.info(`正在移除旧版配置文件：${entry}`);
         try {
           await unlink(filePath);
         } catch (error) {
-          logger?.warn(
-            `Failed to remove legacy file ${entry}: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          logger?.warn(`移除旧版文件 ${entry} 失败：${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }
@@ -824,7 +822,7 @@ export class RuntimeConfigProfileStore {
 
   private async readProfileConfiguration(filePath: string, profileName: string): Promise<Configuration> {
     if (!existsSync(filePath)) {
-      throw new Error(`Profile "${profileName}" not found`);
+      throw new Error(`未找到档案“${profileName}”`);
     }
     return await this.readConfigurationFile(filePath);
   }

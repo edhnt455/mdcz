@@ -21,7 +21,7 @@ describe("ActorSourceProvider media-server ports", () => {
     );
 
     expect(result.profile).toEqual({ name: "Actor A" });
-    expect(result.warnings).toEqual(['Actor source "gfriends" is not registered.']);
+    expect(result.warnings).toEqual(["演员来源“gfriends”未注册。"]);
 
     const aborted = new ActorSourceProvider({
       registry: new ActorSourceRegistry([
@@ -41,7 +41,7 @@ describe("ActorSourceProvider media-server ports", () => {
         } as never,
         "Actor A",
       ),
-    ).rejects.toThrow("Operation aborted");
+    ).rejects.toThrow("操作已中止");
   });
 
   it("stops calling later sources once the required field is satisfied", async () => {

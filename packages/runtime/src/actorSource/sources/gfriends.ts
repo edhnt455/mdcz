@@ -105,7 +105,7 @@ export class GfriendsActorSource implements BaseActorSource {
       return {
         source: this.name,
         success: false,
-        warnings: [`Failed to load gfriends actor index: ${message}`],
+        warnings: [`加载 gfriends 演员索引失败：${message}`],
       };
     }
   }

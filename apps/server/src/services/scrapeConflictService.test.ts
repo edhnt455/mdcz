@@ -258,7 +258,9 @@ describe("STRM duplicate resolution", () => {
       }
       const resolving = f.service.resolveAutomatically(input);
       if (scenario === "unknown size" || scenario === "rejected") {
-        await expect(resolving).rejects.toThrow(scenario === "unknown size" ? "size is unavailable" : "unsuccessful");
+        await expect(resolving).rejects.toThrow(
+          scenario === "unknown size" ? "无法获取 115 来源文件大小" : "业务请求未成功",
+        );
       } else {
         expect(await resolving).toEqual(
           scenario === "off" || scenario === "disabled during preview"
@@ -278,7 +280,7 @@ describe("STRM duplicate resolution", () => {
         for (const file of [f.existingNormal, f.incomingNormal, f.linkPath])
           expect((await lstat(file)).isFile()).toBe(true);
         if (scenario === "off") expect(f.jobs.get(input.itemId)).toBeUndefined();
-        if (scenario === "rejected") expect(f.jobs.get(input.itemId)?.error).toContain("unsuccessful");
+        if (scenario === "rejected") expect(f.jobs.get(input.itemId)?.error).toContain("业务请求未成功");
       }
     }
   });
@@ -313,7 +315,7 @@ describe("STRM duplicate resolution", () => {
         sourcePaths: [f.existingNormal],
         retryPlanned: true,
       });
-      await expect(f.deletions.retry(`duplicate/${input.itemId}`)).rejects.toThrow("current state");
+      await expect(f.deletions.retry(`duplicate/${input.itemId}`)).rejects.toThrow("当前状态");
     } finally {
       finish();
       await resolving;
@@ -401,7 +403,7 @@ describe("STRM duplicate resolution", () => {
     expect(f.retry).toHaveBeenCalledTimes(keep === "existing" ? 0 : 1);
     await expect(
       f.restart().resolve({ ...input, token: preview.token, keep: keep === "existing" ? "incoming" : "existing" }),
-    ).rejects.toThrow("previously selected");
+    ).rejects.toThrow("此前选择");
   });
 
   it.each(["existing", "incoming"] as const)("preserves a shared 115 resource when keeping %s", async (keep) => {
@@ -533,7 +535,7 @@ describe("STRM duplicate resolution", () => {
     }
     if (scenario === "lost response") {
       await expect(f.restart().resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow(
-        "acknowledgement",
+        "删除确认记录",
       );
       expect(f.remote.deletions).toEqual(["old"]);
     }
