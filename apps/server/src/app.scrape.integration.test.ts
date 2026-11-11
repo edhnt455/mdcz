@@ -1481,6 +1481,28 @@ describe("buildServer scrape integration", () => {
     expect(ignored.json().result.data).toEqual({ succeededIds: [...ignoredIds, "missing"], failures: [] });
     expect(pending.list()).toEqual([untouched]);
     expect(await readFile(join(root, "failed.mp4"), "utf8")).toBe("keep this file");
+    expect((await batch({ action: "delete", ids: [untouched.id] }, {})).statusCode).toBe(401);
+    expect((await batch({ action: "delete", ids: [] })).statusCode).toBe(400);
+    const rejected = await batch({ action: "delete", ids: [untouched.id, "missing"] });
+    expect(rejected.json().result.data).toMatchObject({
+      succeededIds: [],
+      failures: [{ id: untouched.id }, { id: "missing" }],
+    });
+    expect(pending.list()).toEqual([untouched]);
+    const order: string[] = [];
+    const remove = vi.spyOn(services.pending, "delete").mockImplementation(async (id) => {
+      order.push(`start:${id}`);
+      await Promise.resolve();
+      if (id === "denied") throw new Error("115 deletion denied");
+      order.push(`end:${id}`);
+    });
+    const deleted = await batch({ action: "delete", ids: ["first", "denied", "last", "first"] });
+    expect(deleted.json().result.data).toEqual({
+      succeededIds: ["first", "last"],
+      failures: [{ id: "denied", message: "115 deletion denied" }],
+    });
+    expect(remove.mock.calls).toEqual([["first"], ["denied"], ["last"]]);
+    expect(order).toEqual(["start:first", "end:first", "start:denied", "start:last", "end:last"]);
   });
 
   it("accepts scrape refs that span multiple registered media roots", async () => {

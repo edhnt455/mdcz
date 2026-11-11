@@ -96,6 +96,7 @@ const pendingBatchIds = z.array(z.string().trim().min(1)).min(1);
 export const pendingBatchInputSchema = z.discriminatedUnion("action", [
   z.object({ ids: pendingBatchIds, action: z.literal("retry"), libraryId: z.string().trim().min(1).optional() }),
   z.object({ ids: pendingBatchIds, action: z.literal("ignore") }),
+  z.object({ ids: pendingBatchIds, action: z.literal("delete") }),
   z.object({ ids: pendingBatchIds, action: z.literal("confirm"), choice: z.enum(["umr", "leak", "uncensored"]) }),
 ]);
 export type PendingBatchInput = z.infer<typeof pendingBatchInputSchema>;

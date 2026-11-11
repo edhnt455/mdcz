@@ -7,7 +7,7 @@ import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { FailureReason } from "@mdcz/shared/siteResults";
 import type { CrawlerData } from "@mdcz/shared/types";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const makeCrawlerData = (overrides: Partial<CrawlerData> = {}): CrawlerData => ({
   title: "Test Title",
@@ -141,6 +141,149 @@ describe("AggregationService", () => {
       ...rest,
     });
   };
+
+  it("retries a site's missing numeric-prefixed number once without repeating successful sites or cached lookups", async () => {
+    const crawl = vi.fn<CrawlerProvider["crawl"]>(async (input) => ({
+      input,
+      elapsedMs: 1,
+      result:
+        input.site === Website.DMM || input.number === "MIUM-123"
+          ? {
+              success: true,
+              data: makeCrawlerData({
+                number: input.number,
+                website: input.site,
+                thumb_url: "https://images.test/cover.jpg",
+              }),
+            }
+          : { success: false, reason: "not_found", error: "No matching movie" },
+    }));
+    const service = new AggregationService(
+      { crawl, getSiteHealth: () => undefined },
+      { config: makeConfig({ scrape: { sites: [Website.DMM, Website.JAVDB], aiNumberFallback: false } }) },
+    );
+    const result = await service.aggregate("300MIUM-123");
+    expect(crawl.mock.calls.map(([input]) => [input.site, input.number])).toEqual([
+      [Website.DMM, "300MIUM-123"],
+      [Website.JAVDB, "300MIUM-123"],
+      [Website.JAVDB, "MIUM-123"],
+    ]);
+    expect(result.stats).toMatchObject({ totalSites: 2, successCount: 2, failedCount: 0 });
+    expect(result.stats.siteResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ site: Website.DMM, data: expect.objectContaining({ number: "300MIUM-123" }) }),
+        expect.objectContaining({ site: Website.JAVDB, data: expect.objectContaining({ number: "MIUM-123" }) }),
+      ]),
+    );
+    await service.aggregate("300MIUM-123");
+    expect(crawl).toHaveBeenCalledTimes(3);
+  });
+
+  it("only strips leading numeric prefixes after an explicit miss and never retries a manual detail URL", async () => {
+    const scenarios: Array<{ number: string; reason: FailureReason; retry?: string; detailUrl?: string }> = [
+      { number: "300MIUM-123", reason: "not_found", retry: "MIUM-123" },
+      { number: "390JNT-073", reason: "not_found", retry: "JNT-073" },
+      { number: "ABC-123", reason: "not_found" },
+      { number: "FC2-1234567", reason: "not_found" },
+      { number: "T28-123", reason: "not_found" },
+      { number: "100524_001", reason: "not_found" },
+      { number: "1PON-100524_001", reason: "not_found" },
+      { number: "1PON-123", reason: "not_found" },
+      { number: "10MU-123", reason: "not_found" },
+      { number: "300MIUM-123", reason: "not_found", detailUrl: "https://javdb.com/v/manual" },
+      ...(
+        ["timeout", "network_error", "rate_limited", "login_wall", "cloudflare", "parse_error", "ambiguous"] as const
+      ).map((reason) => ({ number: "300MIUM-123", reason })),
+    ];
+    for (const { number, reason, retry, detailUrl } of scenarios) {
+      const crawl = vi.fn<CrawlerProvider["crawl"]>(async (input) => ({
+        input,
+        elapsedMs: 1,
+        result: { success: false, reason, error: "Lookup failed" },
+      }));
+      const service = new AggregationService(
+        { crawl, getSiteHealth: () => undefined },
+        { config: makeConfig({ scrape: { sites: [Website.JAVDB] }, network: { javdbCookie: "test-cookie" } }) },
+      );
+      await expect(
+        service.aggregate(number, detailUrl ? { manualScrape: { site: Website.JAVDB, detailUrl } } : undefined),
+      ).rejects.toMatchObject({ kind: reason === "ambiguous" ? "ambiguous" : "not_found" });
+      expect(crawl.mock.calls.map(([input]) => input.number)).toEqual(retry ? [number, retry] : [number]);
+    }
+  });
+
+  it("keeps search and detail identity checks strict when a real crawler retries the unprefixed query", async () => {
+    for (const mode of ["original", "retry", "wrong_number", "missing"] as const) {
+      const client = new NetworkClient();
+      const getText = vi.spyOn(client, "getText").mockImplementation(async (url) => {
+        const target = new URL(url);
+        const query = target.searchParams.get("q");
+        const foundNumber = mode === "original" ? "300MIUM-123" : "MIUM-123";
+        if (target.pathname === "/search") {
+          if (mode === "missing" || query !== foundNumber) return "<html>No results</html>";
+          return `<a class="box" href="/v/movie"><div class="video-title"><strong>${foundNumber}</strong></div></a>`;
+        }
+        if (target.pathname === "/v/movie") {
+          return `<h2 class="title is-4"><strong class="current-title">Title</strong></h2><a class="button is-white copy-to-clipboard" data-clipboard-text="${mode === "wrong_number" ? "MIUM-124" : foundNumber}"></a><img class="video-cover" src="https://images.test/cover.jpg" />`;
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      });
+      const service = new AggregationService(new CrawlerProvider({ fetchGateway: new FetchGateway(client) }), {
+        config: makeConfig({ scrape: { sites: [Website.JAVDB] } }),
+      });
+      if (mode === "wrong_number" || mode === "missing") {
+        await expect(service.aggregate("300MIUM-123")).rejects.toMatchObject({ kind: "not_found" });
+      } else {
+        await expect(service.aggregate("300MIUM-123")).resolves.toMatchObject({
+          data: { number: mode === "original" ? "300MIUM-123" : "MIUM-123" },
+        });
+      }
+      expect(getText.mock.calls.map(([url]) => new URL(url).pathname + new URL(url).search)).toEqual(
+        mode === "original"
+          ? ["/search?q=300MIUM-123", "/v/movie"]
+          : mode === "missing"
+            ? ["/search?q=300MIUM-123", "/search?q=MIUM-123"]
+            : ["/search?q=300MIUM-123", "/search?q=MIUM-123", "/v/movie"],
+      );
+      getText.mockRestore();
+    }
+  });
+
+  it("shares the original site's timeout budget with its retry and stops on cancellation", async () => {
+    for (const mode of ["timeout", "cancelled"] as const) {
+      const controller = new AbortController();
+      const crawl = vi.fn<CrawlerProvider["crawl"]>(async (input) => {
+        if (mode === "cancelled") controller.abort();
+        if (input.number === "MIUM-123") {
+          await new Promise<void>((resolve) =>
+            input.options?.signal?.addEventListener("abort", () => resolve(), { once: true }),
+          );
+          throw input.options?.signal?.reason;
+        }
+        return { input, elapsedMs: 1, result: { success: false, reason: "not_found", error: "No result" } };
+      });
+      const config = makeConfig({ scrape: { sites: [Website.JAVDB] } });
+      config.aggregation.perCrawlerTimeoutMs = 10;
+      const recorded: unknown[] = [];
+      const service = new AggregationService(
+        { crawl, getSiteHealth: () => undefined },
+        {
+          config,
+          signal: controller.signal,
+          recordSiteResults: (_number, results) => {
+            recorded.push(...results);
+          },
+        },
+      );
+      await expect(service.aggregate("300MIUM-123")).rejects.toMatchObject(
+        mode === "cancelled" ? { name: "AbortError" } : { kind: "not_found", canRetryNumber: false },
+      );
+      expect(crawl.mock.calls.map(([input]) => input.number)).toEqual(
+        mode === "cancelled" ? ["300MIUM-123"] : ["300MIUM-123", "MIUM-123"],
+      );
+      if (mode === "timeout") expect(recorded).toContainEqual(expect.objectContaining({ reason: "timeout" }));
+    }
+  });
 
   it("isolates each concurrent crawler in its Website source context", async () => {
     const provider = new MultiResultCrawlerProvider(

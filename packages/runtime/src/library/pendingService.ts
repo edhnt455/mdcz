@@ -202,10 +202,11 @@ export class PendingService {
     }
 
     const result: PendingBatchResponse = { succeededIds: [], failures: [] };
-    if (input.action === "confirm") {
+    if (input.action === "confirm" || input.action === "delete") {
       for (const id of ids) {
         try {
-          await this.confirmUncensored({ id, choice: input.choice });
+          if (input.action === "delete") await this.delete(id);
+          else await this.confirmUncensored({ id, choice: input.choice });
           result.succeededIds.push(id);
         } catch (error) {
           result.failures.push({ id, message: toErrorMessage(error) });

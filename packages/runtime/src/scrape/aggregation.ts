@@ -14,6 +14,7 @@ import { ScrapeFailureError } from "./scrapeFailure";
 import { type AdmissionReject, resolveSiteAdmission } from "./siteAdmission";
 import { applyTextRepair } from "./textRepair";
 import { createAbortError, throwIfAborted } from "./utils/abort";
+import { classifyNumber } from "./utils/movieClassification";
 
 export type { AggregationStrategy } from "./fieldAggregation";
 export { FIELD_STRATEGIES, FieldAggregator } from "./fieldAggregation";
@@ -434,50 +435,61 @@ export class AggregationService {
     }
     options.timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? perCrawlerTimeoutMs, perCrawlerTimeoutMs));
 
-    let responded = false;
     try {
-      const result = await runWithCrawlerSource(
-        site,
-        async () => await this.crawlerProvider.crawl({ number, site, options }),
-        budget,
-        () => {
-          responded = true;
-        },
-      )
-        .then((response) => response.result)
-        .catch(toCrawlerErrorResult);
-      const elapsedMs = Date.now() - start;
-      if (result.success) {
-        this.logger.info(`${site} 成功抓取 ${number}，耗时 ${elapsedMs} 毫秒`);
+      const retryNumber =
+        !options.detailUrl && classifyNumber(number) === "censored"
+          ? number.match(/^\d+([A-Z]{2,}-\d+[A-Z]?)$/iu)?.[1]
+          : undefined;
+      for (let lookupNumber = number; ; ) {
+        let responded = false;
+        const result = await runWithCrawlerSource(
+          site,
+          async () => await this.crawlerProvider.crawl({ number: lookupNumber, site, options }),
+          budget,
+          () => {
+            responded = true;
+          },
+        )
+          .then((response) => response.result)
+          .catch(toCrawlerErrorResult);
+        const elapsedMs = Date.now() - start;
+        if (result.success) {
+          this.logger.info(`${site} 成功抓取 ${lookupNumber}，耗时 ${elapsedMs} 毫秒`);
+          return {
+            site,
+            status: "success",
+            data: { ...result.data, website: result.data.website ?? site },
+            sourceUrl: options.detailUrl,
+            elapsedMs,
+          };
+        }
+        if (context.signal.aborted && !siteTimeoutController.signal.aborted) {
+          return { site, status: "skipped", skipReason: context.stopReason, elapsedMs };
+        }
+        if (lookupNumber === number && retryNumber && result.reason === "not_found" && !options.signal?.aborted) {
+          this.logger.info(`${site} 未找到 ${number}，去除数字前缀后重试一次：${retryNumber}`);
+          lookupNumber = retryNumber;
+          continue;
+        }
+        const budgetExceeded = siteTimeoutController.signal.reason instanceof SiteError;
+        const reason = budgetExceeded ? "timeout" : result.reason;
+        const detail = budgetExceeded ? siteTimeoutController.signal.reason.message : result.error;
+        this.logger.warn(`${site} 抓取 ${lookupNumber} 失败：${reason}：${detail}（${elapsedMs} 毫秒）`);
         return {
           site,
-          status: "success",
-          data: { ...result.data, website: result.data.website ?? site },
-          sourceUrl: options.detailUrl,
+          status: "failed",
+          reason,
+          detail,
+          httpStatus: result.httpStatus,
+          ...(reason === "not_found" &&
+          responded &&
+          (result.httpStatus === undefined || (result.httpStatus >= 200 && result.httpStatus < 300))
+            ? { lookupMiss: true }
+            : {}),
           elapsedMs,
+          ...(result.candidates ? { candidates: result.candidates } : {}),
         };
       }
-      if (context.signal.aborted && !siteTimeoutController.signal.aborted) {
-        return { site, status: "skipped", skipReason: context.stopReason, elapsedMs };
-      }
-      const budgetExceeded = siteTimeoutController.signal.reason instanceof SiteError;
-      const reason = budgetExceeded ? "timeout" : result.reason;
-      const detail = budgetExceeded ? siteTimeoutController.signal.reason.message : result.error;
-      this.logger.warn(`${site} 抓取 ${number} 失败：${reason}：${detail}（${elapsedMs} 毫秒）`);
-      return {
-        site,
-        status: "failed",
-        reason,
-        detail,
-        httpStatus: result.httpStatus,
-        ...(reason === "not_found" &&
-        responded &&
-        (result.httpStatus === undefined || (result.httpStatus >= 200 && result.httpStatus < 300))
-          ? { lookupMiss: true }
-          : {}),
-        elapsedMs,
-        ...(result.candidates ? { candidates: result.candidates } : {}),
-      };
     } finally {
       budget.dispose();
     }

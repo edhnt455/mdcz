@@ -271,6 +271,11 @@ describe("AI movie code fallback", () => {
     for (const [number, evidence, valid] of [
       ["ABC-123", "ABC-123", true],
       ["ABC-123", "abc00123", true],
+      ["JNT-073", "390JNT-073", true],
+      ["JNT-073", "JNT-073", true],
+      ["300MIUM-123", "300MIUM-123", true],
+      ["T28-123", "T28-123", true],
+      ["100524_001", "100524_001", true],
       ["MIDV-049", "1midv049", true],
       ["MIDV-049", "1midv00049", true],
       ["MIDV-049", "www.98T.la@1midv049.restored_prob4", true],
@@ -310,11 +315,41 @@ describe("AI movie code fallback", () => {
       const request = generateText.mock.calls[0]?.[0];
       expect(request.systemPrompt).toBe("Shared context");
       expect(request.model).toBe(config.translate.llmModelName);
-      expect(request.prompt).toContain("Custom number extraction instructions");
-      expect(request.prompt).toContain('"evidence"');
+      expect(request.prompt).toBe(
+        [
+          "Custom number extraction instructions",
+          JSON.stringify({
+            fileName: `${evidence === "invented evidence" ? "recording" : (evidence ?? "recording")}.mp4`,
+            parentDirectory: "ABC-123",
+            previousNumber: null,
+          }),
+        ].join("\n"),
+      );
       expect(request.prompt).not.toContain("/private/absolute/path");
       expect(request.prompt).not.toContain(defaultConfiguration.translate.llmPrompt);
     }
+    const generateText = vi.fn<LlmApiClient["generateText"]>(async () =>
+      JSON.stringify({ number: "JNT-073", evidence: "JNT-073" }),
+    );
+    const service = new NumberRecognitionService(
+      new LlmRequestService(logger, { generateText } as unknown as LlmApiClient),
+    );
+    await expect(service.recognize("/media/recordings/390JNT-073.strm", "390JNT-073", config)).resolves.toMatchObject({
+      status: "recognized",
+      number: "JNT-073",
+      evidence: "JNT-073",
+      previousNumber: "390JNT-073",
+    });
+    const prompt = generateText.mock.calls[0]?.[0].prompt;
+    expect(prompt).toBe(
+      [
+        defaultConfiguration.translate.llmNumberRecognitionPrompt,
+        JSON.stringify({ fileName: "390JNT-073.strm", parentDirectory: "recordings", previousNumber: "390JNT-073" }),
+      ].join("\n"),
+    );
+    expect(prompt).toContain("390JNT-073.strm → JNT-073");
+    expect(prompt).toContain("300MIUM-123");
+    expect(prompt).toContain("JNT-073 不能改成 JNT-73");
   });
 
   it("records request and decoding failures while propagating cancellation", async () => {

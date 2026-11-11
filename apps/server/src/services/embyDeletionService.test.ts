@@ -115,16 +115,14 @@ const fixture = async (mode: "off" | "delete" | "observe" = "delete", cloud = fa
     remote.listCalls++;
     if (remote.failLists) return Response.json({ success: false, message: "storage unavailable", data: null });
     const rows = body.fileid === "0" ? [media] : body.fileid === media.fileid ? [av] : remote.files;
-    const page = Number(url.searchParams.get("page") ?? 1);
-    const count = Number(url.searchParams.get("count") ?? 200);
-    const data = rows.slice((page - 1) * count, page * count);
+    expect(url.searchParams.has("page")).toBe(false);
+    expect(url.searchParams.has("count")).toBe(false);
+    const data = rows;
     return Response.json(
       { success: true, message: "", data },
       {
         headers: {
           "X-Total-Count": String(rows.length),
-          "X-Page": String(page),
-          "X-Page-Size": String(count),
           "X-Result-Count": String(data.length),
         },
       },

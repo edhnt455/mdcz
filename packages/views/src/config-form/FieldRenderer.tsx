@@ -63,6 +63,7 @@ interface BaseFieldProps {
   /** Overrides the dictionary description for text that depends on other form values. */
   description?: string;
   labelAddon?: ReactNode;
+  showReset?: boolean;
   children: (field: ControllerRenderProps<FieldValues, string>) => React.ReactNode;
   layout?: ConfigFieldLayout;
   /**
@@ -81,6 +82,7 @@ export function BaseField({
   name,
   description,
   labelAddon,
+  showReset,
   children,
   layout,
   commitMode = "immediate",
@@ -97,6 +99,7 @@ export function BaseField({
       name={name}
       description={description}
       labelAddon={labelAddon}
+      showReset={showReset}
       layout={layout}
       commitMode={commitMode}
       rules={rules}
@@ -106,7 +109,16 @@ export function BaseField({
   );
 }
 
-function ConnectedBaseField({ name, description, labelAddon, children, layout, commitMode, rules }: BaseFieldProps) {
+function ConnectedBaseField({
+  name,
+  description,
+  labelAddon,
+  showReset,
+  children,
+  layout,
+  commitMode,
+  rules,
+}: BaseFieldProps) {
   const t = useT();
   const text = t.settingsFields.fields[name];
   const label = text.label;
@@ -145,7 +157,11 @@ function ConnectedBaseField({ name, description, labelAddon, children, layout, c
               description={description ?? text.description}
               labelAddon={labelAddon}
               error={rowError}
-              headerAction={modified ? <ResetToDefaultButton label={label} onClick={resetToDefault} /> : null}
+              headerAction={
+                showReset || modified ? (
+                  <ResetToDefaultButton label={label} onClick={resetToDefault} showLabel={showReset} />
+                ) : null
+              }
               control={children(field)}
               controlClassName={controlClassName}
               layout={resolvedLayout}
@@ -462,9 +478,17 @@ export function CookieFieldWrapper({ name, description }: { name: FieldKey; desc
 
 // ── Prompt (multi-line) ──
 
-export function PromptFieldWrapper({ name, description }: { name: FieldKey; description?: string }) {
+export function PromptFieldWrapper({
+  name,
+  description,
+  showReset,
+}: {
+  name: FieldKey;
+  description?: string;
+  showReset?: boolean;
+}) {
   return (
-    <BaseField name={name} description={description} layout="vertical" commitMode="debounce">
+    <BaseField name={name} description={description} showReset={showReset} layout="vertical" commitMode="debounce">
       {(field) => (
         <BufferedFieldControl field={field} commitOnEnter={false}>
           {(control) => (

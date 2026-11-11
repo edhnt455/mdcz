@@ -14,7 +14,7 @@ import {
 } from "./index";
 
 describe("RuntimeConfigProfileStore", () => {
-  it("creates a default TOML profile and reloads persisted configuration", async () => {
+  it("persists configuration and restores only the requested field to its default", async () => {
     const configDir = await createTempDir();
     const store = new RuntimeConfigProfileStore({ configDir });
 
@@ -28,13 +28,30 @@ describe("RuntimeConfigProfileStore", () => {
       ...defaultConfiguration,
       network: { ...defaultConfiguration.network, timeout: 22 },
       download: { ...defaultConfiguration.download, nfoIgnoreFields: ["plot", "director"] },
-      translate: { ...defaultConfiguration.translate, untranslatedJapaneseRunLength: 7 },
+      translate: {
+        ...defaultConfiguration.translate,
+        untranslatedJapaneseRunLength: 7,
+        llmNumberRecognitionPrompt: 'Custom extraction rules\nReturn JSON with "number" and "evidence".',
+      },
     });
 
     const reloaded = await new RuntimeConfigProfileStore({ configDir }).load();
     expect(reloaded.network.timeout).toBe(22);
     expect(reloaded.download.nfoIgnoreFields).toEqual(["plot", "director"]);
     expect(reloaded.translate.untranslatedJapaneseRunLength).toBe(7);
+    expect(reloaded.translate.llmNumberRecognitionPrompt).toBe(
+      'Custom extraction rules\nReturn JSON with "number" and "evidence".',
+    );
+    const service = new RuntimeConfigService({ store: new RuntimeConfigProfileStore({ configDir }) });
+    await service.load();
+    await service.reset("translate.llmNumberRecognitionPrompt");
+    expect(await new RuntimeConfigProfileStore({ configDir }).load()).toEqual({
+      ...reloaded,
+      translate: {
+        ...reloaded.translate,
+        llmNumberRecognitionPrompt: defaultConfiguration.translate.llmNumberRecognitionPrompt,
+      },
+    });
   });
 
   it("serializes profile changes and keeps library settings with their profile", async () => {

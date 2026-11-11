@@ -19,6 +19,10 @@ export const pending = {
   selectedCount: (count: number) => `${count} selected`,
   batchRetry: "Process selected",
   batchIgnore: "Ignore selected",
+  batchDelete: "Delete selected",
+  batchDeleteHint:
+    "Immediately deletes selected STRM files and their 115 sources. Other selected files remain selected.",
+  batchDeleteResult: (succeeded: number, failed: number) => `${succeeded} deleted · ${failed} failed`,
   batchRetryHint:
     "Retries eligible entries; missing numbers and ambiguous works need individual review. Other selected entries remain selected.",
   batchIgnoreConfirm: (count: number) => `Ignore ${count} selected files?`,

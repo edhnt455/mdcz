@@ -111,15 +111,12 @@ async function fixture(shared = false) {
       if (remote.loseResponse) throw new Error("Lost response");
       return Response.json({ success: true, message: "", data: null });
     }
-    if (remote.verificationFails && remote.deletions.length) throw new Error("Unavailable after deletion");
     const data = body.fileid === "0" ? [cloudRoot] : remote.files;
     return Response.json(
       { success: true, message: "", data },
       {
         headers: {
-          "X-Total-Count": String(data.length),
-          "X-Page": "1",
-          "X-Page-Size": "200",
+          "X-Total-Count": String(data.length + (remote.verificationFails && remote.deletions.length ? 1 : 0)),
           "X-Result-Count": String(data.length),
         },
       },
@@ -528,6 +525,7 @@ describe("STRM duplicate resolution", () => {
       expect(await f.deletions.detail(`duplicate/${input.itemId}`)).toMatchObject({
         status: "needs_review",
         canRetry: true,
+        ...(scenario === "failed verification" ? { step: "verifying_cloud", cloudDeleted: true } : {}),
       });
       await f.deletions.retry(`duplicate/${input.itemId}`);
       expect(f.remote.deletions).toEqual(["old"]);

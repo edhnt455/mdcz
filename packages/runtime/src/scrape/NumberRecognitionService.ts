@@ -39,8 +39,6 @@ export class NumberRecognitionService {
     const source = { fileName: basename(filePath), parentDirectory: basename(dirname(filePath)) };
     const prompt = [
       config.translate.llmNumberRecognitionPrompt.trim(),
-      '仅输出 JSON：{"number":"规范化番号或null","evidence":"包含该番号的原文片段或null"}，null 必须为 JSON null。',
-      "evidence 必须逐字取自 fileName 或 parentDirectory。禁止解释、Markdown 和额外字段。",
       JSON.stringify({ ...source, previousNumber: previousNumber || null }),
     ].join("\n");
     const result: NumberRecognitionResult = {

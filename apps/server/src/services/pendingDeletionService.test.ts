@@ -90,8 +90,6 @@ async function fixture() {
       {
         headers: {
           "X-Total-Count": String(data.length),
-          "X-Page": "1",
-          "X-Page-Size": "200",
           "X-Result-Count": String(data.length),
         },
       },

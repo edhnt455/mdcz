@@ -484,7 +484,7 @@ const fields: Record<FieldKey, FieldText> = {
   "translate.llmNumberRecognitionPrompt": {
     label: "LLM movie code fallback prompt",
     description:
-      "Used only for AI movie code fallback. The file name, immediate parent folder name, and previous code are appended automatically, with JSON output and source evidence requirements.",
+      "Edit the full AI movie code fallback instructions or restore defaults. Changes save automatically. fileName, parentDirectory, and previousNumber are appended automatically. Keep the JSON output requirements for number and evidence; results are still checked against the source.",
     aliases: ["prompt", "code", "fallback"],
   },
   "translate.llmTemperature": {

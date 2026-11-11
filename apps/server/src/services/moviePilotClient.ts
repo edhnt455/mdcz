@@ -10,7 +10,6 @@ import {
   type StrmCloudBinding,
 } from "@mdcz/shared/moviePilot";
 
-const PAGE_SIZE = 200;
 const MAX_ENTRIES = 10_000;
 
 export class MoviePilotClient {
@@ -59,46 +58,43 @@ export class MoviePilotClient {
   async list(directory: MoviePilotFile): Promise<MoviePilotFile[]> {
     if (directory.storage !== this.settings.storage || directory.type !== "dir")
       throw new Error("MoviePilot 目录身份无效");
-    const items: MoviePilotFile[] = [];
+    // MoviePilot 先读取整个目录再切片；一次读取避免跨页混用不同时间的目录结果。
+    const response = await this.request("storage/list", directory, "?sort=name");
+    const items = moviePilotFilesSchema.parse(response.data);
+    const total = response.headers.get("X-Total-Count");
+    const count = response.headers.get("X-Result-Count");
+    if (items.length > MAX_ENTRIES || (total !== null && Number(total) > MAX_ENTRIES))
+      throw new Error(`MoviePilot 目录超出 ${MAX_ENTRIES} 项扫描上限：${directory.path}`);
+    if (
+      total === null ||
+      count === null ||
+      !/^\d+$/u.test(total) ||
+      !/^\d+$/u.test(count) ||
+      Number(total) !== items.length ||
+      Number(count) !== items.length ||
+      response.headers.has("X-Page") ||
+      response.headers.has("X-Page-Size")
+    )
+      throw new Error(
+        `MoviePilot 未返回可核验的完整目录：${directory.path}（总数=${total ?? "缺失"}，返回数=${count ?? "缺失"}，实际=${items.length}）；请检查 MoviePilot 版本及代理是否保留数量响应头`,
+      );
     const seen = new Set<string>();
-    let total: number | undefined;
-    for (let page = 1; page <= Math.ceil(MAX_ENTRIES / PAGE_SIZE); page++) {
-      const response = await this.request("storage/list", directory, `?sort=name&page=${page}&count=${PAGE_SIZE}`);
-      const rows = moviePilotFilesSchema.parse(response.data);
-      const currentTotal = Number(response.headers.get("X-Total-Count"));
+    for (const item of items) {
+      const itemPath = item.path.replace(/\/$/u, "");
       if (
-        !response.headers.has("X-Total-Count") ||
-        !Number.isSafeInteger(currentTotal) ||
-        currentTotal < 0 ||
-        currentTotal > MAX_ENTRIES ||
-        (total !== undefined && total !== currentTotal) ||
-        Number(response.headers.get("X-Page")) !== page ||
-        Number(response.headers.get("X-Page-Size")) !== PAGE_SIZE ||
-        Number(response.headers.get("X-Result-Count")) !== rows.length
+        item.storage !== directory.storage ||
+        item.parent_fileid !== directory.fileid ||
+        !itemPath.startsWith("/") ||
+        itemPath.includes("\\") ||
+        itemPath.includes("\0") ||
+        itemPath.split("/").some((part) => part === "." || part === "..") ||
+        path.posix.dirname(itemPath) !== (path.posix.normalize(directory.path).replace(/\/$/u, "") || "/") ||
+        seen.has(item.fileid)
       )
-        throw new Error("MoviePilot 分页数据不完整、已变化或超出扫描上限");
-      total = currentTotal;
-      for (const item of rows) {
-        const itemPath = item.path.replace(/\/$/u, "");
-        if (
-          item.storage !== directory.storage ||
-          item.parent_fileid !== directory.fileid ||
-          !itemPath.startsWith("/") ||
-          itemPath.includes("\\") ||
-          itemPath.includes("\0") ||
-          itemPath.split("/").some((part) => part === "." || part === "..") ||
-          path.posix.dirname(itemPath) !== (path.posix.normalize(directory.path).replace(/\/$/u, "") || "/") ||
-          seen.has(item.fileid)
-        )
-          throw new Error("无法核验 MoviePilot 目录归属或文件身份");
-        seen.add(item.fileid);
-        items.push(item);
-      }
-      if (items.length === total) return items;
-      if (!rows.length || rows.length > PAGE_SIZE || items.length > total) throw new Error("MoviePilot 分页数据不完整");
-      await delay(200);
+        throw new Error("无法核验 MoviePilot 目录归属或文件身份");
+      seen.add(item.fileid);
     }
-    throw new Error("MoviePilot 目录超出扫描上限");
+    return items;
   }
 
   async resolveRoot(): Promise<{ root: MoviePilotFile; ancestors: MoviePilotFile[] }> {

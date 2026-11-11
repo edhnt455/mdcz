@@ -20,22 +20,27 @@ import {
 afterEach(closeTestServers);
 
 it.each([
-  "missing",
-  "miss",
-  "still_missing",
-  "unknown",
-  "unchanged",
-  "invalid_output",
-  "request_failed",
-  "disabled",
-] as const)("publishes recovered metadata or leaves a manually repairable entry (%s)", async (scenario) => {
+  { scenario: "missing", original: "recording", recoveredNumber: "ABC-123" },
+  { scenario: "miss", original: "049-PROB", recoveredNumber: "MIDV-049" },
+  { scenario: "still_missing", original: "ZZZ-999", recoveredNumber: "ABC-123" },
+  { scenario: "unknown", original: "recording", recoveredNumber: "ABC-123" },
+  { scenario: "unchanged", original: "ZZZ-999", recoveredNumber: "ABC-123" },
+  { scenario: "invalid_output", original: "ZZZ-999", recoveredNumber: "ABC-123" },
+  { scenario: "request_failed", original: "ZZZ-999", recoveredNumber: "ABC-123" },
+  { scenario: "disabled", original: "ZZZ-999", recoveredNumber: "ABC-123" },
+  { scenario: "numeric_prefix", original: "300MIUM-123", recoveredNumber: "MIUM-123" },
+] as const)("publishes recovered metadata or leaves a manually repairable entry ($scenario)", async ({
+  scenario,
+  original,
+  recoveredNumber,
+}) => {
   const root = await createTempRoot("ai-number-fallback");
   const source = join(root, "ABC-123");
   await mkdir(source);
-  const original =
-    scenario === "missing" || scenario === "unknown" ? "recording" : scenario === "miss" ? "049-PROB" : "ZZZ-999";
-  const recoveredNumber = scenario === "miss" ? "MIDV-049" : "ABC-123";
-  const fileName = scenario === "miss" ? "www.98T.la@1midv049.restored_prob4.strm" : `${original}.mp4`;
+  const fileName =
+    scenario === "miss"
+      ? "www.98T.la@1midv049.restored_prob4.strm"
+      : `${original}.${scenario === "numeric_prefix" ? "strm" : "mp4"}`;
   await writeFile(join(source, fileName), "video");
   const inner = createTestAggregation("https://unused.test/cover.jpg");
   const aggregate = vi.fn(async (number: string) => {
@@ -62,7 +67,7 @@ it.each([
     return rawResponse;
   });
   onTestFinished(() => recognize.mockRestore());
-  const networkClient = scenario === "miss" ? new NetworkClient() : undefined;
+  const networkClient = scenario === "miss" || scenario === "numeric_prefix" ? new NetworkClient() : undefined;
   const getText = networkClient
     ? vi.spyOn(networkClient, "getText").mockImplementation(async (url) => {
         const path = new URL(url).pathname + new URL(url).search;
@@ -81,7 +86,7 @@ it.each([
   });
   await services.config.update({
     scrape: {
-      aiNumberFallback: scenario !== "disabled",
+      aiNumberFallback: scenario !== "disabled" && scenario !== "numeric_prefix",
       sites: [Website.JAVDB],
       restDuration: 0,
       filenameIgnoreTokens: ["restored"],
@@ -111,9 +116,9 @@ it.each([
   });
   expect(response.statusCode).toBe(200);
   const runId = response.json().result.data.runId;
-  const success = scenario === "missing" || scenario === "miss";
+  const success = scenario === "missing" || scenario === "miss" || scenario === "numeric_prefix";
   await waitForScrapeRunStatus(fastify, token, runId, success ? "completed" : "failed");
-  expect(recognize).toHaveBeenCalledTimes(scenario === "disabled" ? 0 : 1);
+  expect(recognize).toHaveBeenCalledTimes(scenario === "disabled" || scenario === "numeric_prefix" ? 0 : 1);
   const pending = (await fastify.inject({ method: "GET", url: "/trpc/pending.list", headers })).json().result.data
     .items;
   const state = await services.persistence.getState();
@@ -162,9 +167,11 @@ it.each([
     expect(JSON.stringify(diagnostic)).not.toContain("test-key");
   }
   if (getText) {
-    const prompt = recognize.mock.calls[0]?.[1];
-    expect(prompt).toContain(defaultConfiguration.translate.llmNumberRecognitionPrompt);
-    expect(prompt).toContain('"previousNumber":"049-PROB"');
+    if (scenario === "miss") {
+      const prompt = recognize.mock.calls[0]?.[1];
+      expect(prompt).toContain(defaultConfiguration.translate.llmNumberRecognitionPrompt);
+      expect(prompt).toContain('"previousNumber":"049-PROB"');
+    }
     expect(getText.mock.calls.map(([url]) => new URL(url).pathname + new URL(url).search)).toEqual([
       `/search?q=${original}`,
       `/search?q=${recoveredNumber}`,

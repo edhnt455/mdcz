@@ -25,8 +25,9 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
     retry: false,
     refetchInterval: 1_500,
   });
-  const [busy, setBusy] = useState<Set<string>>(new Set());
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<Map<string, number>>(new Map());
+  const [errors, setErrors] = useState<Record<string, { version: number; message: string }>>({});
+  const selected = detail.data ?? jobs.find((job) => job.id === currentId) ?? null;
   const refresh = async () => client.invalidateQueries({ queryKey: queryKeys.deletions.all });
   const clearCompleted = useMutation({
     mutationFn: () => api.deletions.clearCompleted(),
@@ -43,17 +44,22 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
     onError: (error) => toast.error(toErrorMessage(error)),
   });
   const retry = async (id: string) => {
-    if (busy.has(id)) return;
-    setBusy((current) => new Set([...current, id]));
-    setErrors((current) => ({ ...current, [id]: "" }));
+    const job = selected?.id === id ? selected : jobs.find((job) => job.id === id);
+    if (!job?.canRetry || busy.get(id) === job.updatedAt) return;
+    const version = job.updatedAt;
+    setBusy((current) => new Map(current).set(id, version));
+    setErrors((current) => ({ ...current, [id]: { version, message: "" } }));
     try {
       await api.deletions.retry({ id });
       toast.success(t.deletions.retryQueued);
     } catch (error) {
-      setErrors((current) => ({ ...current, [id]: error instanceof Error ? error.message : toErrorMessage(error) }));
+      setErrors((current) =>
+        current[id]?.version === version ? { ...current, [id]: { version, message: toErrorMessage(error) } } : current,
+      );
     } finally {
       setBusy((current) => {
-        const next = new Set(current);
+        if (current.get(id) !== version) return current;
+        const next = new Map(current);
         next.delete(id);
         return next;
       });
@@ -75,11 +81,13 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
   return (
     <DeletionWorkbenchView
       jobs={jobs}
-      selected={detail.data ?? jobs.find((job) => job.id === currentId) ?? null}
+      selected={selected}
       loading={list.isLoading || (detail.isLoading && Boolean(currentId))}
       error={list.error || detail.error ? toErrorMessage(list.error ?? detail.error) : null}
-      actionError={currentId ? errors[currentId] : null}
-      retrying={currentId ? busy.has(currentId) : false}
+      actionError={
+        selected && errors[selected.id]?.version === selected.updatedAt ? errors[selected.id]?.message : null
+      }
+      retrying={Boolean(selected && busy.get(selected.id) === selected.updatedAt)}
       clearing={clearCompleted.isPending}
       onSelect={onSelect}
       onRetry={(id) => void retry(id)}

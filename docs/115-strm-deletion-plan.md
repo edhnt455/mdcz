@@ -61,7 +61,7 @@ MDCz 设置 MP 地址、认证凭据、所选存储（优先验证日志中的 u
 3. 将返回项的 pickcode 与 STRM 内容精确比对，找到唯一的 file 类型后保存完整 FileItem。
 4. 保存 fileid、parent_fileid、实际返回的路径、大小、存储及 MP 连接身份。fileid 始终用字符串保存，避免 JavaScript 数字精度损失。
 5. 后续优先查询已绑定父目录；首次回填可以对允许根内做一次有界目录遍历，建立 pickcode 索引，不能每删一部都全盘扫描。
-6. 获取完整分页并限速；返回项缺关键字段、候选重复、超出扫描上限或 MP 请求失败，均保持“未验证”。
+6. 每个目录一次获取完整列表，不传 `page` / `count`，避免 MP 每次先重新查询全目录再切片造成跨页结果变化；核对 `X-Total-Count`、`X-Result-Count` 和实际数量，并在目录之间限速。返回项缺关键字段、候选重复、超出扫描上限或 MP 请求失败，均保持“未验证”。
 
 文件名只用于定位候选，不作为最终删除依据。列表中的路径由后端根据输入目录拼接，不应只凭缓存 FileItem 的 path 字符串判断当前边界；删除前需从绑定根核对目标所在目录及父子关系，避免父目录被移动后仍按旧路径放行。
 
@@ -147,6 +147,7 @@ MP 的存储 list 端点会把底层 None 归一为空列表，某些存储实�
 ## 9. 依据与版本限制
 
 - [MP 存储列表和删除 API](https://github.com/jxxghp/MoviePilot/blob/v3/app/api/endpoints/storage.py)
+- [MP 完整列表与数量响应头约定](https://github.com/jxxghp/MoviePilot/blob/v3/app/api/response.py)
 - [MP 原生 u115：列表返回资源身份、按 fileid 删除](https://github.com/jxxghp/MoviePilot/blob/v3/app/modules/filemanager/storages/u115.py)
 - [MP FileItem 字段](https://github.com/jxxghp/MoviePilot/blob/v3/app/schemas/file.py)
 - [MP 认证入口](https://github.com/jxxghp/MoviePilot/blob/v3/app/adapters/web/security/access.py)

@@ -127,18 +127,21 @@ function FormHarness({
   children,
   services = baseSettingsServices,
   values = {},
+  defaultValues = values,
 }: {
   children?: ReactNode;
   services?: SettingsServices;
   values?: Record<string, unknown>;
+  defaultValues?: Record<string, unknown>;
 }) {
   const flatValues = useMemo(() => flattenConfig(values), [values]);
+  const flatDefaults = useMemo(() => flattenConfig(defaultValues), [defaultValues]);
   const form = useForm<FieldValues>({ defaultValues: flatValues });
 
   return (
     <SettingsServicesProvider notifier={settingsNotifier} services={services}>
       <FormProvider {...(form as ComponentProps<typeof FormProvider>)}>
-        <SettingsEditorAutosaveProvider savedValues={flatValues} defaultValues={flatValues} defaultValuesReady>
+        <SettingsEditorAutosaveProvider savedValues={flatValues} defaultValues={flatDefaults} defaultValuesReady>
           {children}
         </SettingsEditorAutosaveProvider>
       </FormProvider>
@@ -479,18 +482,29 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
   );
 });
 
-test("LLM prompts scroll, save independently and verification uses edited shared and translation prompts", async () => {
+test("LLM prompts save independently, recognition restores defaults and translation verification uses edits", async () => {
   const saveConfig = vi.fn(async () => undefined);
+  const resetConfig = vi.fn(async (_path?: string) => undefined);
   const testTranslation = vi.fn(async () => ({ status: "ok" as const, sample: "测试译文" }));
   const screen = await render(
     <FormHarness
-      values={{ ...defaultConfiguration, scrape: { ...defaultConfiguration.scrape, aiNumberFallback: true } }}
-      services={createSettingsServices({ saveConfig, testTranslation })}
+      values={{
+        ...defaultConfiguration,
+        scrape: { ...defaultConfiguration.scrape, aiNumberFallback: true },
+        translate: { ...defaultConfiguration.translate, llmNumberRecognitionPrompt: "Saved extraction instructions" },
+      }}
+      defaultValues={defaultConfiguration}
+      services={createSettingsServices({ saveConfig, resetConfig, testTranslation })}
     >
       <TranslateTopLevelSection />
     </FormHarness>,
   );
   const extraInstructions = "\nAdditional instruction".repeat(40);
+  const recognitionPrompt = screen.getByLabelText("LLM 兜底番号识别提示词", { exact: true });
+  await expect.element(recognitionPrompt).toHaveValue("Saved extraction instructions");
+  const resetRecognition = screen.getByRole("button", { name: "将 LLM 兜底番号识别提示词 恢复为默认值" });
+  await expect.element(resetRecognition).toBeVisible();
+  await expect.element(resetRecognition).toHaveTextContent("恢复默认值");
   const prompts = [
     ["llmSystemPrompt", "LLM 前置提示词", `Shared context${extraInstructions}`],
     ["llmPrompt", "LLM 翻译提示词", `Translate to {lang}: {content}${extraInstructions}`],
@@ -517,6 +531,20 @@ test("LLM prompts scroll, save independently and verification uses edited shared
   expect(testTranslation).toHaveBeenCalledWith(
     expect.objectContaining({ llmSystemPrompt: prompts[0][2], llmPrompt: prompts[1][2] }),
   );
+  await resetRecognition.click();
+  await expect.poll(() => resetConfig.mock.calls).toEqual([["translate.llmNumberRecognitionPrompt"]]);
+  await expect.element(recognitionPrompt).toHaveValue(defaultConfiguration.translate.llmNumberRecognitionPrompt);
+  for (const [, label, value] of prompts.slice(0, 2)) {
+    await expect.element(screen.getByLabelText(label, { exact: true })).toHaveValue(value);
+  }
+  await recognitionPrompt.fill("New extraction instructions");
+  await expect
+    .poll(() => saveConfig.mock.calls)
+    .toContainEqual([{ translate: { llmNumberRecognitionPrompt: "New extraction instructions" } }]);
+  resetConfig.mockRejectedValueOnce(new Error("Reset unavailable"));
+  await resetRecognition.click();
+  await expect.element(screen.getByText("Reset unavailable", { exact: true })).toBeVisible();
+  await expect.element(recognitionPrompt).toHaveValue("New extraction instructions");
 });
 
 test("settings sections expose public labels and the library template notice", async () => {

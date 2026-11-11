@@ -129,6 +129,7 @@ export function PendingView({
   const selectedItems = visibleItems.filter((item) => checkedIds.has(item.id));
   const retryItems = selectedItems.filter((item) => !["uncensored", "ambiguous", "no_number"].includes(item.kind));
   const confirmItems = selectedItems.filter((item) => item.kind === "uncensored");
+  const deleteItems = selectedItems.filter((item) => item.fileName.toLowerCase().endsWith(".strm"));
   const busy = batchAction !== null || detailBusy;
   useEffect(() => {
     const availableIds = new Set(items.map((item) => item.id));
@@ -139,9 +140,12 @@ export function PendingView({
   }, [items]);
   const runBatch = async (action: PendingBatchInput["action"]) => {
     if (busy || !selectedItems.length) return;
-    const ids = (action === "retry" ? retryItems : action === "confirm" ? confirmItems : selectedItems).map(
-      (item) => item.id,
-    );
+    const ids = {
+      retry: retryItems,
+      confirm: confirmItems,
+      delete: deleteItems,
+      ignore: selectedItems,
+    }[action].map((item) => item.id);
     if (!ids.length) return;
     setBatchAction(action);
     try {
@@ -284,8 +288,23 @@ export function PendingView({
               )}
               {t.pending.batchIgnore}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="col-span-2 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={busy || !deleteItems.length}
+              onClick={() => void runBatch("delete")}
+            >
+              {batchAction === "delete" ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+              {t.pending.batchDelete}
+            </Button>
           </div>
           <p className="text-xs text-muted-foreground">{t.pending.batchRetryHint}</p>
+          <p className="text-xs text-muted-foreground">{t.pending.batchDeleteHint}</p>
           {confirmItems.length > 0 ? (
             <div className="flex gap-2">
               <Select
@@ -314,10 +333,11 @@ export function PendingView({
         {batchResult ? (
           <div role="status" className="mb-3 shrink-0 space-y-2 rounded-quiet border border-border/60 p-3 text-xs">
             <p>
-              {(resultAction === "retry" ? t.pending.batchRetryResult : t.pending.batchResult)(
-                batchResult.succeededIds.length,
-                batchResult.failures.length,
-              )}
+              {(resultAction === "retry"
+                ? t.pending.batchRetryResult
+                : resultAction === "delete"
+                  ? t.pending.batchDeleteResult
+                  : t.pending.batchResult)(batchResult.succeededIds.length, batchResult.failures.length)}
             </p>
             {batchResult.failures.length > 0 ? (
               <ul className="max-h-36 space-y-1 overflow-y-auto text-destructive">

@@ -123,6 +123,56 @@ test("batch ignore requires confirmation and preserves selections after cancella
   await expect.element(screen.getByText("已选 0 项")).toBeVisible();
 });
 
+test("batch deletion targets selected STRM immediately, locks actions and retains failures and other files", async () => {
+  const mixed = [
+    items[0],
+    { ...items[1], fileName: "ABC-002.STRM", kind: "no_number" as const },
+    { ...items[1], id: "third", fileName: "third.strm", kind: "uncensored" as const },
+  ];
+  let settle!: (result: PendingBatchResponse) => void;
+  const onBatch = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Connection lost"))
+    .mockImplementationOnce(
+      () =>
+        new Promise<PendingBatchResponse>((resolve) => {
+          settle = resolve;
+        }),
+    )
+    .mockResolvedValue({ succeededIds: ["third"], failures: [] });
+  const screen = await render(
+    <>
+      <PendingView {...props} items={mixed} onBatch={onBatch} />
+      <ConfirmDialogHost />
+    </>,
+  );
+  const remove = screen.getByRole("button", { name: "批量删除", exact: true });
+  await expect.element(remove).toBeDisabled();
+  await screen.getByRole("checkbox", { name: "选择 ABC-001.mp4" }).click();
+  await expect.element(remove).toBeDisabled();
+  await screen.getByRole("checkbox", { name: "全选" }).click();
+  await remove.click();
+  expect(onBatch).toHaveBeenCalledExactlyOnceWith({ action: "delete", ids: [items[1].id, "third"] });
+  await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Connection lost");
+  await expect.element(screen.getByText("已选 3 项")).toBeVisible();
+  await remove.click();
+  await expect.element(remove).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: "批量处理", exact: true })).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: "批量忽略", exact: true })).toBeDisabled();
+  await expect.element(screen.getByRole("checkbox", { name: "全选" })).toBeDisabled();
+  settle({ succeededIds: [items[1].id], failures: [{ id: "third", message: "115 unavailable" }] });
+  await expect.element(screen.getByText("已删除 1 项 · 失败 1 项")).toBeVisible();
+  await expect.element(screen.getByText("third.strm: 115 unavailable")).toBeVisible();
+  await expect.element(screen.getByText("已选 2 项")).toBeVisible();
+  await expect.element(screen.getByRole("checkbox", { name: "选择 ABC-002.STRM" })).not.toBeChecked();
+  await remove.click();
+  expect(onBatch).toHaveBeenLastCalledWith({ action: "delete", ids: ["third"] });
+  await expect.element(screen.getByText("已选 1 项")).toBeVisible();
+  await expect.element(remove).toBeDisabled();
+  await expect.element(screen.getByRole("checkbox", { name: "选择 ABC-001.mp4" })).toBeChecked();
+});
+
 test("filters selection, targets a library, and confirms only selected published movies", async () => {
   const mixed = [
     items[0],

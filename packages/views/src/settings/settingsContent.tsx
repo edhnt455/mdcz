@@ -484,7 +484,7 @@ export function TranslateSection() {
           <EnumField name="translate.llmServiceType" options={toEnumOptions(t.settings.options.llmServiceType)} />
           <PromptFieldWrapper name="translate.llmSystemPrompt" />
           <PromptFieldWrapper name="translate.llmPrompt" />
-          <PromptFieldWrapper name="translate.llmNumberRecognitionPrompt" />
+          <PromptFieldWrapper name="translate.llmNumberRecognitionPrompt" showReset />
           <NumberField name="translate.llmTemperature" min={0} max={2} step={0.1} optional />
           <EnumField
             name="translate.llmReasoning"

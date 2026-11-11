@@ -387,7 +387,8 @@ export const settingsFields: Messages["settingsFields"] = {
     },
     "translate.llmNumberRecognitionPrompt": {
       label: "LLM 兜底番号识别提示词",
-      description: "仅用于 AI 番号识别兜底。程序自动附加文件名、直接父目录名和原识别番号，并约束 JSON 输出和来源证据。",
+      description:
+        "仅用于 AI 番号识别兜底，可编辑完整识别规则并恢复默认值，更改会自动保存。程序自动附加 fileName（文件名）、parentDirectory（直接父目录名）和 previousNumber（原识别番号）。请保留 number、evidence 的 JSON 输出要求，结果仍会校验来源证据。",
       aliases: ["提示词", "番号", "兜底"],
     },
     "translate.llmTemperature": { label: "LLM 温度（高级，可选）", description: "留空时使用服务端默认值。" },
