@@ -137,6 +137,7 @@ export const pending = {
   delete: "Delete",
   deleteHint: "Delete this STRM and its 115 source file immediately",
   deleting: "Deleting…",
+  deleteWorking: "Verifying the 115 source and deleting files. Progress and timing are available in runtime logs.",
   deleted: "STRM and 115 source file deleted",
   ignoreConfirm: "Remove this file from the pending list? The file stays where it is.",
   confirmTypes: {

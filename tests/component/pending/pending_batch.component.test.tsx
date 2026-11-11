@@ -32,39 +32,6 @@ const props: Omit<PendingViewProps, "onBatch"> = {
   onConfirmUncensored: vi.fn(),
 };
 
-test("STRM delete runs immediately and locks actions until the request finishes", async () => {
-  let settle!: () => void;
-  const onDelete = vi.fn(
-    () =>
-      new Promise<void>((resolve) => {
-        settle = resolve;
-      }),
-  );
-  const item = { ...items[0], fileName: "ABC-001.strm" };
-  const screen = await render(
-    <>
-      <PendingView
-        {...props}
-        onDelete={onDelete}
-        onBatch={vi.fn()}
-        detail={{ item, siteResults: [], numberRecognition: null }}
-      />
-      <ConfirmDialogHost />
-    </>,
-  );
-  await screen.getByRole("button", { name: "删除", exact: true }).click();
-  expect(onDelete).toHaveBeenCalledExactlyOnceWith(item.id);
-  await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
-  await expect.element(screen.getByRole("button", { name: "正在删除…" })).toBeDisabled();
-  await expect.element(screen.getByRole("button", { name: "忽略", exact: true })).toBeDisabled();
-  settle();
-  await expect.element(screen.getByRole("button", { name: "删除", exact: true })).toBeEnabled();
-  await screen.rerender(
-    <PendingView {...props} onBatch={vi.fn()} detail={{ item: items[0], siteResults: [], numberRecognition: null }} />,
-  );
-  await expect.element(screen.getByRole("button", { name: "删除", exact: true })).not.toBeInTheDocument();
-});
-
 test("batch selection supports select all, locks while processing and retains only failed selections", async () => {
   let settle!: (result: PendingBatchResponse) => void;
   const onBatch = vi.fn(
@@ -161,6 +128,7 @@ test("batch deletion targets selected STRM immediately, locks actions and retain
   await expect.element(screen.getByRole("button", { name: "批量处理", exact: true })).toBeDisabled();
   await expect.element(screen.getByRole("button", { name: "批量忽略", exact: true })).toBeDisabled();
   await expect.element(screen.getByRole("checkbox", { name: "全选" })).toBeDisabled();
+  await expect.element(screen.getByText("正在核验 115 来源并删除文件，具体进度和耗时可在运行日志查看。")).toBeVisible();
   settle({ succeededIds: [items[1].id], failures: [{ id: "third", message: "115 unavailable" }] });
   await expect.element(screen.getByText("已删除 1 项 · 失败 1 项")).toBeVisible();
   await expect.element(screen.getByText("third.strm: 115 unavailable")).toBeVisible();

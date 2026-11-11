@@ -130,6 +130,7 @@ export const pending: Messages["pending"] = {
   delete: "删除",
   deleteHint: "直接删除此 STRM 及对应的 115 源文件",
   deleting: "正在删除…",
+  deleteWorking: "正在核验 115 来源并删除文件，具体进度和耗时可在运行日志查看。",
   deleted: "已删除 STRM 和 115 源文件",
   ignoreConfirm: "从待处理列表移除这个文件？文件本身保持不变。",
   confirmTypes: {

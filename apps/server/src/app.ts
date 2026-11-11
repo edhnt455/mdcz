@@ -228,23 +228,24 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       logger: runtimeLogs.getLogger("Automation"),
     });
   scrape.onPending = (count) => automation.notePending(count);
+  const pendingDeletion = new PendingDeletionService({
+    persistence,
+    config,
+    libraries,
+    logger: runtimeLogs.getLogger("PendingDeletion"),
+    isBusy: () => maintenance.isBusy,
+    invalidate: () => {
+      library.invalidateAvailability();
+      taskEvents.invalidate("pending", "library");
+    },
+  });
   const pending =
     options.services?.pending ??
     new PendingService({
       libraries,
       repositories: async () => (await persistence.getState()).repositories,
       mediaRoots,
-      deleteFile: async (id) =>
-        await new PendingDeletionService({
-          persistence,
-          config,
-          libraries,
-          isBusy: () => maintenance.isBusy,
-          invalidate: () => {
-            library.invalidateAvailability();
-            taskEvents.invalidate("pending", "library");
-          },
-        }).delete(id),
+      deleteFile: async (id) => await pendingDeletion.delete(id),
       startScrape: async (input) => ({ taskId: (await scrape.start(input)).task.id }),
       getConfiguration: async () => await config.get(),
       updateConfiguration: async (patch) => await config.update(patch),

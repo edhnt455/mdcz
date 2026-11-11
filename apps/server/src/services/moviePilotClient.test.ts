@@ -35,10 +35,12 @@ describe("MoviePilot storage contract", () => {
         },
       );
     });
+    const progress = vi.fn();
     const client = new MoviePilotClient(
       { baseUrl: "https://mp.test", storage: "u115", rootPath: "/AV" },
       "token",
       fetcher,
+      { onProgress: progress },
     );
     const index = await client.index({
       id: "connection",
@@ -49,6 +51,8 @@ describe("MoviePilot storage contract", () => {
     });
     expect(index.size).toBe(1);
     expect(index.get(files[0].pickcode ?? "")?.map((entry) => entry.target)).toEqual([rows[0], rows[2]]);
+    expect(progress).toHaveBeenCalledWith(expect.stringContaining("扫描目录 /AV/"));
+    expect(progress).toHaveBeenCalledWith(expect.stringContaining("115 来源索引完成"));
   });
 
   it("accepts only complete, typed directory snapshots without pagination", async () => {
@@ -110,6 +114,7 @@ describe("MoviePilot storage contract", () => {
   });
 
   it("requires explicit deletion success, never retries a lost response and redacts upstream errors", async () => {
+    const progress = vi.fn();
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ success: false, message: "secret-test-token", data: null }))
@@ -118,10 +123,29 @@ describe("MoviePilot storage contract", () => {
       { baseUrl: "https://mp.test", storage: "u115", rootPath: "/Media/AV" },
       "secret-test-token",
       fetcher,
+      { onProgress: progress },
     );
     await expect(client.deleteFile(files[0])).rejects.toThrow("业务请求未成功");
     await expect(client.deleteFile(files[0])).rejects.toThrow("连接失败或响应丢失");
     expect(fetcher).toHaveBeenCalledTimes(2);
+    const controller = new AbortController();
+    const stalled = vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("secret-test-token")), { once: true });
+        }),
+    );
+    const waiting = new MoviePilotClient(
+      { baseUrl: "https://mp.test", storage: "u115", rootPath: "/Media/AV" },
+      "secret-test-token",
+      stalled,
+      { signal: controller.signal, onProgress: progress },
+    ).list(directory);
+    const rejected = expect(waiting).rejects.toThrow("请求超时或操作已取消");
+    controller.abort();
+    await rejected;
+    expect(stalled).toHaveBeenCalledOnce();
+    expect(JSON.stringify(progress.mock.calls)).not.toContain("secret-test-token");
     await expect(client.deleteFile(directory)).rejects.toThrow("已核验的文件身份");
     expect(fetcher).toHaveBeenCalledTimes(2);
   });

@@ -84,7 +84,7 @@ async function fixture() {
       return Response.json({ success: true, message: "", data: null });
     }
     if (remote.verifyFails && remote.deleted.length) throw new Error("verification unavailable");
-    const data = body.fileid === "0" ? [cloudRoot] : remote.files;
+    const data = body.fileid === "0" ? [cloudRoot] : remote.files.filter((file) => file.parent_fileid === body.fileid);
     return Response.json(
       { success: true, message: "", data },
       {
@@ -113,6 +113,7 @@ async function fixture() {
     },
   ];
   let busy = false;
+  const logger = { info: vi.fn(), error: vi.fn() };
   const deps = {
     persistence: {
       getState: async () => ({ database, repositories: { pending, mediaRoots, library } }),
@@ -124,6 +125,7 @@ async function fixture() {
     isBusy: () => busy,
     invalidate: vi.fn(),
     moviePilotFetch: fetcher,
+    logger,
   };
   return {
     id,
@@ -135,6 +137,8 @@ async function fixture() {
     mediaRoots,
     link,
     configuration,
+    fetcher,
+    logger,
     repository: new EmbyDeletionRepository(database),
     restart: () => new PendingDeletionService(deps),
     setBusy: () => {
@@ -145,6 +149,7 @@ async function fixture() {
 
 test.each([false, true])("deletes verified 115, STRM and pending records (published: %s)", async (published) => {
   const f = await fixture();
+  const service = f.restart();
   const linkPath = path.join(f.link, "ABC-123.strm");
   if (published) {
     await writeFile(linkPath, f.content);
@@ -173,12 +178,39 @@ test.each([false, true])("deletes verified 115, STRM and pending records (publis
       movieId: entry.id,
     });
     f.id = f.pending.list()[0].id;
+    const file = f.repository.findFile(linkPath);
+    if (!file) throw new Error("Expected a published STRM");
+    f.repository.bind({
+      fileId: file.id,
+      libraryId: "library",
+      linkPath,
+      sourcePath: f.sourcePath,
+      blocked: false,
+      snapshotJson: JSON.stringify({
+        connectionId: "connection",
+        fileUpdatedAt: file.updatedAt.getTime(),
+        source: JSON.parse(file.strmSourceJson ?? "{}"),
+        target: f.remote.files[0],
+        ancestors: [f.configuration.embyDeletion.moviePilot?.root],
+      }),
+    });
+  } else {
+    f.remote.files.push({
+      storage: "u115",
+      type: "dir",
+      path: "/AV/Unrelated/",
+      name: "Unrelated",
+      fileid: "unrelated",
+      parent_fileid: "root",
+    });
+    f.remote.files.push({ ...f.remote.files[0], fileid: "second", path: "/AV/second.mp4", pickcode: "second" });
+    f.remote.files.push({ ...f.remote.files[0], fileid: "stale", path: "/AV/stale.mp4", pickcode: "stale" });
   }
   f.remote.beforeDelete = async () => {
     expect(await readFile(f.sourcePath, "utf8")).toBe(f.content);
     expect(f.pending.get(f.id).deletionJson).toContain("deleting_cloud");
   };
-  await f.restart().delete(f.id);
+  await service.delete(f.id);
   expect(f.remote.deleted).toEqual(["115-file"]);
   await expect(readFile(f.sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
   expect(f.pending.list()).toEqual([]);
@@ -186,7 +218,69 @@ test.each([false, true])("deletes verified 115, STRM and pending records (publis
   if (published) {
     await expect(readFile(linkPath)).rejects.toMatchObject({ code: "ENOENT" });
     expect(await f.library.listEntries()).toEqual([]);
+    expect(f.logger.info).toHaveBeenCalledWith(expect.stringContaining("复用已核验的 115 来源关联"));
+    expect(f.logger.info).not.toHaveBeenCalledWith(expect.stringContaining("开始建立 115 来源索引"));
+  } else {
+    const root = await f.mediaRoots.ensurePath(path.dirname(f.sourcePath));
+    const secondPath = path.join(path.dirname(f.sourcePath), "second.strm");
+    await writeFile(secondPath, f.content.replace("pickcode=code", "pickcode=second"));
+    f.pending.upsert({ rootId: root.id, relativePath: "second.strm", libraryId: "library", kind: "failed" });
+    f.remote.beforeDelete = undefined;
+    await service.delete(f.pending.list()[0].id);
+    expect(f.remote.deleted).toEqual(["115-file", "second"]);
+    await expect(readFile(secondPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(
+      f.fetcher.mock.calls.filter(([, init]) => init?.body && JSON.parse(String(init.body)).fileid === "unrelated"),
+    ).toHaveLength(1);
+    expect(f.logger.info).toHaveBeenCalledWith(expect.stringContaining("复用 115 来源索引"));
+    expect(f.pending.list()).toEqual([]);
+    const stale = f.remote.files.find((file) => file.fileid === "stale");
+    if (!stale) throw new Error("Expected a cached file");
+    stale.size = 2048;
+    await writeFile(
+      path.join(path.dirname(f.sourcePath), "stale.strm"),
+      f.content.replace("pickcode=code", "pickcode=stale"),
+    );
+    f.pending.upsert({ rootId: root.id, relativePath: "stale.strm", libraryId: "library", kind: "failed" });
+    const staleId = f.pending.list()[0].id;
+    await expect(service.delete(staleId)).rejects.toThrow("目标身份已变化");
+    expect(f.remote.deleted).toEqual(["115-file", "second"]);
+    expect(f.pending.get(staleId).deletionJson).toBeNull();
+    f.pending.delete([staleId]);
+    f.logger.error.mockClear();
+    for (const reason of ["expired", "missing", "connection"]) {
+      const code = `next-${reason}`;
+      f.remote.files.push({
+        storage: "u115",
+        type: "file",
+        fileid: code,
+        pickcode: code,
+        path: `/AV/${code}.mp4`,
+        parent_fileid: "root",
+        size: 1024,
+      });
+      await writeFile(
+        path.join(path.dirname(f.sourcePath), `${code}.strm`),
+        f.content.replace("pickcode=code", `pickcode=${code}`),
+      );
+      f.pending.upsert({ rootId: root.id, relativePath: `${code}.strm`, libraryId: "library", kind: "failed" });
+      const clock = reason === "expired" ? vi.spyOn(Date, "now").mockReturnValue(Date.now() + 5 * 60_000 + 1) : null;
+      if (reason === "connection" && f.configuration.embyDeletion.moviePilot)
+        f.configuration.embyDeletion.moviePilot.id = "new-connection";
+      try {
+        await service.delete(f.pending.list()[0].id);
+      } finally {
+        clock?.mockRestore();
+      }
+    }
+    expect(
+      f.fetcher.mock.calls.filter(([, init]) => init?.body && JSON.parse(String(init.body)).fileid === "unrelated"),
+    ).toHaveLength(4);
+    expect(f.remote.deleted).toEqual(["115-file", "second", "next-expired", "next-missing", "next-connection"]);
+    expect(f.pending.list()).toEqual([]);
   }
+  expect(f.logger.info).toHaveBeenCalledWith(expect.stringContaining("删除完成"));
+  expect(f.logger.error).not.toHaveBeenCalled();
 });
 
 test.each([
@@ -196,6 +290,12 @@ test.each([
   "lost response",
 ] as const)("preserves retry evidence and local files after %s", async (scenario) => {
   const f = await fixture();
+  const service = f.restart();
+  if (scenario === "denied") {
+    f.fetcher.mockRejectedValueOnce(new Error("index unavailable"));
+    await expect(service.delete(f.id)).rejects.toThrow("连接失败");
+    expect(f.pending.get(f.id).deletionJson).toBeNull();
+  }
   f.remote.reject = scenario === "denied";
   f.remote.verifyFails = scenario === "verification unavailable";
   f.remote.loseResponse = scenario === "lost response";
@@ -203,7 +303,8 @@ test.each([
     f.remote.beforeDelete = async () => {
       await writeFile(f.sourcePath, "replacement");
     };
-  await expect(f.restart().delete(f.id)).rejects.toThrow();
+  await expect(service.delete(f.id)).rejects.toThrow();
+  expect(f.logger.error).toHaveBeenCalledWith(expect.stringContaining("删除失败"));
   expect(await readFile(f.sourcePath, "utf8")).toBe(scenario === "replacement" ? "replacement" : f.content);
   expect(f.pending.get(f.id).deletionJson).toBeTruthy();
   if (scenario === "lost response") {

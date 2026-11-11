@@ -9,6 +9,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../client";
+import { pendingListQueryOptions } from "../hooks/pendingQueries";
 import { useDeletionJobs } from "../hooks/useDeletionJobs";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
@@ -20,7 +21,7 @@ export function PendingPage() {
   const [tab, setTab] = useState<"media" | "deletion">("media");
   const deletions = useDeletionJobs();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const listQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list(), retry: false });
+  const listQ = useQuery(pendingListQueryOptions());
   const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
   const items = listQ.data?.items ?? [];
   const activeId = selectedId && items.some((item) => item.id === selectedId) ? selectedId : (items[0]?.id ?? null);
@@ -28,6 +29,7 @@ export function PendingPage() {
     queryKey: queryKeys.pending.detail(activeId ?? ""),
     queryFn: () => api.pending.detail({ id: activeId ?? "" }),
     enabled: Boolean(activeId),
+    staleTime: 30_000,
     retry: false,
   });
   useEffect(() => {
@@ -71,6 +73,7 @@ export function PendingPage() {
             onSelect={setSelectedId}
             detail={activeId ? detailQ.data : null}
             detailLoading={detailQ.isLoading}
+            detailErrorMessage={detailQ.error ? toErrorMessage(detailQ.error) : null}
             libraries={librariesQ.data?.libraries ?? []}
             onRetry={async (input) =>
               await act(async () => {

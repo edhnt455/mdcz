@@ -89,6 +89,7 @@ export interface PendingViewProps {
   onSelect: (id: string) => void;
   detail?: PendingDetailResponse | null;
   detailLoading?: boolean;
+  detailErrorMessage?: string | null;
   libraries: MediaLibraryDto[];
   onRetry: (input: PendingRetryInput) => Promise<void>;
   onRetryNumberRecognition: (id: string) => Promise<void>;
@@ -106,6 +107,7 @@ export function PendingView({
   onSelect,
   detail,
   detailLoading = false,
+  detailErrorMessage,
   libraries,
   onRetry,
   onRetryNumberRecognition,
@@ -131,6 +133,7 @@ export function PendingView({
   const confirmItems = selectedItems.filter((item) => item.kind === "uncensored");
   const deleteItems = selectedItems.filter((item) => item.fileName.toLowerCase().endsWith(".strm"));
   const busy = batchAction !== null || detailBusy;
+  const selectedItem = detail?.item ?? items.find((item) => item.id === selectedId);
   useEffect(() => {
     const availableIds = new Set(items.map((item) => item.id));
     setCheckedIds((current) => {
@@ -305,6 +308,11 @@ export function PendingView({
           </div>
           <p className="text-xs text-muted-foreground">{t.pending.batchRetryHint}</p>
           <p className="text-xs text-muted-foreground">{t.pending.batchDeleteHint}</p>
+          {batchAction === "delete" ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              {t.pending.deleteWorking}
+            </p>
+          ) : null}
           {confirmItems.length > 0 ? (
             <div className="flex gap-2">
               <Select
@@ -420,11 +428,13 @@ export function PendingView({
         ) : null}
       </section>
       <section className="min-h-0 overflow-y-auto p-6 lg:p-8">
-        {detailLoading && !detail ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : null}
-        {detail ? (
+        {selectedItem ? (
           <PendingDetail
-            key={detail.item.id}
+            key={selectedItem.id}
+            item={selectedItem}
             detail={detail}
+            loading={detailLoading}
+            errorMessage={detailErrorMessage}
             libraries={libraries}
             onRetry={onRetry}
             onRetryNumberRecognition={onRetryNumberRecognition}
@@ -452,7 +462,10 @@ function KindBadge({ kind }: { kind: PendingKindDto }) {
 }
 
 function PendingDetail({
+  item,
   detail,
+  loading,
+  errorMessage,
   libraries,
   onRetry,
   onRetryNumberRecognition,
@@ -462,7 +475,10 @@ function PendingDetail({
   busy,
   onBusyChange,
 }: {
-  detail: PendingDetailResponse;
+  item: PendingItemDto;
+  detail?: PendingDetailResponse | null;
+  loading: boolean;
+  errorMessage?: string | null;
   libraries: MediaLibraryDto[];
   onRetry: PendingViewProps["onRetry"];
   onRetryNumberRecognition: PendingViewProps["onRetryNumberRecognition"];
@@ -473,7 +489,6 @@ function PendingDetail({
   onBusyChange: (busy: boolean) => void;
 }) {
   const t = useT();
-  const { item, siteResults } = detail;
   const [recognitionRunning, setRecognitionRunning] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
@@ -557,6 +572,11 @@ function PendingDetail({
             ) : null}
           </div>
         </div>
+        {deleting ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {t.pending.deleteWorking}
+          </p>
+        ) : null}
         <p className="text-sm text-muted-foreground">{t.pending.kindDescriptions[item.kind]}</p>
         {item.detail && item.kind !== "ambiguous" ? (
           <p className="rounded-quiet border border-border/50 bg-surface-low/80 px-3 py-2 font-mono text-xs break-words text-foreground/85">
@@ -578,7 +598,19 @@ function PendingDetail({
         ) : null}
       </header>
 
-      {scrapable ? (
+      {loading && !detail ? (
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {t.common.loading}
+        </p>
+      ) : null}
+      {errorMessage ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t.pending.loadFailed(errorMessage)}
+        </p>
+      ) : null}
+
+      {scrapable && detail ? (
         <NumberRecognitionBlock
           attempt={detail.numberRecognition}
           currentNumber={item.number}
@@ -658,13 +690,13 @@ function PendingDetail({
         </Block>
       ) : null}
 
-      {item.number ? (
+      {item.number && detail ? (
         <Block title={t.pending.siteResultsTitle}>
-          {siteResults.length === 0 ? (
+          {detail.siteResults.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t.pending.noSiteResults}</p>
           ) : (
             <ul className="divide-y divide-border/40">
-              {siteResults.map((result) => (
+              {detail.siteResults.map((result) => (
                 <SiteResultRow key={result.site} result={result} />
               ))}
             </ul>

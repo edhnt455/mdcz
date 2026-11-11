@@ -6,6 +6,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { api } from "../client";
+import { pendingListQueryOptions } from "../hooks/pendingQueries";
 import { queryKeys } from "../lib/queryKeys";
 
 export function LibrariesPage() {
@@ -21,7 +22,7 @@ export function LibrariesPage() {
       retry: false,
     })),
   });
-  const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list(), retry: false });
+  const pendingQ = useQuery(pendingListQueryOptions());
   const integrationsQ = useQuery({
     queryKey: queryKeys.integrations.status,
     queryFn: () => api.integrations.status(),

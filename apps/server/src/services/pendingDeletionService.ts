@@ -6,10 +6,12 @@ import { type EmbyDeletionLibraryBinding, EmbyDeletionRepository } from "@mdcz/p
 import { type MediaLibraryService, mediaPathOwnership } from "@mdcz/runtime/library";
 import { parseStrmTarget } from "@mdcz/runtime/scrape/utils/strm";
 import type { Configuration } from "@mdcz/shared/config";
+import { toErrorMessage } from "@mdcz/shared/error";
 import { moviePilotResourceIdentity, type StrmCloudBinding, type StrmSourceSnapshot } from "@mdcz/shared/moviePilot";
 import { MoviePilotClient } from "./moviePilotClient";
 import type { ServerPersistenceService } from "./persistenceService";
-import { StrmDeletionService } from "./strmDeletionService";
+import type { RuntimeLogService } from "./runtimeLogService";
+import { readStrmBinding, StrmDeletionService } from "./strmDeletionService";
 
 interface PendingDeletionSnapshot {
   library: EmbyDeletionLibraryBinding;
@@ -21,6 +23,11 @@ interface PendingDeletionSnapshot {
 }
 
 export class PendingDeletionService {
+  private indexCache?: {
+    key: string;
+    expiresAt: number;
+    promise: ReturnType<MoviePilotClient["index"]>;
+  };
   constructor(
     private readonly deps: {
       persistence: Pick<ServerPersistenceService, "getState">;
@@ -28,31 +35,41 @@ export class PendingDeletionService {
       libraries: Pick<MediaLibraryService, "get">;
       isBusy(): boolean;
       invalidate(): void;
+      logger: Pick<ReturnType<RuntimeLogService["getLogger"]>, "info" | "error">;
       moviePilotFetch?: typeof fetch;
     },
   ) {}
 
   async delete(id: string): Promise<void> {
-    const state = await this.deps.persistence.getState();
-    const pending = state.repositories.pending;
-    const item = pending.get(id);
-    const root = await state.repositories.mediaRoots.get(item.rootId);
-    const itemPath = filesystemPathKey(resolveRootRelativePath(root, item.relativePath));
-    if (path.extname(itemPath).toLowerCase() !== ".strm") throw new Error("仅支持删除 STRM 及其 115 源文件");
-    const libraryId = item.libraryId;
-    if (!libraryId) throw new Error("此条目没有关联媒体库，无法核验删除范围");
-    const configuration = await this.deps.config.get();
-    const connection = configuration.embyDeletion.moviePilot;
-    const library = configuration.embyDeletion.libraries.find((entry) => entry.id === libraryId);
-    if (!connection || !library?.source) throw new Error("请先配置 MoviePilot 和此媒体库的 STRM 来源关联");
-    const repository = new EmbyDeletionRepository(state.database);
-    const strm = new StrmDeletionService(() => configuration.embyDeletion);
-    const client = new MoviePilotClient(connection, connection.token, this.deps.moviePilotFetch);
-    const file = repository.findFile(itemPath);
-    const recorded = file?.strmSourceJson ? (JSON.parse(file.strmSourceJson) as StrmSourceSnapshot) : null;
-    const sourcePath = recorded?.sourcePath ?? itemPath;
-    const release = mediaPathOwnership.acquireAll([itemPath, filesystemPathKey(sourcePath)]);
+    const started = Date.now();
+    const report = (message: string) =>
+      this.deps.logger.info(`[待处理删除 ${id}] ${message}（累计 ${((Date.now() - started) / 1000).toFixed(1)} 秒）`);
+    let release: (() => void) | undefined;
+    report("开始处理，115 网络请求总时限 120 秒");
     try {
+      const state = await this.deps.persistence.getState();
+      const pending = state.repositories.pending;
+      const item = pending.get(id);
+      const root = await state.repositories.mediaRoots.get(item.rootId);
+      const itemPath = filesystemPathKey(resolveRootRelativePath(root, item.relativePath));
+      if (path.extname(itemPath).toLowerCase() !== ".strm") throw new Error("仅支持删除 STRM 及其 115 源文件");
+      const libraryId = item.libraryId;
+      if (!libraryId) throw new Error("此条目没有关联媒体库，无法核验删除范围");
+      const configuration = await this.deps.config.get();
+      const connection = configuration.embyDeletion.moviePilot;
+      const library = configuration.embyDeletion.libraries.find((entry) => entry.id === libraryId);
+      if (!connection || !library?.source) throw new Error("请先配置 MoviePilot 和此媒体库的 STRM 来源关联");
+      const repository = new EmbyDeletionRepository(state.database);
+      const strm = new StrmDeletionService(() => configuration.embyDeletion);
+      const client = new MoviePilotClient(connection, connection.token, this.deps.moviePilotFetch, {
+        signal: AbortSignal.timeout(120_000),
+        onProgress: report,
+      });
+      const file = repository.findFile(itemPath);
+      const recorded = file?.strmSourceJson ? (JSON.parse(file.strmSourceJson) as StrmSourceSnapshot) : null;
+      const sourcePath = recorded?.sourcePath ?? itemPath;
+      release = mediaPathOwnership.acquireAll([itemPath, filesystemPathKey(sourcePath)]);
+      report(`核验 STRM：${itemPath}`);
       let snapshot = item.deletionJson ? (JSON.parse(item.deletionJson) as PendingDeletionSnapshot) : null;
       const assertActive = async () => {
         const current = (await this.deps.config.get()).embyDeletion;
@@ -102,7 +119,41 @@ export class PendingDeletionService {
         if (!resourceIdentity?.startsWith(`${expected.origin}${expected.pathname}?pickcode=`))
           throw new Error("STRM 未指向已配置的 MoviePilot 115 文件");
         const pickcode = new URL(resourceIdentity).searchParams.get("pickcode") ?? "";
-        const candidates = (await client.index(connection)).get(pickcode) ?? [];
+        const binding = file ? readStrmBinding(repository, file.id) : undefined;
+        let candidates: { target: StrmCloudBinding["target"]; ancestors: StrmCloudBinding["ancestors"] }[];
+        if (
+          binding?.connectionId === connection.id &&
+          binding.fileUpdatedAt === file?.updatedAt.getTime() &&
+          binding.source.sourcePath === filesystemPathKey(sourcePath) &&
+          binding.source.sha256 === sha256 &&
+          binding.source.resourceIdentity === resourceIdentity
+        ) {
+          report("复用已核验的 115 来源关联");
+          candidates = [binding];
+        } else {
+          const key = JSON.stringify(connection);
+          const previous = this.indexCache;
+          let cache =
+            previous && previous.key === key && previous.expiresAt > Date.now()
+              ? previous
+              : { key, expiresAt: Number.POSITIVE_INFINITY, promise: client.index(connection) };
+          const reused = cache === previous;
+          if (reused) report("复用 115 来源索引，跳过重复遍历；删除前仍实时核验目标");
+          this.indexCache = cache;
+          try {
+            candidates = (await cache.promise).get(pickcode) ?? [];
+            if (reused && !candidates.length) {
+              report("索引未匹配到此 STRM，重新扫描新加入的 115 文件");
+              cache = { key, expiresAt: Number.POSITIVE_INFINITY, promise: client.index(connection) };
+              this.indexCache = cache;
+              candidates = (await cache.promise).get(pickcode) ?? [];
+            }
+            if (!Number.isFinite(cache.expiresAt)) cache.expiresAt = Date.now() + 5 * 60_000;
+          } catch (error) {
+            if (this.indexCache === cache) this.indexCache = undefined;
+            throw error;
+          }
+        }
         if (candidates.length !== 1 || candidates[0].target.size == null)
           throw new Error("无法唯一核验 STRM 对应的 115 源文件");
         snapshot = {
@@ -137,6 +188,7 @@ export class PendingDeletionService {
         source: { ...snapshot.cloud.source, sourcePath: snapshot.linkPath ?? itemPath },
       };
       if (snapshot.step === "deleting_cloud") {
+        report(`实时核验 115 目标：${snapshot.cloud.target.path}`);
         await strm.assertSource(library, snapshot.cloud, false);
         if (snapshot.linkPath) await strm.assertSource(linkLibrary, linkSnapshot, false);
         const target = await client.verify(connection, snapshot.cloud);
@@ -157,11 +209,13 @@ export class PendingDeletionService {
               blocked: true,
             });
         })();
+        report(`删除 115 源文件：${target.path}`);
         await client.deleteFile(target);
         snapshot.step = "verifying_cloud";
         pending.saveDeletion(id, item.updatedAt, JSON.stringify(snapshot));
       }
       if (snapshot.step === "verifying_cloud") {
+        report("115 已响应删除，正在确认文件已消失");
         await assertActive();
         await client.test();
         if (await client.verify(connection, snapshot.cloud))
@@ -170,6 +224,7 @@ export class PendingDeletionService {
         pending.saveDeletion(id, item.updatedAt, JSON.stringify(snapshot));
       }
       await assertActive();
+      report("清理本地 STRM 和媒体记录");
       const active = () => {
         if (this.deps.isBusy() || repository.hasLiveScrapes()) throw new Error("媒体任务已启动，请结束后重试删除");
         return true;
@@ -181,8 +236,14 @@ export class PendingDeletionService {
         pending.delete([id]);
       })();
       this.deps.invalidate();
+      report("删除完成");
+    } catch (error) {
+      this.deps.logger.error(
+        `[待处理删除 ${id}] 删除失败：${toErrorMessage(error)}（累计 ${((Date.now() - started) / 1000).toFixed(1)} 秒）`,
+      );
+      throw error;
     } finally {
-      release();
+      release?.();
     }
   }
 }

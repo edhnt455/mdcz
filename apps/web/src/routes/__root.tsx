@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../client";
 import { LoginPage } from "../components/auth/LoginPage";
+import { pendingListQueryOptions } from "../hooks/pendingQueries";
 import { useDeletionJobs } from "../hooks/useDeletionJobs";
 import { useWebTaskSync } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
@@ -75,7 +76,7 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 
 const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathname: string }) => {
   useWebTaskSync();
-  const pendingQ = useQuery({ queryKey: queryKeys.pending.all, queryFn: () => api.pending.list(), retry: false });
+  const pendingQ = useQuery(pendingListQueryOptions());
   const deletionsQ = useDeletionJobs();
   const [hasVisitedTools, setHasVisitedTools] = useState(pathname === "/tools");
   const isToolsRoute = pathname === "/tools";

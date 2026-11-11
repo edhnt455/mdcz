@@ -17,22 +17,31 @@ export class MoviePilotClient {
     private readonly settings: Omit<MoviePilotSettings, "token">,
     private readonly token: string,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly options: { signal?: AbortSignal; onProgress?: (message: string) => void } = {},
   ) {}
 
   private async request(endpoint: string, body?: MoviePilotFile, query = "") {
+    const started = Date.now();
+    const signal = this.options.signal
+      ? AbortSignal.any([this.options.signal, AbortSignal.timeout(20_000)])
+      : AbortSignal.timeout(20_000);
+    const label = `${endpoint}${body ? ` ${body.path}` : ""}`;
+    this.options.onProgress?.(`请求 MoviePilot ${label}`);
     let response: Response;
     try {
+      signal.throwIfAborted();
       response = await this.fetcher(
         new URL(`api/v1/${endpoint}${query}`, `${this.settings.baseUrl.replace(/\/+$/u, "")}/`),
         {
           method: body ? "POST" : "GET",
           headers: { "X-API-KEY": this.token, "Content-Type": "application/json" },
           body: body ? JSON.stringify(body) : undefined,
-          signal: AbortSignal.timeout(20_000),
+          signal,
           redirect: "error",
         },
       );
     } catch {
+      if (signal.aborted) throw new Error(`MoviePilot ${label}：请求超时或操作已取消`);
       throw new Error(`MoviePilot ${endpoint}：连接失败或响应丢失`);
     }
     if (!response.ok) throw new Error(`MoviePilot ${endpoint}：HTTP ${response.status}`);
@@ -40,10 +49,12 @@ export class MoviePilotClient {
     try {
       bodyData = await response.json();
     } catch {
+      if (signal.aborted) throw new Error(`MoviePilot ${label}：读取响应超时或操作已取消`);
       throw new Error(`MoviePilot ${endpoint}：JSON 响应无效`);
     }
     const parsed = moviePilotEnvelopeSchema.safeParse(bodyData);
     if (!parsed.success || !parsed.data.success) throw new Error(`MoviePilot ${endpoint}：业务请求未成功`);
+    this.options.onProgress?.(`MoviePilot ${label} 完成，耗时 ${((Date.now() - started) / 1000).toFixed(1)} 秒`);
     return { data: parsed.data.data, headers: response.headers };
   }
 
@@ -113,6 +124,7 @@ export class MoviePilotClient {
   async index(
     connection: MoviePilotConnection,
   ): Promise<Map<string, { target: MoviePilotFile; ancestors: MoviePilotFile[] }[]>> {
+    this.options.onProgress?.(`开始建立 115 来源索引：${connection.rootPath}`);
     const resolved = await this.resolveRoot();
     if (resolved.root.fileid !== connection.root.fileid)
       throw new Error("MoviePilot 允许访问的根目录身份已变化，请重新连接并绑定");
@@ -124,6 +136,9 @@ export class MoviePilotClient {
       if (visited.has(current.directory.fileid) || visited.size >= 1_000)
         throw new Error("MoviePilot 目录遍历结果不明确或超出扫描上限");
       visited.add(current.directory.fileid);
+      this.options.onProgress?.(
+        `扫描目录 ${current.directory.path}，已扫描 ${visited.size - 1} 个目录、${scanned} 项，待扫描 ${queue.length + 1} 个目录`,
+      );
       for (const item of await this.list(current.directory)) {
         if (++scanned > MAX_ENTRIES) throw new Error("MoviePilot 资源扫描超出上限");
         if (item.type === "dir") queue.push({ directory: item, ancestors: [...current.ancestors, item] });
@@ -136,6 +151,7 @@ export class MoviePilotClient {
       }
       if (queue.length) await delay(200);
     }
+    this.options.onProgress?.(`115 来源索引完成：${visited.size} 个目录、${scanned} 项`);
     return index;
   }
 
