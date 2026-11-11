@@ -40,10 +40,30 @@ export class PendingDeletionService {
     },
   ) {}
 
-  async delete(id: string): Promise<void> {
+  async capture(id: string): Promise<string | null> {
+    const state = await this.deps.persistence.getState();
+    const item = state.repositories.pending.get(id);
+    if (item.deletionJson) return null;
+    const root = await state.repositories.mediaRoots.get(item.rootId);
+    const itemPath = filesystemPathKey(resolveRootRelativePath(root, item.relativePath));
+    const file = new EmbyDeletionRepository(state.database).findFile(itemPath);
+    const source = file?.strmSourceJson ? (JSON.parse(file.strmSourceJson) as StrmSourceSnapshot).sourcePath : itemPath;
+    const hash = createHash("sha256");
+    for (const filePath of new Set([itemPath, source])) {
+      const info = await lstat(filePath);
+      if (!info.isFile() || info.size > 64 * 1024) throw new Error("STRM 文件类型或大小无效");
+      hash.update(JSON.stringify([filePath, await realpath(filePath), info.dev, info.ino, info.mtimeMs]));
+      hash.update(await readFile(filePath));
+    }
+    return hash.digest("hex");
+  }
+
+  async delete(id: string, onProgress?: (message: string) => void): Promise<void> {
     const started = Date.now();
-    const report = (message: string) =>
+    const report = (message: string) => {
       this.deps.logger.info(`[待处理删除 ${id}] ${message}（累计 ${((Date.now() - started) / 1000).toFixed(1)} 秒）`);
+      onProgress?.(message);
+    };
     let release: (() => void) | undefined;
     report("开始处理，115 网络请求总时限 120 秒");
     try {

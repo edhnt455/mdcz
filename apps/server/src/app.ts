@@ -181,10 +181,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     new MaintenanceService(persistence, mediaRoots, taskEvents, maintenanceRuntime, libraries, taskGate);
   const scans = options.services?.scans ?? new ScanQueueService(persistence, mediaRoots, taskEvents, config);
   const system = options.services?.system ?? new SystemService();
-  const notePending = (count: number) => {
-    automation.notePending(count);
-    taskEvents.invalidate("pending");
-  };
   const libraryWatch =
     options.services?.libraryWatch ??
     new LibraryWatchService({
@@ -195,7 +191,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       maintenance,
       persistence,
       logger: runtimeLogs.getLogger("LibraryWatch"),
-      onPending: notePending,
+      onPending: () => taskEvents.invalidate("pending"),
     });
   let librarySettings = JSON.stringify([]);
   const unsubscribeLibraryConfig = config.onChange(({ configuration }) => {
@@ -245,7 +241,9 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       libraries,
       repositories: async () => (await persistence.getState()).repositories,
       mediaRoots,
-      deleteFile: async (id) => await pendingDeletion.delete(id),
+      deleteFile: async (id, progress) => await pendingDeletion.delete(id, progress),
+      captureDelete: async (id) => await pendingDeletion.capture(id),
+      isMediaBusy: async () => maintenance.isBusy || (await scrape.liveRuns()).runs.length > 0,
       startScrape: async (input) => ({ taskId: (await scrape.start(input)).task.id }),
       getConfiguration: async () => await config.get(),
       updateConfiguration: async (patch) => await config.update(patch),
@@ -254,7 +252,10 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
         new LlmRequestService(runtimeLogs.getLogger("NumberRecognition"), new LlmApiClient(networkClient)),
       ),
       onChanged: () => taskEvents.invalidate("pending", "scrape-history"),
+      onProgress: () => taskEvents.invalidate("pending-actions"),
+      onLibraryChanged: () => taskEvents.invalidate("library"),
     });
+  taskGate.track("pending", () => pending.isExecuting);
   const embyDeletion =
     options.services?.embyDeletion ??
     new EmbyDeletionService({
@@ -330,6 +331,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     }
     await services.scans.recoverInterrupted();
     await services.auth.status();
+    await services.pending.start();
     await services.libraryWatch.start();
     services.automation.start();
     services.qbittorrent.start();
@@ -346,6 +348,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     if (closed) return;
     closed = true;
     services.automation.close();
+    await services.pending.close();
     unsubscribeJavdbConfig();
     unsubscribePersonConfig();
     unsubscribeLibraryConfig();

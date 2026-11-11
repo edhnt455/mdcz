@@ -37,11 +37,19 @@ import { api } from "../client";
 import { DeletionTasksPage } from "../deletionTasks";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
+import { PendingTasksPage } from "../pendingTasks";
 import { ErrorBanner } from "../routeCommon";
+import { PendingPage } from "./pending";
 
 export const Route = createFileRoute("/workbench")({
-  validateSearch: (search): { intent?: "maintenance" | "deletion"; jobId?: string } => ({
-    intent: search.intent === "maintenance" || search.intent === "deletion" ? search.intent : undefined,
+  validateSearch: (search): { intent?: "maintenance" | "deletion" | "actions" | "new_files"; jobId?: string } => ({
+    intent:
+      search.intent === "maintenance" ||
+      search.intent === "deletion" ||
+      search.intent === "actions" ||
+      search.intent === "new_files"
+        ? search.intent
+        : undefined,
     jobId: typeof search.jobId === "string" ? search.jobId : undefined,
   }),
   component: WorkbenchRoutePage,
@@ -53,13 +61,27 @@ function WorkbenchRoutePage() {
   const navigate = useNavigate();
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <nav aria-label={t.deletions.title} className="flex shrink-0 gap-2 border-b px-4 py-2">
+      <nav aria-label={t.deletions.title} className="flex shrink-0 flex-wrap gap-2 border-b px-4 py-2">
         <Button
           size="sm"
-          variant={search.intent !== "deletion" ? "secondary" : "ghost"}
+          variant={!search.intent || search.intent === "maintenance" ? "secondary" : "ghost"}
           onClick={() => void navigate({ to: "/workbench", search: {} })}
         >
           {t.deletions.back}
+        </Button>
+        <Button
+          size="sm"
+          variant={search.intent === "new_files" ? "secondary" : "ghost"}
+          onClick={() => void navigate({ to: "/workbench", search: { intent: "new_files" } })}
+        >
+          {t.pending.newFiles}
+        </Button>
+        <Button
+          size="sm"
+          variant={search.intent === "actions" ? "secondary" : "ghost"}
+          onClick={() => void navigate({ to: "/workbench", search: { intent: "actions" } })}
+        >
+          {t.pending.tasks}
         </Button>
         <Button
           size="sm"
@@ -70,7 +92,14 @@ function WorkbenchRoutePage() {
         </Button>
       </nav>
       <div className="min-h-0 flex-1">
-        {search.intent === "deletion" ? (
+        {search.intent === "new_files" ? (
+          <PendingPage newFiles />
+        ) : search.intent === "actions" ? (
+          <PendingTasksPage
+            selectedId={search.jobId}
+            onSelect={(jobId) => void navigate({ to: "/workbench", search: { intent: "actions", jobId } })}
+          />
+        ) : search.intent === "deletion" ? (
           <DeletionTasksPage
             selectedId={search.jobId}
             onSelect={(jobId) => void navigate({ to: "/workbench", search: { intent: "deletion", jobId } })}

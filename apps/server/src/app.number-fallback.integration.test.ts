@@ -107,6 +107,9 @@ it.each([
     folderTemplate: "{number}",
     fileTemplate: "{number}",
   });
+  const originalPending = (await services.persistence.getState()).repositories.pending;
+  originalPending.upsert({ kind: "failed", rootId, libraryId, relativePath: fileName, detail: "Previous failure" });
+  const originalPendingId = originalPending.list()[0].id;
   const headers = { authorization: `Bearer ${token}` };
   const response = await fastify.inject({
     method: "POST",
@@ -116,6 +119,7 @@ it.each([
   });
   expect(response.statusCode).toBe(200);
   const runId = response.json().result.data.runId;
+  expect(() => originalPending.get(originalPendingId)).toThrow("未找到待处理条目");
   const success = scenario === "missing" || scenario === "miss" || scenario === "numeric_prefix";
   await waitForScrapeRunStatus(fastify, token, runId, success ? "completed" : "failed");
   expect(recognize).toHaveBeenCalledTimes(scenario === "disabled" || scenario === "numeric_prefix" ? 0 : 1);
@@ -132,6 +136,8 @@ it.each([
     expect(movies).toEqual([]);
     expect(pending).toEqual([
       expect.objectContaining({
+        taskId: runId,
+        taskKind: "scrape",
         kind: scenario === "unknown" ? "no_number" : "not_found",
         number: scenario === "unknown" ? null : scenario === "still_missing" ? "ABC-123" : "ZZZ-999",
       }),

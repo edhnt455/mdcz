@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, getTableColumns, isNotNull, isNull } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { PersistenceError, persistenceErrorCodes } from "./errors";
+import { PendingRepository } from "./pendingRepository";
 import { scrapeRuns } from "./schema";
 
 export type ScrapeExecutionMode = "single" | "batch";
@@ -122,23 +123,26 @@ export class ScrapeRunRepository {
       number: item.number ?? null,
     }));
 
-    this.database.db
-      .insert(scrapeRuns)
-      .values({
-        id,
-        previousRunId: input.previousRunId ?? null,
-        libraryId: input.libraryId,
-        rootId: input.rootId,
-        outputRootId: input.outputRootId ?? null,
-        outputRelativeDirectory: input.outputRelativeDirectory || null,
-        executionMode: input.executionMode,
-        directoryScopeJson: input.directoryScopeJson ?? null,
-        manifestJson: manifestItems.length > 0 ? JSON.stringify(manifestItems) : null,
-        totalItems: manifestItems.length,
-        manifestFixedAt: input.directoryScopeJson ? null : createdAt,
-        createdAt,
-      })
-      .run();
+    this.database.sqlite.transaction(() => {
+      this.database.db
+        .insert(scrapeRuns)
+        .values({
+          id,
+          previousRunId: input.previousRunId ?? null,
+          libraryId: input.libraryId,
+          rootId: input.rootId,
+          outputRootId: input.outputRootId ?? null,
+          outputRelativeDirectory: input.outputRelativeDirectory || null,
+          executionMode: input.executionMode,
+          directoryScopeJson: input.directoryScopeJson ?? null,
+          manifestJson: manifestItems.length > 0 ? JSON.stringify(manifestItems) : null,
+          totalItems: manifestItems.length,
+          manifestFixedAt: input.directoryScopeJson ? null : createdAt,
+          createdAt,
+        })
+        .run();
+      new PendingRepository(this.database).consume(input.items);
+    })();
 
     return await this.get(id);
   }
@@ -195,16 +199,19 @@ export class ScrapeRunRepository {
       number: item.number ?? null,
     }));
 
-    this.database.db
-      .update(scrapeRuns)
-      .set({
-        manifestFixedAt: new Date(),
-        discoveryJson: input.discoveryJson,
-        manifestJson: manifestItems.length > 0 ? JSON.stringify(manifestItems) : null,
-        totalItems: manifestItems.length,
-      })
-      .where(eq(scrapeRuns.id, input.runId))
-      .run();
+    this.database.sqlite.transaction(() => {
+      this.database.db
+        .update(scrapeRuns)
+        .set({
+          manifestFixedAt: new Date(),
+          discoveryJson: input.discoveryJson,
+          manifestJson: manifestItems.length > 0 ? JSON.stringify(manifestItems) : null,
+          totalItems: manifestItems.length,
+        })
+        .where(eq(scrapeRuns.id, input.runId))
+        .run();
+      new PendingRepository(this.database).consume(input.items);
+    })();
 
     return await this.get(input.runId);
   }

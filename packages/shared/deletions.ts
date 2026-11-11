@@ -47,3 +47,4 @@ export interface DeletionRetryResponse {
 }
 
 export const isOpenDeletionJob = (job: DeletionJob): boolean => job.status !== "completed" && job.status !== "ignored";
+export const needsDeletionReview = (job: DeletionJob): boolean => job.status === "needs_review";

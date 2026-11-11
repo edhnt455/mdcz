@@ -1,4 +1,4 @@
-import { isOpenDeletionJob } from "@mdcz/shared/deletions";
+import { needsDeletionReview } from "@mdcz/shared/deletions";
 import { TOOL_DEFINITIONS, type ToolId } from "@mdcz/shared/toolCatalog";
 import { useT } from "@mdcz/views/i18n";
 import { AppShell, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
@@ -93,7 +93,7 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
         currentPath={pathname}
         linkComponent={ShellLink}
         navBadges={{
-          pending: (pendingQ.data?.items.length ?? 0) + (deletionsQ.data?.jobs.filter(isOpenDeletionJob).length ?? 0),
+          pending: (pendingQ.data?.items.length ?? 0) + (deletionsQ.data?.jobs.filter(needsDeletionReview).length ?? 0),
         }}
       >
         {children}

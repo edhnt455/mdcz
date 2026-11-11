@@ -292,6 +292,11 @@ export const appRouter = t.router({
       .query(async ({ input }) => ({ hasStubs: await containsStrmFiles(input.sourcePath) })),
   }),
   pending: t.router({
+    newFiles: protectedProcedure.query(async ({ ctx }) => await ctx.services.pending.list(true)),
+    jobs: protectedProcedure.query(async ({ ctx }) => await ctx.services.pending.jobs()),
+    retryJob: protectedProcedure
+      .input(pendingIdInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.retryJob(input.id)),
     batch: protectedProcedure
       .input(pendingBatchInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.pending.batch(input)),
@@ -307,18 +312,14 @@ export const appRouter = t.router({
       .mutation(async ({ ctx, input }) => await ctx.services.pending.retryNumberRecognition(input.id)),
     confirmUncensored: protectedProcedure
       .input(pendingConfirmUncensoredInputSchema)
-      .mutation(async ({ ctx, input }) => {
-        await ctx.services.pending.confirmUncensored(input);
-        return { success: true as const };
-      }),
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.confirmUncensored(input)),
     ignore: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
       await ctx.services.pending.ignore(input.id);
       return { success: true as const };
     }),
-    delete: protectedProcedure.input(pendingIdInputSchema).mutation(async ({ ctx, input }) => {
-      await ctx.services.pending.delete(input.id);
-      return { success: true as const };
-    }),
+    delete: protectedProcedure
+      .input(pendingIdInputSchema)
+      .mutation(async ({ ctx, input }) => await ctx.services.pending.delete(input.id)),
   }),
   apiKeys: t.router({
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.auth.listApiKeys()),

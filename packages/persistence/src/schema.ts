@@ -219,6 +219,8 @@ export const pendingItems = sqliteTable(
     candidatesJson: text("candidates_json"),
     numberRecognitionJson: text("number_recognition_json"),
     deletionJson: text("deletion_json"),
+    taskId: text("task_id"),
+    taskKind: text("task_kind").$type<"scrape" | "action">(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
@@ -228,6 +230,36 @@ export const pendingItems = sqliteTable(
     check(
       "pending_items_kind_check",
       sql`${table.kind} in ('no_number', 'not_found', 'ambiguous', 'failed', 'uncensored', 'new_file')`,
+    ),
+  ],
+);
+
+export const pendingActions = sqliteTable(
+  "pending_actions",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id").notNull(),
+    itemUpdatedAt: integer("item_updated_at").notNull(),
+    action: text("action").$type<"delete" | "confirm">().notNull(),
+    inputJson: text("input_json").notNull(),
+    itemJson: text("item_json").notNull(),
+    status: text("status").$type<"queued" | "running" | "retrying" | "failed" | "completed">().notNull(),
+    progress: text("progress").notNull(),
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: integer("next_attempt_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    completedAt: integer("completed_at"),
+  },
+  (table) => [
+    uniqueIndex("pending_actions_active_item_idx")
+      .on(table.itemId)
+      .where(sql`${table.status} in ('queued', 'running', 'retrying')`),
+    check("pending_actions_action_check", sql`${table.action} in ('delete', 'confirm')`),
+    check(
+      "pending_actions_status_check",
+      sql`${table.status} in ('queued', 'running', 'retrying', 'failed', 'completed')`,
     ),
   ],
 );
@@ -348,6 +380,7 @@ export const clearedActivities = sqliteTable(
 );
 
 export const schema = {
+  pendingActions,
   clearedActivities,
   scrapeConflictResolutions,
   strmCloudBindings,

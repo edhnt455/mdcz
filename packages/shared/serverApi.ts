@@ -13,6 +13,8 @@ import type {
 } from "./mediaLibrary";
 import type { MoviePilotSettings } from "./moviePilot";
 import type {
+  PendingActionJob,
+  PendingActionResponse,
   PendingBatchInput,
   PendingBatchResponse,
   PendingConfirmUncensoredInput,
@@ -210,14 +212,17 @@ export interface ServerApiContract {
     probeStubs(input: MediaLibrarySourceInput): Promise<MediaLibraryStubProbeResponse>;
   };
   pending: {
+    newFiles(): Promise<PendingListResponse>;
+    jobs(): Promise<{ jobs: PendingActionJob[] }>;
+    retryJob(input: PendingIdInput): Promise<PendingActionResponse>;
     batch(input: PendingBatchInput): Promise<PendingBatchResponse>;
     list(): Promise<PendingListResponse>;
     detail(input: PendingIdInput): Promise<PendingDetailResponse>;
     retry(input: PendingRetryInput): Promise<PendingRetryResponse>;
     retryNumberRecognition(input: PendingIdInput): Promise<PendingDetailResponse>;
-    confirmUncensored(input: PendingConfirmUncensoredInput): Promise<{ success: true }>;
+    confirmUncensored(input: PendingConfirmUncensoredInput): Promise<PendingActionResponse>;
     ignore(input: PendingIdInput): Promise<{ success: true }>;
-    delete(input: PendingIdInput): Promise<{ success: true }>;
+    delete(input: PendingIdInput): Promise<PendingActionResponse>;
   };
   apiKeys: {
     list(): Promise<ApiKeyListResponse>;

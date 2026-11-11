@@ -1,4 +1,4 @@
-import { type DeletionJob, type DeletionJobStep, isOpenDeletionJob } from "@mdcz/shared/deletions";
+import { type DeletionJob, type DeletionJobStep, isOpenDeletionJob, needsDeletionReview } from "@mdcz/shared/deletions";
 import { formatBytes } from "@mdcz/shared/format";
 import { strmReferenceErrors } from "@mdcz/shared/moviePilot";
 import { Badge, Button, cn } from "@mdcz/ui";
@@ -28,7 +28,7 @@ export function DeletionQueueView({
   onOpen: (id: string) => void;
 }) {
   const t = useT();
-  const open = jobs.filter(isOpenDeletionJob);
+  const open = jobs.filter(needsDeletionReview);
   return (
     <section className="h-full overflow-auto bg-surface-canvas p-4">
       <h1 className="text-lg font-bold">

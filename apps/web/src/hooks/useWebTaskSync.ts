@@ -142,6 +142,8 @@ export const useWebTaskSync = (): void => {
         if (payload.resources.includes("scrape-live")) refreshLiveRuns();
         if (payload.resources.includes("maintenance")) refreshMaintenanceSession();
         if (payload.resources.includes("pending")) refreshPending();
+        if (payload.resources.includes("pending-actions"))
+          void queryClient.invalidateQueries({ queryKey: queryKeys.pending.jobs });
         if (payload.resources.includes("library")) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
           void queryClient.invalidateQueries({ queryKey: queryKeys.overview.all });

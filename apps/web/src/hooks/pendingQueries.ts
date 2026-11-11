@@ -2,10 +2,10 @@ import { queryOptions } from "@tanstack/react-query";
 import { api } from "../client";
 import { queryKeys } from "../lib/queryKeys";
 
-export const pendingListQueryOptions = () =>
+export const pendingListQueryOptions = (newFiles = false) =>
   queryOptions({
-    queryKey: queryKeys.pending.all,
-    queryFn: () => api.pending.list(),
+    queryKey: newFiles ? queryKeys.pending.newFiles : queryKeys.pending.all,
+    queryFn: () => (newFiles ? api.pending.newFiles() : api.pending.list()),
     staleTime: 30_000,
     retry: false,
   });

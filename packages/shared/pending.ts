@@ -26,6 +26,9 @@ export const ambiguousCandidateSchema = z.object({
 export type AmbiguousCandidate = z.infer<typeof ambiguousCandidateSchema>;
 
 export const pendingItemSchema = z.object({
+  deletionPending: z.boolean().optional(),
+  taskId: z.string().nullable().optional(),
+  taskKind: z.enum(["scrape", "action"]).nullable().optional(),
   id: z.string(),
   kind: z.enum(PENDING_KINDS),
   ref: rootFileRefSchema,
@@ -102,6 +105,7 @@ export const pendingBatchInputSchema = z.discriminatedUnion("action", [
 export type PendingBatchInput = z.infer<typeof pendingBatchInputSchema>;
 
 export interface PendingBatchResponse {
+  tasks?: { id: string; kind: "scrape" | "action" }[];
   succeededIds: string[];
   failures: { id: string; message: string }[];
 }
@@ -130,6 +134,26 @@ export const pendingConfirmUncensoredInputSchema = z.object({
   choice: z.enum(["umr", "leak", "uncensored"]),
 });
 export type PendingConfirmUncensoredInput = z.infer<typeof pendingConfirmUncensoredInputSchema>;
+
+export interface PendingActionJob {
+  canRetry: boolean;
+  id: string;
+  itemId: string;
+  action: "delete" | "confirm";
+  item: PendingItemDto;
+  status: "queued" | "running" | "retrying" | "failed" | "completed";
+  progress: string;
+  error: string | null;
+  attempts: number;
+  nextAttemptAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+}
+
+export interface PendingActionResponse {
+  taskId: string;
+}
 
 export const pendingRetryResponseSchema = z.object({ taskId: z.string() });
 export type PendingRetryResponse = z.infer<typeof pendingRetryResponseSchema>;

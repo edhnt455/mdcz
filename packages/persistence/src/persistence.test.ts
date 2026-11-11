@@ -182,7 +182,7 @@ describe("Persistence migrations", () => {
         { name: "scrape_runs" },
       ]);
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 17,
+        count: 18,
       });
 
       expect(
@@ -252,7 +252,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 17,
+        count: 18,
       });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
@@ -313,7 +313,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 15,
+        count: 16,
       });
       const fresh = createTestPersistenceDatabase();
       try {
@@ -543,7 +543,7 @@ describe("LibraryRepository", () => {
       { kind: "ambiguous", relativePath: "A.mp4", number: "SW-130" },
       { kind: "new_file", relativePath: "B.mp4", number: null },
     ]);
-    expect(pending.count()).toBe(2);
+    expect(pending.count()).toBe(1);
     pending.deleteFiles([]);
     const first = pending.list()[0];
     expect(first.numberRecognitionJson).toBeNull();

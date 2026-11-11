@@ -9,6 +9,8 @@ import { type PendingItemRow, type PendingKind, pendingItems } from "./schema";
 export type PendingItemRecord = PendingItemRow;
 
 export interface PendingItemInput {
+  taskId?: string | null;
+  taskKind?: "scrape" | "action" | null;
   kind: PendingKind;
   rootId: string;
   relativePath: string;
@@ -28,7 +30,51 @@ export class PendingRepository {
   }
 
   count(): number {
-    return this.database.db.select({ count: sql<number>`count(*)` }).from(pendingItems).get()?.count ?? 0;
+    return (
+      this.database.db
+        .select({ count: sql<number>`count(*)` })
+        .from(pendingItems)
+        .where(sql`
+      ${pendingItems.kind} != 'new_file' and not exists (
+        select 1 from pending_actions a where a.item_id = ${pendingItems.id}
+        and a.status in ('queued', 'running', 'retrying')
+      )`)
+        .get()?.count ?? 0
+    );
+  }
+
+  listAvailable(): PendingItemRecord[] {
+    return this.database.db
+      .select()
+      .from(pendingItems)
+      .where(sql`not exists (
+      select 1 from pending_actions a where a.item_id = ${pendingItems.id}
+      and a.status in ('queued', 'running', 'retrying')
+    )`)
+      .orderBy(desc(pendingItems.updatedAt))
+      .all();
+  }
+
+  assertAvailable(id: string): void {
+    if (
+      this.database.sqlite
+        .prepare("SELECT 1 FROM pending_actions WHERE item_id = ? AND status IN ('queued', 'running', 'retrying')")
+        .get(id)
+    )
+      throw new Error("此文件已有正在执行的操作，请在工作台查看进度");
+  }
+
+  consume(refs: readonly { rootId: string; relativePath: string }[]): void {
+    for (const ref of refs) {
+      const row = this.database.db
+        .select({ id: pendingItems.id })
+        .from(pendingItems)
+        .where(and(eq(pendingItems.rootId, ref.rootId), eq(pendingItems.relativePath, ref.relativePath)))
+        .get();
+      if (!row) continue;
+      this.assertAvailable(row.id);
+      this.delete([row.id]);
+    }
   }
 
   get(id: string): PendingItemRecord {
@@ -58,6 +104,8 @@ export class PendingRepository {
   /** One entry per source file: a newer outcome replaces the previous one. Returns whether the entry is new. */
   upsert(input: PendingItemInput, now = new Date()): boolean {
     const values = {
+      taskId: input.taskId ?? null,
+      taskKind: input.taskKind ?? null,
       kind: input.kind,
       libraryId: input.libraryId ?? null,
       movieId: input.movieId ?? null,

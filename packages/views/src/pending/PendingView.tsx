@@ -82,6 +82,8 @@ const KIND_BADGE_META: Record<PendingKindDto, { className: string; icon: LucideI
 const ACTION_ROW_CLASS = "grid grid-cols-1 gap-2.5 sm:grid-cols-[minmax(0,1fr)_8.5rem]";
 
 export interface PendingViewProps {
+  title?: string;
+  onOpenTask?: (item: PendingItemDto) => void;
   items: PendingItemDto[];
   loading?: boolean;
   errorMessage?: string | null;
@@ -100,6 +102,8 @@ export interface PendingViewProps {
 }
 
 export function PendingView({
+  title,
+  onOpenTask,
   items,
   loading = false,
   errorMessage,
@@ -192,7 +196,7 @@ export function PendingView({
   if (!loading && items.length === 0 && !errorMessage && !batchResult && !batchError) {
     return (
       <main className="flex h-full min-h-0 flex-col bg-surface-canvas p-4 text-foreground">
-        <h1 className="px-1 text-lg font-bold tracking-tight">{t.pending.title}</h1>
+        <h1 className="px-1 text-lg font-bold tracking-tight">{title ?? t.pending.title}</h1>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 pb-16 text-sm text-muted-foreground">
           <Inbox className="h-10 w-10 text-muted-foreground/40" />
           {t.pending.empty}
@@ -204,7 +208,7 @@ export function PendingView({
     <main className="grid h-full min-h-0 grid-cols-1 gap-0 bg-surface-canvas text-foreground lg:grid-cols-[22rem_minmax(0,1fr)]">
       <section className="flex min-h-0 flex-col border-border/60 p-4 lg:border-r">
         <div className="mb-3 flex shrink-0 items-center justify-between px-1">
-          <h1 className="text-lg font-bold tracking-tight">{t.pending.title}</h1>
+          <h1 className="text-lg font-bold tracking-tight">{title ?? t.pending.title}</h1>
           <span className="rounded-full bg-surface-low px-2.5 py-0.5 font-numeric text-xs font-bold text-muted-foreground">
             {items.length}
           </span>
@@ -341,11 +345,10 @@ export function PendingView({
         {batchResult ? (
           <div role="status" className="mb-3 shrink-0 space-y-2 rounded-quiet border border-border/60 p-3 text-xs">
             <p>
-              {(resultAction === "retry"
-                ? t.pending.batchRetryResult
-                : resultAction === "delete"
-                  ? t.pending.batchDeleteResult
-                  : t.pending.batchResult)(batchResult.succeededIds.length, batchResult.failures.length)}
+              {(resultAction === "ignore" ? t.pending.batchResult : t.pending.batchRetryResult)(
+                batchResult.succeededIds.length,
+                batchResult.failures.length,
+              )}
             </p>
             {batchResult.failures.length > 0 ? (
               <ul className="max-h-36 space-y-1 overflow-y-auto text-destructive">
@@ -432,6 +435,7 @@ export function PendingView({
           <PendingDetail
             key={selectedItem.id}
             item={selectedItem}
+            onOpenTask={onOpenTask}
             detail={detail}
             loading={detailLoading}
             errorMessage={detailErrorMessage}
@@ -462,6 +466,7 @@ function KindBadge({ kind }: { kind: PendingKindDto }) {
 }
 
 function PendingDetail({
+  onOpenTask,
   item,
   detail,
   loading,
@@ -475,6 +480,7 @@ function PendingDetail({
   busy,
   onBusyChange,
 }: {
+  onOpenTask?: PendingViewProps["onOpenTask"];
   item: PendingItemDto;
   detail?: PendingDetailResponse | null;
   loading: boolean;
@@ -516,7 +522,7 @@ function PendingDetail({
       setRecognitionRunning(false);
     }
   };
-  const scrapable = item.kind !== "uncensored";
+  const scrapable = item.kind !== "uncensored" && !item.deletionPending;
   const showIgnoreToken = item.kind === "no_number" || item.kind === "not_found";
 
   return (
@@ -540,7 +546,7 @@ function PendingDetail({
               variant="ghost"
               size="sm"
               className="h-8 shrink-0 gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              disabled={busy}
+              disabled={busy || item.deletionPending}
               onClick={async () => {
                 if (await confirmDialog({ title: t.pending.ignoreConfirm, confirmLabel: t.pending.ignore }))
                   await run(() => onIgnore(item.id));
@@ -578,6 +584,11 @@ function PendingDetail({
           </p>
         ) : null}
         <p className="text-sm text-muted-foreground">{t.pending.kindDescriptions[item.kind]}</p>
+        {item.taskId && onOpenTask ? (
+          <Button variant="outline" size="sm" onClick={() => onOpenTask(item)}>
+            {t.pending.viewWorkbench}
+          </Button>
+        ) : null}
         {item.detail && item.kind !== "ambiguous" ? (
           <p className="rounded-quiet border border-border/50 bg-surface-low/80 px-3 py-2 font-mono text-xs break-words text-foreground/85">
             {item.detail}

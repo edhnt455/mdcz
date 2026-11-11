@@ -1303,10 +1303,13 @@ describe("buildServer scrape integration", () => {
             : { id: item.id, choice: "leak" },
       });
     const confirmResponse = await confirm();
+    expect(confirmResponse.statusCode).toBe(200);
+    await services.pending.waitForIdle();
 
     if (scenario === "missing" || scenario === "commit_failure") {
-      expect(confirmResponse.statusCode).toBe(500);
-      if (scenario === "missing") expect(confirmResponse.json().error.message).toContain("维护扫描失败");
+      const failedJob = (await services.pending.jobs()).jobs[0];
+      expect(failedJob.status).toBe("failed");
+      if (scenario === "missing") expect(failedJob.error).toContain("维护扫描失败");
       expect(await state.repositories.library.getEntryById(originalEntry.id)).toEqual(originalEntry);
       const remainingFiles = (await readdir(root, { recursive: true, withFileTypes: true }))
         .filter((entry) => entry.isFile())
@@ -1318,7 +1321,7 @@ describe("buildServer scrape integration", () => {
     }
     expect(confirmResponse.statusCode, confirmResponse.body).toBe(200);
     if (scenario === "single") {
-      expect(confirmResponse.json().result.data).toEqual({
+      expect(confirmResponse.json().result.data).toMatchObject({
         succeededIds: [item.id],
         failures: [{ id: "missing", message: expect.stringContaining("未找到待处理条目") }],
       });
@@ -1495,9 +1498,10 @@ describe("buildServer scrape integration", () => {
       await Promise.resolve();
       if (id === "denied") throw new Error("115 deletion denied");
       order.push(`end:${id}`);
+      return { taskId: `delete-${id}` };
     });
     const deleted = await batch({ action: "delete", ids: ["first", "denied", "last", "first"] });
-    expect(deleted.json().result.data).toEqual({
+    expect(deleted.json().result.data).toMatchObject({
       succeededIds: ["first", "last"],
       failures: [{ id: "denied", message: "115 deletion denied" }],
     });
@@ -1575,10 +1579,13 @@ describe("buildServer scrape integration", () => {
     await writeFile(join(root, "ABC-124.mp4"), "video");
     const imageServer = await startTestImageServer();
     const control = createGatedAggregation(`${imageServer.url}/image.png`);
-    const { fastify } = await createTestServer({ scrapeAggregation: control.aggregation });
+    const { fastify, services } = await createTestServer({ scrapeAggregation: control.aggregation });
     const token = await loginAsAdmin(fastify);
     const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
 
+    const pending = (await services.persistence.getState()).repositories.pending;
+    pending.upsert({ kind: "failed", rootId, libraryId, relativePath: "ABC-124.mp4" });
+    const oldId = pending.list()[0].id;
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.start",
@@ -1587,6 +1594,7 @@ describe("buildServer scrape integration", () => {
     });
     const taskId = startResponse.json().result.data.runId;
     await control.firstCallStarted;
+    expect(() => pending.get(oldId)).toThrow("未找到待处理条目");
 
     const stopping = fastify.inject({
       method: "POST",
@@ -1607,6 +1615,7 @@ describe("buildServer scrape integration", () => {
       payload: undefined,
     });
     expect(historyResponse.json().result.data.results[0]?.status).toBe("skipped");
+    expect((await services.pending.list()).items).toEqual([]);
   });
 
   it("reads manifest-only runs as interrupted history", async () => {

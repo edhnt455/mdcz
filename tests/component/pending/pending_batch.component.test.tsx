@@ -128,9 +128,9 @@ test("batch deletion targets selected STRM immediately, locks actions and retain
   await expect.element(screen.getByRole("button", { name: "批量处理", exact: true })).toBeDisabled();
   await expect.element(screen.getByRole("button", { name: "批量忽略", exact: true })).toBeDisabled();
   await expect.element(screen.getByRole("checkbox", { name: "全选" })).toBeDisabled();
-  await expect.element(screen.getByText("正在核验 115 来源并删除文件，具体进度和耗时可在运行日志查看。")).toBeVisible();
+  await expect.element(screen.getByText("正在提交删除任务，执行进度可在工作台查看。")).toBeVisible();
   settle({ succeededIds: [items[1].id], failures: [{ id: "third", message: "115 unavailable" }] });
-  await expect.element(screen.getByText("已删除 1 项 · 失败 1 项")).toBeVisible();
+  await expect.element(screen.getByText("已提交 1 项 · 未提交 1 项")).toBeVisible();
   await expect.element(screen.getByText("third.strm: 115 unavailable")).toBeVisible();
   await expect.element(screen.getByText("已选 2 项")).toBeVisible();
   await expect.element(screen.getByRole("checkbox", { name: "选择 ABC-002.STRM" })).not.toBeChecked();

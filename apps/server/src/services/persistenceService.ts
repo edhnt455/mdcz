@@ -6,6 +6,7 @@ import {
   LibraryRepository,
   LibraryStateRepository,
   MediaRootRepository,
+  PendingActionRepository,
   PendingRepository,
   type PersistenceDatabase,
   PublicationJournalRepository,
@@ -21,6 +22,7 @@ import { acquireDatabaseLease } from "../databaseFiles";
 import type { ServerRuntimePaths } from "./configService";
 
 export interface ServerPersistenceRepositories {
+  pendingActions: PendingActionRepository;
   credentials: CredentialRepository;
   downloaders: DownloaderRepository;
   library: LibraryRepository;
@@ -83,6 +85,7 @@ export class ServerPersistenceService {
       this.state = {
         database,
         repositories: {
+          pendingActions: new PendingActionRepository(database),
           credentials: new CredentialRepository(database),
           downloaders: new DownloaderRepository(database),
           library: new LibraryRepository(database),

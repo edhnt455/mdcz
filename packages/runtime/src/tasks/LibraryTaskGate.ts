@@ -1,6 +1,7 @@
-export type LibraryTaskKind = "scrape" | "maintenance";
+export type LibraryTaskKind = "scrape" | "maintenance" | "pending";
 
 const CONFLICT_MESSAGES: Record<LibraryTaskKind, string> = {
+  pending: "文件处理任务正在运行，请等待完成后再开始媒体任务",
   maintenance: "维护任务正在运行，请停止后再开始刮削",
   scrape: "刮削任务正在运行，请停止后再开始维护",
 };

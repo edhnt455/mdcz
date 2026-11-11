@@ -255,6 +255,28 @@ export class ScrapeRunner {
       },
       onTerminal: async (run, snapshot) => {
         const dto = this.toSnapshotDto(run, snapshot, run.startedAt);
+        if (snapshot.status === "failed") {
+          let added = 0;
+          const existing = new Set(
+            this.deps.persistence.pending.list().map((item) => `${item.rootId}\0${item.relativePath}`),
+          );
+          for (const item of dto.items) {
+            if (item.status === "success" || existing.has(`${item.rootId}\0${item.relativePath}`)) continue;
+            if (
+              this.deps.persistence.pending.upsert({
+                kind: "failed",
+                rootId: item.rootId,
+                relativePath: item.relativePath,
+                libraryId: run.libraryId,
+                taskId: run.id,
+                taskKind: "scrape",
+                detail: item.error ?? dto.task.error ?? "刮削任务失败",
+              })
+            )
+              added++;
+          }
+          if (added) this.deps.onPending?.(added);
+        }
         this.terminalSnapshots.set(run.id, dto);
         this.lastTerminalSnapshot = dto;
         this.runContexts.delete(run.id);
@@ -1070,6 +1092,8 @@ export class ScrapeRunner {
               const pending = result.pending ?? { kind: "failed", number: entry.item.fileInfo.number || undefined };
               const isNew = this.deps.persistence.pending.upsert({
                 kind: pending.kind,
+                taskId: manifest.id,
+                taskKind: "scrape",
                 rootId: entry.item.rootId,
                 relativePath: entry.item.relativePath,
                 libraryId: manifest.libraryId,
@@ -1138,6 +1162,8 @@ export class ScrapeRunner {
               clearFiles: entries.map((entry) => entry.item),
               uncensored: uncensoredAmbiguous
                 ? {
+                    taskId: manifest.id,
+                    taskKind: "scrape",
                     rootId: published.rootId,
                     relativePath: published.rootRelativePath,
                     libraryId: manifest.libraryId,

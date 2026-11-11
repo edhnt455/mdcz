@@ -36,6 +36,8 @@ export const queryKeys = {
   },
   personSync: ["person-sync"] as const,
   pending: {
+    newFiles: ["pending", "newFiles"] as const,
+    jobs: ["pending", "jobs"] as const,
     all: ["pending"] as const,
     detail: (id: string) => ["pending", "detail", id] as const,
   },

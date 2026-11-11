@@ -3,6 +3,23 @@ import type { SkipReason } from "@mdcz/shared/siteResults";
 
 export const pending = {
   title: "Pending",
+  newFiles: "Awaiting scrape",
+  tasks: "Processing tasks",
+  viewWorkbench: "View workbench",
+  queued: "Submitted to workbench",
+  submitting: "Submitting…",
+  retryTask: "Continue task",
+  taskEmpty: "No processing tasks.",
+  attempts: "Attempts",
+  updatedAt: "Last updated",
+  actionNames: { delete: "Delete STRM and 115 source", confirm: "Confirm release type" },
+  taskStatuses: {
+    queued: "Queued",
+    running: "Running",
+    retrying: "Waiting to retry",
+    failed: "Needs attention",
+    completed: "Completed",
+  },
   kindFilter: "Filter by type",
   allKinds: "All types",
   filterEmpty: "No entries of this type.",
@@ -21,8 +38,7 @@ export const pending = {
   batchIgnore: "Ignore selected",
   batchDelete: "Delete selected",
   batchDeleteHint:
-    "Immediately deletes selected STRM files and their 115 sources. Other selected files remain selected.",
-  batchDeleteResult: (succeeded: number, failed: number) => `${succeeded} deleted · ${failed} failed`,
+    "Submits selected STRM files and their 115 sources for background deletion. Other selected files remain selected.",
   batchRetryHint:
     "Retries eligible entries; missing numbers and ambiguous works need individual review. Other selected entries remain selected.",
   batchIgnoreConfirm: (count: number) => `Ignore ${count} selected files?`,
@@ -135,9 +151,9 @@ export const pending = {
   saveIgnoreToken: "Save and retry",
   ignore: "Ignore",
   delete: "Delete",
-  deleteHint: "Delete this STRM and its 115 source file immediately",
-  deleting: "Deleting…",
-  deleteWorking: "Verifying the 115 source and deleting files. Progress and timing are available in runtime logs.",
+  deleteHint: "Submit this STRM and its 115 source for background deletion",
+  deleting: "Submitting…",
+  deleteWorking: "Submitting deletion. Track execution progress in the workbench.",
   deleted: "STRM and 115 source file deleted",
   ignoreConfirm: "Remove this file from the pending list? The file stays where it is.",
   confirmTypes: {

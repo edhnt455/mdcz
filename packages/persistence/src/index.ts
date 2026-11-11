@@ -8,6 +8,7 @@ export * from "./libraryRepository";
 export * from "./libraryStateRepository";
 export * from "./mediaRootRepository";
 export * from "./migrate";
+export * from "./pendingActionRepository";
 export * from "./pendingRepository";
 export * from "./publicationJournalRepository";
 export * from "./scanTaskRepository";
