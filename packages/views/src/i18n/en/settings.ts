@@ -118,6 +118,7 @@ export const settings = {
   namingTemplateHelp: {
     folder: "Folder template",
     file: "File name template",
+    nfoTitle: "NFO title template",
     viewPlaceholders: (template: string) => `View ${template.toLowerCase()} placeholders`,
     placeholdersTitle: (template: string) => `${template} placeholders`,
     notesTitle: (template: string) => `${template} notes`,
@@ -125,7 +126,7 @@ export const settings = {
     description: "Description",
     placeholders: {
       "{actor}":
-        "Actor display name for file naming; truncated to “Maximum actor names”, appending the configured suffix when exceeded (default “等演员”)",
+        "Actor display name; truncated to “Maximum actor names”, appending the configured suffix when exceeded (default “等演员”)",
       "{actorFallbackPrefix}": "Only output when {actor} falls back to the studio or seller, e.g. “片商：” or “卖家：”",
       "{firstActor}": "First actor; uses the current {actor} value when there are no actors",
       "{allActors}":
@@ -144,6 +145,10 @@ export const settings = {
       "{series}": "Series",
       "{studio}": "Studio",
       "{publisher}": "Publisher",
+      "{score} / {rating}": "Rating",
+      "{website}": "Identifier of the site finally used for scraping",
+    } as Record<string, string>,
+    filePlaceholders: {
       "{filename}": "Original video file name without extension",
       "{definition} / {resolution}": "Video resolution, e.g. 1080P, 2160P",
       "{4K}": "Outputs the matching tag when the resolution is 4K or 8K",
@@ -151,19 +156,24 @@ export const settings = {
       "{subtitle}": "Subtitle tag, e.g. 中文字幕",
       "{censorshipType}":
         "Censorship type, derived from the code, local choice, title and tag hints, e.g. 有码, 无码, 无码破解, 无码流出",
-      "{score} / {rating}": "Rating",
-      "{website}": "Identifier of the site finally used for scraping",
     } as Record<string, string>,
+    nfoTitleNumber: "Original movie code without naming tags",
     notes: {
       folder: [
-        "A / or \\ in this template creates nested folders.",
+        "A / or \\ in this template creates nested folders; leave it empty to put every movie directly in the output directory.",
         "Folders are created from this template when moving videos and subtitles, or when outputting metadata only.",
-        "If the template has no per-movie unique field, attached files and NFO names are validated in shared directory mode on save.",
+        "Without the number, title or file name (for example only {actor}), multiple movies share one folder: files follow the video file name, only <filename>.nfo is written, and scene images are skipped (prevents overwrite).",
       ],
       file: [
         "The file name template only sets the video's base name and never creates subfolders; path separators and invalid characters are removed.",
         "The file extension is taken from the source file; don't add .mp4, .mkv, etc. to the template.",
         "Multi-part videos get a suffix per “Part style” after the template result; use {rawNumber} for the code without naming tags.",
+      ],
+      nfoTitle: [
+        "{number} is the original code; subtitle, uncensored, leak and other naming tags are not added.",
+        "Placeholders from the video file ({filename}, {resolution}, {cnword} and so on) are unavailable: translation and maintenance refreshes rewrite only the NFO and can't read the video, so the title would change between writes.",
+        "{actor} is empty when there are no actors. A [...] group is left out entirely when all its placeholders are empty, so [{actor}] leaves no empty brackets.",
+        "A title edited in the media server is kept as written and not run through the template again.",
       ],
     },
   },

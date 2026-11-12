@@ -11,7 +11,7 @@ import type {
   ScrapeConflictResolveInput,
 } from "@mdcz/shared/scrapeConflict";
 import type { ScrapeFileRefDto } from "@mdcz/shared/serverDtos";
-import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
+import type { CrawlerData, MaintenancePresetId, NfoEditorField } from "@mdcz/shared/types";
 import type { DetailViewItem } from "../detail";
 
 export interface DetailNfoReadResponse {
@@ -24,7 +24,12 @@ export interface DetailActionPort {
   resolveConflict?(input: ScrapeConflictResolveInput): Promise<void>;
   resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
-  writeNfo(item: DetailViewItem, path: string, data: CrawlerData): Promise<void>;
+  writeNfo(
+    item: DetailViewItem,
+    path: string,
+    data: CrawlerData,
+    changedFields: readonly NfoEditorField[],
+  ): Promise<void>;
   preparePosterCrop(item: DetailViewItem): Promise<PosterCropEditSession>;
   savePosterCrop(item: DetailViewItem, crop: NormalizedCropRegion): Promise<{ posterUrl: string }>;
 }

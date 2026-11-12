@@ -1,5 +1,6 @@
 import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { NfoGenerator } from "@mdcz/runtime/scrape";
+import { configurationSchema } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { describe, expect, it } from "vitest";
 
@@ -132,12 +133,44 @@ describe("parseNfo", () => {
     expect(xml).not.toContain("actor-a.jpg");
     expect(parsed.publisher).toBe("PRESTIGE");
     expect(parsed.content_type).toBe("VR");
+    const external = xml
+      .replace(
+        "<movie>",
+        '<movie custom="007"><dateadded>2020-01-01</dateadded><lockdata>true</lockdata><playcount>007</playcount><ratings><rating>7.100000</rating></ratings>',
+      )
+      .replace(/<dateadded>[^<]+<\/dateadded>(?![\s\S]*<dateadded>)/u, "");
+    const snapshot = parseNfoSnapshot(external);
+    const refreshed = new NfoGenerator().buildXml(snapshot.crawlerData, { localState: snapshot.localState });
+    expect(refreshed).toContain("<dateadded>2020-01-01</dateadded>");
+    expect(refreshed).toContain("<playcount>007</playcount>");
+    expect(refreshed).toContain("<rating>7.100000</rating>");
+    expect(refreshed).toContain('<movie custom="007">');
+    expect(refreshed).toContain("<lockdata>true</lockdata>");
     expect(parsed.durationSeconds).toBe(5400);
     expect(parsed.plot).toBe("Original plot & details");
     expect(parsed.plot_zh).toBe("中文简介");
     expect(parsed.translation_failures).toEqual({ title: "content_filter & no output", genres: "Request timeout" });
-    const repaired = new NfoGenerator().mergeEditableXml(xml, { ...parsed, translation_failures: undefined });
+    const repaired = new NfoGenerator().mergeTranslatedXml(
+      xml,
+      { ...parsed, translation_failures: undefined },
+      [],
+      ["title", "plot", "genres"],
+    );
     expect(parseNfoSnapshot(repaired).crawlerData.translation_failures).toBeUndefined();
+    for (const field of ["plot", "genres"] as const) {
+      expect(() => new NfoGenerator().mergeTranslatedXml(xml, parsed, [field], [field], { enabledFields: [] })).toThrow(
+        "已在 NFO 设置中禁用",
+      );
+    }
+    const translated = new NfoGenerator().mergeTranslatedXml(
+      xml,
+      { ...parsed, plot_zh: "新的简介" },
+      ["plot"],
+      ["plot"],
+      { enabledFields: ["plot"] },
+    );
+    expect(translated).toContain("<plot>新的简介</plot>");
+    expect(translated).toContain("<outline>中文简介</outline>");
   });
 
   it("uses outline as the plot fallback", () => {
@@ -231,7 +264,7 @@ describe("parseNfo", () => {
       scene_images: [],
       website: Website.DMM,
     };
-    const options = { nfoTitleTemplate: "{number} {title}" };
+    const options = { titleNaming: { ...configurationSchema.parse({}).naming, nfoTitleTemplate: "{number} {title}" } };
     const editsOf = (xml: string) => Object.keys(parseNfoSnapshot(xml).localState?.edits ?? {});
 
     // Emby's rewrite: actor thumbs dropped, <set><name>, CDATA, and "A/B" genres split and moved.
@@ -261,8 +294,9 @@ describe("parseNfo", () => {
       "title",
     ]);
 
-    const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, options);
+    const editorSaved = generator.mergeEditableXml(published, { ...site, genres: ["Drama"] }, ["genres"], options);
     expect(editsOf(editorSaved)).toEqual(["genre"]);
+    expect(editorSaved.match(/<\?xml/gu)).toHaveLength(1);
   });
 
   it("does not restore mirrored genre tags as localState tags", () => {

@@ -1,6 +1,7 @@
-export type LibraryTaskKind = "scrape" | "maintenance" | "pending";
+export type LibraryTaskKind = "scrape" | "maintenance" | "pending" | "edit";
 
 const CONFLICT_MESSAGES: Record<LibraryTaskKind, string> = {
+  edit: "媒体库批量编辑正在运行，请等待完成后再开始媒体任务",
   pending: "文件处理任务正在运行，请等待完成后再开始媒体任务",
   maintenance: "维护任务正在运行，请停止后再开始刮削",
   scrape: "刮削任务正在运行，请停止后再开始维护",
@@ -25,7 +26,7 @@ export class LibraryTaskGate {
   }
 
   /** Call in the same synchronous step that registers the task, so a concurrent start of the other kind cannot slip in. */
-  assertAvailable(kind: LibraryTaskKind): void {
+  assertAvailable(kind?: LibraryTaskKind): void {
     for (const [holder, busy] of this.#busy) if (holder !== kind && busy()) throw new LibraryTaskConflictError(holder);
   }
 }

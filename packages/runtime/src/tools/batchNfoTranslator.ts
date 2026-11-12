@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
-import { stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
-import { createMediaRoot, deterministicMediaRootId, type MediaRoot } from "@mdcz/media-store";
+import { dirname, resolve } from "node:path";
+import {
+  createMediaRoot,
+  deterministicMediaRootId,
+  type MediaRoot,
+  readRootFile,
+  resolveRootFile,
+} from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
+import { applyNfoEditorChanges } from "@mdcz/shared/nfoEditor";
 import type {
   BatchTranslateApplyMode,
   BatchTranslateApplyResultItem,
@@ -10,10 +16,11 @@ import type {
   BatchTranslateMode,
   BatchTranslateScanItem,
 } from "@mdcz/shared/toolTypes";
-import type { CrawlerData, FileInfo, LocalScanEntry, NfoLocalState } from "@mdcz/shared/types";
+import type { CrawlerData, LocalScanEntry, NfoEditorField } from "@mdcz/shared/types";
 import { z } from "@mdcz/shared/zod";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
 import { buildMovieTags } from "../maintenance/movieTags";
+import { parseNfoSnapshot } from "../maintenance/nfoSnapshot";
 import { runWithNetworkChannel } from "../network";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
@@ -29,7 +36,7 @@ import {
   toTarget,
 } from "../scrape";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
-import { NfoGenerator, type NfoOptions, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
+import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import { LlmRequestService } from "../scrape/translate/engines/LlmRequestService";
 import { buildLlmTranslatePrompt } from "../scrape/translate/engines/OpenAiTranslator";
 import { detectLanguage, type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
@@ -38,29 +45,6 @@ type BatchTranslateLocalScanService = {
   scan(dirPath: string, sceneImagesFolder: string): Promise<LocalScanEntry[]>;
   scanVideo(root: MediaRoot, videoPath: string, sceneImagesFolder: string): Promise<LocalScanEntry>;
 };
-
-type BatchTranslateWriteNfoInput = {
-  assets: {
-    downloaded: string[];
-    sceneImages: string[];
-  };
-  config: {
-    download: Configuration["download"];
-    naming: Configuration["naming"];
-  };
-  crawlerData: CrawlerData;
-  enabled: boolean;
-  fileInfo: FileInfo;
-  localState?: NfoLocalState;
-  buildTags?: NfoOptions["buildTags"];
-  logger: RuntimeLogger;
-  nfoGenerator: NfoGenerator;
-  nfoPath: string;
-  sourceVideoPath: string;
-  writeFile?: (path: string, content: string) => Promise<void>;
-};
-
-export type BatchTranslateWriteNfo = (input: BatchTranslateWriteNfoInput) => Promise<string | undefined>;
 
 type BatchTranslationAction =
   | { field: BatchTranslateField; kind: "translate"; text: string; key: string; genreIndex?: number }
@@ -85,20 +69,18 @@ type PendingTranslationResult = {
 
 export interface BatchNfoTranslatorDependencies {
   publication?: {
-    roots: readonly { id: string; hostPath: string }[];
+    roots: readonly MediaRoot[];
     outputs?: PublicationOutputPort;
     library?: MovieLibrary;
   };
   localScanService?: BatchTranslateLocalScanService;
   llmApiClient?: Pick<LlmApiClient, "generateText">;
   nfoGenerator?: NfoGenerator;
-  writeNfo?: BatchTranslateWriteNfo;
   logger?: RuntimeLogger;
 }
 
 const MAX_BATCH_ITEMS = 20;
 const MAX_BATCH_CHARS = 12_000;
-const MOVIE_NFO_NAME = "movie.nfo";
 
 export interface BatchNfoTranslatorApplyOptions {
   mode: BatchTranslateApplyMode;
@@ -148,43 +130,6 @@ const buildBatchChunks = (items: PendingTranslation[], maxBatchItems = MAX_BATCH
 
   if (currentChunk.length > 0) chunks.push(currentChunk);
   return chunks;
-};
-
-const pathExists = async (targetPath: string): Promise<boolean> => {
-  try {
-    return (await stat(targetPath)).isFile();
-  } catch {
-    return false;
-  }
-};
-
-const resolveExistingNfoNaming = async (nfoPath: string): Promise<Configuration["download"]["nfoNaming"]> => {
-  const normalizedNfoPath = resolve(nfoPath);
-  if (basename(normalizedNfoPath).toLowerCase() === MOVIE_NFO_NAME) return "movie";
-
-  const moviePath = join(dirname(normalizedNfoPath), MOVIE_NFO_NAME);
-  return (await pathExists(moviePath)) ? "both" : "filename";
-};
-
-const defaultWriteNfo: BatchTranslateWriteNfo = async ({
-  config,
-  crawlerData,
-  nfoGenerator,
-  nfoPath,
-  localState,
-  fileInfo,
-  buildTags,
-  writeFile,
-}) => {
-  return await nfoGenerator.writeNfo(nfoPath, crawlerData, {
-    nfoNaming: config.download.nfoNaming,
-    enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
-    nfoTitleTemplate: config.naming.nfoTitleTemplate,
-    localState,
-    fileInfo,
-    buildTags,
-    writeFile,
-  });
 };
 
 const buildFieldAction = (
@@ -368,7 +313,6 @@ export const applyBatchNfoTranslations = async (
 
   const logger = dependencies.logger ?? runtimeLoggerService.getLogger("BatchNfoTranslator");
   const nfoGenerator = dependencies.nfoGenerator ?? new NfoGenerator();
-  const writeNfo = dependencies.writeNfo ?? defaultWriteNfo;
   const target = toTarget(config.translate.targetLanguage);
   const plans: BatchTranslationPlanItem[] = [];
   const nfoPaths = new Set<string>();
@@ -528,33 +472,6 @@ export const applyBatchNfoTranslations = async (
     }
 
     try {
-      const detectedNfoNaming = await resolveExistingNfoNaming(entry.nfoPath);
-      const artifactsByPath = new Map<string, string>();
-      const savedNfoPath = await writeNfo({
-        assets: {
-          downloaded: [],
-          sceneImages: [],
-        },
-        config: {
-          download: {
-            ...config.download,
-            nfoNaming: detectedNfoNaming,
-          },
-          naming: config.naming,
-        },
-        crawlerData: nextCrawlerData,
-        enabled: true,
-        fileInfo: entry.fileInfo,
-        localState: entry.nfoLocalState,
-        buildTags: buildMovieTags,
-        logger,
-        nfoGenerator,
-        nfoPath: entry.nfoPath,
-        sourceVideoPath: entry.fileInfo.filePath,
-        writeFile: async (path, content) => {
-          artifactsByPath.set(path, content);
-        },
-      });
       const registered = publication.outputs
         ? await resolveRegisteredNfoPaths(entry.nfoPath, publication.outputs, async (id) => {
             const root = publication.roots.find((root) => root.id === id);
@@ -562,20 +479,51 @@ export const applyBatchNfoTranslations = async (
             return root;
           })
         : undefined;
-      const artifacts = [...artifactsByPath]
-        .filter(([targetPath]) => !registered || registered.paths.includes(targetPath))
-        .map(([targetPath, data]) => ({ targetPath, data }));
-      const inventory = new DirectoryInventory();
-      const release = await acquireOutputDirectories(
-        artifacts.map((artifact) => artifact.targetPath),
-        (directory) => inventory.canonicalDirectory(directory),
+      const targets = registered?.paths ?? entry.nfoPaths;
+      if (!targets.length) throw new Error("未找到可写入的 NFO 副本");
+      const changedFields = options.mode === "ignore" ? [] : [...new Set(translatedFields)];
+      const statusFields = [...new Set(plan.actions.map((action) => action.field))];
+      const editorFields = changedFields.flatMap((field): NfoEditorField[] =>
+        field === "title" ? ["title", "title_zh"] : field === "plot" ? ["plot", "plot_zh"] : ["genres"],
       );
+      const inventory = new DirectoryInventory();
+      const release = await acquireOutputDirectories(targets, (directory) => inventory.canonicalDirectory(directory));
       try {
+        const artifacts = await Promise.all(
+          targets.map(async (targetPath) => {
+            const { root, relativePath } = resolveRootFile(publication.roots, targetPath);
+            const existingXml = (await readRootFile(root, relativePath)).toString("utf-8");
+            const snapshot = parseNfoSnapshot(existingXml);
+            return {
+              targetPath,
+              data: nfoGenerator.mergeTranslatedXml(existingXml, nextCrawlerData, changedFields, statusFields, {
+                enabledFields: nfoIgnoreFieldsToEnabledFields(config.download.nfoIgnoreFields),
+                fileInfo: entry.fileInfo,
+                localState: snapshot.localState,
+                titleNaming: config.naming,
+                buildTags: buildMovieTags,
+              }),
+            };
+          }),
+        );
         await new WriteOutput().install(artifacts, {
           protectedMediaFiles: registered?.mediaPaths,
           commit: async () => {
             if (!registered) return;
             if (!publication.library) throw new Error("写入已登记的 NFO 需要同步更新媒体库");
+            const stored = await publication.library.getEntryById(registered.movieId);
+            const currentData: CrawlerData = stored.crawlerDataJson
+              ? JSON.parse(stored.crawlerDataJson)
+              : entry.crawlerData;
+            const updated = applyNfoEditorChanges(currentData, nextCrawlerData, editorFields);
+            for (const key of ["translation_failures", "translation_ignored"] as const) {
+              const values: Partial<Record<BatchTranslateField, string>> = { ...currentData[key] };
+              for (const field of statusFields) {
+                if (nextCrawlerData[key]?.[field] !== undefined) values[field] = nextCrawlerData[key]?.[field];
+                else delete values[field];
+              }
+              updated[key] = Object.keys(values).length ? values : undefined;
+            }
             await writePublishedMovie(
               publication.library,
               registered.movieId,
@@ -589,7 +537,7 @@ export const applyBatchNfoTranslations = async (
                   published: true,
                 };
               }),
-              nextCrawlerData,
+              updated,
             );
           },
         });
@@ -601,7 +549,6 @@ export const applyBatchNfoTranslations = async (
         ...baseResult,
         success: errors.length === 0,
         translatedFields,
-        savedNfoPath,
         title: nextCrawlerData.title_zh?.trim() || nextCrawlerData.title,
         plot: nextCrawlerData.plot_zh?.trim() || nextCrawlerData.plot || "",
         error: errors.length > 0 ? errors.join("；") : undefined,

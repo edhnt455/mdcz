@@ -1,14 +1,13 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { MediaRoot } from "@mdcz/media-store";
-import { buildMovieTags, parseNfoSnapshot, writePreparedNfo } from "@mdcz/runtime/maintenance";
+import { createMediaRoot, type MediaRoot } from "@mdcz/media-store";
+import { buildMovieTags, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { LlmApiClient, NfoGenerator } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import {
   applyBatchNfoTranslations,
   type BatchNfoTranslatorApplyOptions,
-  type BatchNfoTranslatorDependencies,
   scanBatchNfoTranslations,
 } from "@mdcz/runtime/tools";
 import { configurationSchema, defaultConfiguration } from "@mdcz/shared/config";
@@ -89,7 +88,7 @@ const createService = (
     scan?: (dirPath: string, sceneImagesFolder: string) => Promise<LocalScanEntry[]>;
     scanVideo?: (root: MediaRoot, videoPath: string, sceneImagesFolder: string) => Promise<LocalScanEntry>;
     generateText?: LlmApiClient["generateText"];
-    writeNfo?: BatchNfoTranslatorDependencies["writeNfo"];
+    nfoGenerator?: NfoGenerator;
     rootPath?: string;
   } = {},
 ) => {
@@ -100,19 +99,14 @@ const createService = (
   const llmApiClient = {
     generateText: options.generateText ?? vi.fn(),
   } as unknown as LlmApiClient;
-  const writeNfo =
-    options.writeNfo ??
-    vi.fn(async ({ nfoPath }: { nfoPath?: string }) => {
-      return nfoPath;
-    });
-  const mediaRoot = {
+  const nfoGenerator = options.nfoGenerator ?? new NfoGenerator();
+  const mergeNfo = vi.spyOn(nfoGenerator, "mergeTranslatedXml");
+  const mediaRoot = createMediaRoot({
     id: "library",
     displayName: "library",
     hostPath: options.rootPath ?? "/library",
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
-  };
-  const dependencies = { localScanService, llmApiClient, writeNfo, publication: { roots: [mediaRoot] } };
+  });
+  const dependencies = { localScanService, llmApiClient, nfoGenerator, publication: { roots: [mediaRoot] } };
   const service = {
     scan: (directory: string, mode: BatchTranslateMode, config: ReturnType<typeof createConfig>) =>
       scanBatchNfoTranslations(directory, mode, config, dependencies),
@@ -127,7 +121,7 @@ const createService = (
     service,
     localScanService,
     llmApiClient,
-    writeNfo,
+    mergeNfo,
   };
 };
 
@@ -204,6 +198,8 @@ describe("BatchNfoTranslator", () => {
   });
 
   it("uses the configured consecutive kana threshold consistently when scanning and applying untranslated fields", async () => {
+    const root = await mkdtemp(join(tmpdir(), "mdcz-batch-threshold-"));
+    tempDirs.push(root);
     for (const { text, threshold = 5, expected, failed = false, field = "title" } of [
       { text: "中文标题 アリス", expected: false },
       { text: "あいうえ", expected: false },
@@ -236,6 +232,7 @@ describe("BatchNfoTranslator", () => {
       { text: "English title", failed: true, expected: true },
     ] satisfies { text: string; threshold?: number; expected: boolean; failed?: boolean; field?: "title" | "plot" }[]) {
       const entry = createEntry({
+        nfoPath: join(root, "ABC-123.nfo"),
         crawlerData: {
           title: field === "title" ? text : "中文标题",
           title_zh: undefined,
@@ -244,7 +241,10 @@ describe("BatchNfoTranslator", () => {
           translation_failures: failed ? { [field]: "provider unavailable" } : undefined,
         },
       });
-      const { service, llmApiClient, writeNfo } = createService({
+      if (!entry.nfoPath || !entry.crawlerData) throw new Error("Missing fixture NFO metadata");
+      await writeFile(entry.nfoPath, new NfoGenerator().buildXml(entry.crawlerData));
+      const { service, llmApiClient, mergeNfo } = createService({
+        rootPath: root,
         scan: async () => [entry],
         scanVideo: async () => entry,
         generateText: vi.fn().mockResolvedValue('{"translations":["翻译完成"]}'),
@@ -272,7 +272,7 @@ describe("BatchNfoTranslator", () => {
       );
       expect(result.success).toBe(expected);
       expect(llmApiClient.generateText).toHaveBeenCalledTimes(expected ? 1 : 0);
-      expect(writeNfo).toHaveBeenCalledTimes(expected ? 1 : 0);
+      expect(mergeNfo).toHaveBeenCalledTimes(expected ? 1 : 0);
     }
   });
 
@@ -291,12 +291,25 @@ describe("BatchNfoTranslator", () => {
         plot_zh: "中文简介",
       },
     });
-    await writeFile(join(root, "CCC-003.nfo"), "<movie><title>中文标题</title></movie>");
+    if (!entry.nfoPath || !entry.crawlerData) throw new Error("Missing fixture NFO metadata");
+    entry.nfoPaths = [entry.nfoPath, join(root, "movie.nfo")];
+    entry.nfoPath = join(root, "movie.nfo");
+    for (const [index, path] of entry.nfoPaths.entries()) {
+      const xml = new NfoGenerator().buildXml(
+        { ...entry.crawlerData, studio: `Keep studio ${index}`, genres: ["Keep genre"] },
+        {
+          localState: {
+            dateAdded: "2020-01-01",
+            foreignElements: { playcount: "007", ratings: { rating: "7.100000" } },
+          },
+        },
+      );
+      await writeFile(path, xml);
+    }
     const generateText = vi.fn();
     const { service } = createService({
       scanVideo: async () => entry,
       generateText,
-      writeNfo: writePreparedNfo,
       rootPath: root,
     });
 
@@ -323,6 +336,16 @@ describe("BatchNfoTranslator", () => {
     expect(xml).toContain("<title>元のタイトル</title>");
     expect(xml).toContain("<plot>元の説明</plot>");
     expect(xml).not.toContain("中文");
+    for (const [index, path] of entry.nfoPaths.entries()) {
+      const copy = await readFile(path, "utf8");
+      expect(copy).toContain("<title>元のタイトル</title>");
+      expect(copy).toContain("<plot>元の説明</plot>");
+      expect(copy).toContain(`<studio>Keep studio ${index}</studio>`);
+      expect(copy).toContain("<genre>Keep genre</genre>");
+      expect(copy).toContain("<playcount>007</playcount>");
+      expect(copy).toContain("<rating>7.100000</rating>");
+      expect(copy).toContain("<dateadded>2020-01-01</dateadded>");
+    }
   });
 
   it("batches unique texts, preserves published translations, and persists exhausted failures", async () => {
@@ -361,7 +384,8 @@ describe("BatchNfoTranslator", () => {
       });
     const client = new LlmApiClient({ postJsonDetailed });
     const generateText = vi.fn(client.generateText.bind(client));
-    const writeNfo = vi.fn(writePreparedNfo);
+    const nfoGenerator = new NfoGenerator();
+    const mergeNfo = vi.spyOn(nfoGenerator, "mergeTranslatedXml");
 
     const entriesByPath = new Map<string, LocalScanEntry>([
       [
@@ -407,8 +431,9 @@ describe("BatchNfoTranslator", () => {
       entry.nfoPath = entry.nfoPath?.replace("/library", root);
       entry.currentDir = root;
       entriesByPath.set(entry.fileInfo.filePath, entry);
-      if (!entry.nfoPath) throw new Error("Fixture NFO path is required");
-      await writeFile(entry.nfoPath, "<movie><title>Original</title></movie>");
+      if (!entry.nfoPath || !entry.crawlerData) throw new Error("Missing fixture NFO metadata");
+      entry.nfoPaths = [entry.nfoPath];
+      await writeFile(entry.nfoPath, new NfoGenerator().buildXml(entry.crawlerData));
     }
 
     const { service, localScanService } = createService({
@@ -420,7 +445,7 @@ describe("BatchNfoTranslator", () => {
         return matched;
       },
       generateText,
-      writeNfo,
+      nfoGenerator,
       rootPath: root,
     });
 
@@ -464,18 +489,11 @@ describe("BatchNfoTranslator", () => {
       }),
       undefined,
     );
-    expect(writeNfo).toHaveBeenCalledTimes(2);
+    expect(mergeNfo).toHaveBeenCalledTimes(2);
 
-    const firstWrite = writeNfo.mock.calls[0]?.[0] as {
-      config: { download: { nfoIgnoreFields: string[] } };
-      crawlerData: { title_zh?: string; plot_zh?: string };
-    };
-    expect(firstWrite.crawlerData.title_zh).toBe("相同标题");
-    expect(firstWrite.crawlerData.plot_zh).toBe("剧情一");
-    expect(firstWrite.config.download.nfoIgnoreFields).toEqual(["director"]);
-
-    const secondWrite = writeNfo.mock.calls[1]?.[0] as { crawlerData: { title_zh?: string } };
-    expect(secondWrite.crawlerData.title_zh).toBe("相同标题");
+    expect(mergeNfo.mock.calls[0]?.[1]).toMatchObject({ title_zh: "相同标题", plot_zh: "剧情一" });
+    expect(mergeNfo.mock.calls[0]?.[4]?.enabledFields).not.toContain("director");
+    expect(mergeNfo.mock.calls[1]?.[1]).toMatchObject({ title_zh: "相同标题" });
     expect(results.every(({ success }) => success)).toBe(true);
     expect(logError).not.toHaveBeenCalled();
     for (const number of ["AAA-001", "BBB-002"]) {
@@ -491,7 +509,7 @@ describe("BatchNfoTranslator", () => {
       const repaired = await service.apply(items, config, { mode: "all" });
       expect(repaired.every(({ success }) => success)).toBe(true);
     }
-    const successfulWriteCount = writeNfo.mock.calls.length;
+    const successfulWriteCount = mergeNfo.mock.calls.length;
     const savedNfo = await readFile(items[0].nfoPath, "utf8");
     localScanService.scanVideo.mockImplementation(async (_root, videoPath) => {
       const entry = entriesByPath.get(videoPath);
@@ -544,7 +562,7 @@ describe("BatchNfoTranslator", () => {
           error: result.error,
         })),
       );
-      expect(writeNfo).toHaveBeenCalledTimes(successfulWriteCount + (index + 1) * 2);
+      expect(mergeNfo).toHaveBeenCalledTimes(successfulWriteCount + (index + 1) * 2);
       const failedData = parseNfoSnapshot(await readFile(items[0].nfoPath, "utf8")).crawlerData;
       expect(failedData.title_zh).toBe(parseNfoSnapshot(savedNfo).crawlerData.title_zh);
       expect(failedData.translation_failures).toMatchObject({ title: expect.any(String), plot: expect.any(String) });
@@ -582,12 +600,13 @@ describe("BatchNfoTranslator", () => {
       return { ...entry, crawlerData: snapshot.crawlerData, nfoLocalState: snapshot.localState };
     };
     const generateText = vi.fn().mockResolvedValue('{"translations":["重新翻译的标题","重新翻译的简介"]}');
-    const writeNfo = vi.fn(writePreparedNfo);
+    const nfoGenerator = new NfoGenerator();
+    const mergeNfo = vi.spyOn(nfoGenerator, "mergeTranslatedXml");
     const { service } = createService({
       scan: async () => [await readEntry()],
       scanVideo: readEntry,
       generateText,
-      writeNfo,
+      nfoGenerator,
       rootPath: root,
     });
     const config = createConfig();
@@ -596,7 +615,9 @@ describe("BatchNfoTranslator", () => {
     const items = await service.scan(root, "untranslated", config);
     expect(items[0]).toMatchObject({ title: entry.crawlerData.title_zh, plot: entry.crawlerData.plot_zh });
     const originalXml = await readFile(nfoPath, "utf8");
-    writeNfo.mockRejectedValueOnce(new Error("Permission denied"));
+    mergeNfo.mockImplementationOnce(() => {
+      throw new Error("Permission denied");
+    });
     expect((await service.apply(items, config, { mode: "ignore" }))[0]).toMatchObject({
       success: false,
       error: "Permission denied",
@@ -684,7 +705,6 @@ describe("BatchNfoTranslator", () => {
       scan: async () => [await readEntry()],
       scanVideo: readEntry,
       generateText,
-      writeNfo: writePreparedNfo,
       rootPath: root,
     });
     const config = createConfig();

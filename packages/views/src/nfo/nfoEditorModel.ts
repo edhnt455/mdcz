@@ -1,5 +1,5 @@
 import { Website } from "@mdcz/shared/enums";
-import type { ActorProfile, CrawlerData } from "@mdcz/shared/types";
+import type { ActorProfile, CrawlerData, NfoEditorField } from "@mdcz/shared/types";
 import { getT } from "../i18n";
 
 export interface EditableActorProfile {
@@ -131,6 +131,11 @@ export const createEmptyEditableNfoData = (): EditableNfoData =>
 
 export const serializeEditableNfoData = (data: EditableNfoData): string =>
   JSON.stringify(normalizeEditableNfoData(data));
+
+export const getNfoChangedFields = (initial: EditableNfoData, edited: EditableNfoData): NfoEditorField[] =>
+  (Object.keys(edited) as (keyof EditableNfoData)[]).filter(
+    (field) => JSON.stringify(initial[field]) !== JSON.stringify(edited[field]),
+  );
 
 export const validateEditableNfoData = (data: EditableNfoData): NfoValidationResult => {
   const normalized = normalizeEditableNfoData(data);

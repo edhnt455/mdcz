@@ -1,7 +1,7 @@
 import { registeredMediaLocations } from "@mdcz/runtime";
 import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import { resolveInputRootPath } from "@mdcz/runtime/library";
-import { LocalScanService, writePreparedNfo } from "@mdcz/runtime/maintenance";
+import { LocalScanService } from "@mdcz/runtime/maintenance";
 import { checkEmbyConnection, checkJellyfinConnection } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
 import { AggregationService, LlmApiClient, NfoGenerator, TranslateService, toTarget } from "@mdcz/runtime/scrape";
@@ -120,7 +120,6 @@ export class ToolsService {
               localScanService: this.localScanService,
               logger: runtimeLoggerService.getLogger("BatchNfoTranslator"),
               nfoGenerator: this.nfoGenerator,
-              writeNfo: writePreparedNfo,
               publication: {
                 outputs: state.repositories.library,
                 library: state.repositories.library,

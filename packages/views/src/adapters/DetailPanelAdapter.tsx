@@ -1,6 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
-import type { CrawlerData } from "@mdcz/shared/types";
 import { findScrapeResultGroup } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
@@ -14,6 +13,7 @@ import { getT, useT } from "../i18n";
 import {
   createEmptyEditableNfoData,
   type EditableNfoData,
+  getNfoChangedFields,
   type NfoValidationErrors,
   normalizeEditableNfoData,
   serializeEditableNfoData,
@@ -196,7 +196,15 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
 
     try {
       setNfoSaving(true);
-      await port.writeNfo(item, nfoPath, validation.data as CrawlerData);
+      await port.writeNfo(
+        item,
+        nfoPath,
+        validation.data,
+        getNfoChangedFields(
+          JSON.parse(nfoInitialSnapshot) as EditableNfoData,
+          normalizeEditableNfoData(validation.data),
+        ),
+      );
       toast.success(getT().scrape.nfoSaved);
       setNfoInitialSnapshot(serializeEditableNfoData(normalizeEditableNfoData(validation.data)));
       setNfoOpenRaw(false);
@@ -205,7 +213,7 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
     } finally {
       setNfoSaving(false);
     }
-  }, [item, nfoData, nfoPath, port]);
+  }, [item, nfoData, nfoInitialSnapshot, nfoPath, port]);
 
   const setNfoOpen = useCallback(
     async (open: boolean) => {

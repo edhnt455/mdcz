@@ -226,7 +226,7 @@ describe("FileScraper .strm support", () => {
       crawlerData,
       expect.any(Object),
       expect.objectContaining({ placement: "move" }),
-      { uncensoredChoice: "umr" },
+      expect.objectContaining({ uncensoredChoice: "umr" }),
       { versionLabel: undefined },
     );
     expect(group.output?.files[0].scrape?.uncensoredAmbiguous).toBe(false);
@@ -278,10 +278,10 @@ describe("FileScraper .strm support", () => {
       plan.nfoPath,
       crawlerData,
       expect.objectContaining({
-        localState: {
+        localState: expect.objectContaining({
           uncensoredChoice: "leak",
           tags: ["保留标签"],
-        },
+        }),
         enabledFields: expect.not.arrayContaining(["director"]),
       }),
     );

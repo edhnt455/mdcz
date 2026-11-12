@@ -1,4 +1,10 @@
 export const workbench = {
+  taskConflict: {
+    scrape: "A scrape is running; wait for it to finish or stop it",
+    maintenance: "Maintenance is running; wait for it to finish or stop it",
+    edit: "A library edit is running; wait for it to finish",
+    pending: "A file processing task is running; wait for it to finish",
+  },
   // Return button
   returnDialogDescription: "Returning will clear the current workbench content. Are you sure you want to continue?",
   returnDialogTitle: "Return to workbench setup",

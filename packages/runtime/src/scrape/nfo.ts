@@ -2,9 +2,19 @@ import { mkdir } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { atomicWriteFile } from "@mdcz/media-store";
 import { normalizeActorName as normalizeActorKey } from "@mdcz/shared/actorAliases";
-import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
-import type { CrawlerData, DownloadedAssets, FileInfo, NfoLocalState, VideoMeta } from "@mdcz/shared/types";
-import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import { type Configuration, NFO_FIELD_OPTIONS, type NfoField, type TranslationField } from "@mdcz/shared/config";
+import { Website } from "@mdcz/shared/enums";
+import type { LibraryEdit } from "@mdcz/shared/libraryEdit";
+import type {
+  CrawlerData,
+  DownloadedAssets,
+  FileInfo,
+  NfoEditableField,
+  NfoEditorField,
+  NfoLocalState,
+  VideoMeta,
+} from "@mdcz/shared/types";
+import { XMLBuilder, XMLParser, XMLValidator } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
 import {
   fingerprintNfo,
@@ -13,6 +23,8 @@ import {
   parseFingerprints,
   publishedFingerprints,
 } from "./nfoEdits";
+import { renderTextTemplate } from "./utils/path";
+import { buildMetadataTemplateData, type MetadataNaming } from "./utils/templateData";
 
 const builder = new XMLBuilder({
   attributeNamePrefix: "@_",
@@ -25,7 +37,39 @@ const parser = new XMLParser({
   attributeNamePrefix: "@_",
   ignoreAttributes: false,
   commentPropName: "#comment",
+  // A merged NFO is rebuilt under its own declaration; keeping the parsed one would put a second one after it.
+  ignoreDeclaration: true,
+  parseTagValue: false,
 });
+
+export const MDCZ_NFO_ELEMENTS: ReadonlySet<string> = new Set([
+  "title",
+  "originaltitle",
+  "plot",
+  "outline",
+  "premiered",
+  "releasedate",
+  "dateadded",
+  "lockedfields",
+  "year",
+  "runtime",
+  "rating",
+  "studio",
+  "director",
+  "publisher",
+  "mpaa",
+  "set",
+  "trailer",
+  "num",
+  "uniqueid",
+  "genre",
+  "tag",
+  "actor",
+  "thumb",
+  "fanart",
+  "mdcz",
+  "fileinfo",
+]);
 
 const OUTLINE_MAX_CHARS = 200;
 const JELLYFIN_MOVIE_NFO_NAME = "movie.nfo";
@@ -41,7 +85,7 @@ export interface NfoOptions {
   fileInfo?: FileInfo;
   localState?: NfoLocalState;
   nfoNaming?: NfoNamingMode;
-  nfoTitleTemplate?: string;
+  titleNaming?: MetadataNaming & Pick<Configuration["naming"], "nfoTitleTemplate">;
   enabledFields?: readonly NfoField[];
   includeRemoteSceneImageUrls?: boolean;
   allowRemoteTrailerFallback?: boolean;
@@ -52,12 +96,6 @@ export interface NfoOptions {
 
 const toArray = <T>(value: T | T[] | undefined): T[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
-
-const renderPathTemplate = (template: string, data: Record<string, string | number | undefined>): string =>
-  template.replace(/\{([^{}]+)\}/gu, (_match, key: string) => {
-    const value = data[key];
-    return value === undefined || value === null ? "" : String(value);
-  });
 
 const buildActorNodes = (actors: string[]) =>
   actors
@@ -161,15 +199,22 @@ export class NfoGenerator {
       throw new Error("NFO 缺少来源站点");
     }
 
+    return this.#buildXml(data, options);
+  }
+
+  #buildXml(data: CrawlerData, options?: NfoOptions): string {
     const localState = options?.localState;
     const rawTitle = data.title_zh?.trim() || data.title;
     const originaltitle = data.original_title?.trim() || data.title.trim();
-    const titleTemplate = options?.nfoTitleTemplate?.trim() || "{title}";
+    const titleNaming = options?.titleNaming;
     // A title the user edited is final as written; wrapping it in the template again would repeat the template.
     const title =
-      localState?.edits?.title === fingerprintNfoField({ title: rawTitle }, "title")
+      !titleNaming || localState?.edits?.title === fingerprintNfoField({ title: rawTitle }, "title")
         ? rawTitle
-        : renderPathTemplate(titleTemplate, { title: rawTitle, originaltitle, number: data.number });
+        : renderTextTemplate(titleNaming.nfoTitleTemplate, {
+            ...buildMetadataTemplateData(data, titleNaming),
+            number: data.number,
+          }) || rawTitle;
     const sourcePlot = data.plot?.trim();
     const plot = data.plot_zh?.trim() || sourcePlot;
     const outline = plot ? truncateText(plot, OUTLINE_MAX_CHARS) : undefined;
@@ -198,7 +243,7 @@ export class NfoGenerator {
       isNfoFieldEnabled(enabledFields, "plot") && isNfoFieldEnabled(enabledFields, "outline") ? outline : undefined;
     movie.premiered = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
     movie.releasedate = isNfoFieldEnabled(enabledFields, "release") ? data.release_date : undefined;
-    movie.dateadded = new Date().toISOString();
+    movie.dateadded = localState?.dateAdded ?? new Date().toISOString();
     movie.lockedfields = localState?.lockedFields?.length ? localState.lockedFields.join("|") : undefined;
     movie.year = isNfoFieldEnabled(enabledFields, "release") ? parseReleaseYear(data.release_date) : undefined;
     movie.runtime = isNfoFieldEnabled(enabledFields, "runtime") ? runtimeMinutes : undefined;
@@ -216,7 +261,7 @@ export class NfoGenerator {
           : undefined
       : undefined;
     movie.num = isNfoFieldEnabled(enabledFields, "num") ? data.number : undefined;
-    movie.uniqueid = { "@_type": data.website, "@_default": "true", "#text": data.number };
+    movie.uniqueid = data.website ? { "@_type": data.website, "@_default": "true", "#text": data.number } : undefined;
     movie.genre = isNfoFieldEnabled(enabledFields, "genres") ? genres : undefined;
     movie.tag = isNfoFieldEnabled(enabledFields, "tags") && tags.length > 0 ? tags : undefined;
     movie.actor = buildActorNodes(toArray(data.actors));
@@ -246,12 +291,60 @@ export class NfoGenerator {
     const fileinfo = videoNode ? { streamdetails: { video: videoNode } } : localState?.fileinfo;
     if (isNfoFieldEnabled(enabledFields, "fileinfo") && fileinfo) movie.fileinfo = fileinfo;
 
-    const xmlBody = builder.build({ movie });
+    const xmlBody = builder.build({ movie: { ...localState?.foreignElements, ...movie } });
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${xmlBody}`;
   }
 
-  mergeEditableXml(existingXml: string, data: CrawlerData, options?: NfoOptions): string {
-    return mergeEditableNfoDocuments(existingXml, this.buildXml(data, options));
+  mergeEditableXml(
+    existingXml: string,
+    data: CrawlerData,
+    changedFields: readonly NfoEditorField[],
+    options?: NfoOptions,
+    edit?: LibraryEdit,
+  ): string {
+    if (!changedFields.length) return existingXml;
+    const fields = changedFields.filter((field) => isNfoEditorFieldEnabled(field, options?.enabledFields));
+    if (!fields.length) return existingXml;
+    return mergeNfoDocuments(existingXml, this.#buildXml(data, options), {
+      movieFields: [...new Set(fields.flatMap((field) => EDITOR_FIELDS[field].movie ?? []))].filter(
+        (field) =>
+          (field !== "num" || isNfoFieldEnabled(options?.enabledFields, "num")) &&
+          (field !== "outline" || isNfoFieldEnabled(options?.enabledFields, "outline")) &&
+          (field !== "fileinfo" || isNfoFieldEnabled(options?.enabledFields, "fileinfo")),
+      ),
+      mdczFields: [...new Set([...fields.flatMap((field) => EDITOR_FIELDS[field].mdcz ?? []), "published"])],
+      // Editing is not publishing: the changed values must still differ from MDCz's fingerprints.
+      publishedFields: [],
+      editorFields: fields,
+      editorData: data,
+      libraryEdit: edit,
+    });
+  }
+
+  mergeTranslatedXml(
+    existingXml: string,
+    data: CrawlerData,
+    changedFields: readonly TranslationField[],
+    statusFields: readonly TranslationField[],
+    options?: NfoOptions,
+  ): string {
+    const excludedFields = changedFields.filter((field) => !isNfoEditorFieldEnabled(field, options?.enabledFields));
+    if (excludedFields.length) {
+      throw new Error(`以下字段已在 NFO 设置中禁用：${excludedFields.join("、")}`);
+    }
+    const fields = changedFields.flatMap((field): NfoEditorField[] =>
+      field === "title" ? ["title", "title_zh"] : field === "plot" ? ["plot", "plot_zh"] : ["genres"],
+    );
+    return mergeNfoDocuments(existingXml, this.#buildXml(data, options), {
+      movieFields: [...new Set(fields.flatMap((field) => EDITOR_FIELDS[field].movie ?? []))].filter(
+        (field) => field !== "outline" || isNfoFieldEnabled(options?.enabledFields, "outline"),
+      ),
+      mdczFields: [...new Set([...fields.flatMap((field) => EDITOR_FIELDS[field].mdcz ?? []), "published"])],
+      publishedFields: changedFields.flatMap((field): NfoEditableField[] =>
+        field === "title" ? ["title", "originaltitle"] : field === "plot" ? ["plot"] : ["genre"],
+      ),
+      translationFields: statusFields,
+    });
   }
 
   async writeNfo(nfoPath: string, data: CrawlerData, options?: NfoOptions): Promise<string> {
@@ -283,7 +376,7 @@ export const getNfoReadCandidates = (
 ): string[] => {
   const plannedPath = resolveFilenameNfoPath(nfoPath, videoPath);
   const { primaryPath, moviePath, canonicalPath } = getNfoWritePaths(plannedPath, nfoNaming);
-  return Array.from(new Set([canonicalPath, primaryPath, moviePath, nfoPath]));
+  return Array.from(new Set([canonicalPath, primaryPath, moviePath, replaceExtension(nfoPath, ".nfo")]));
 };
 
 export const findExistingNfoPath = async (
@@ -299,42 +392,50 @@ export const findExistingNfoPath = async (
   return undefined;
 };
 
-const EDITABLE_MOVIE_FIELDS = [
-  "title",
-  "originaltitle",
-  "num",
-  "plot",
-  "outline",
-  "premiered",
-  "releasedate",
-  "year",
-  "runtime",
-  "rating",
-  "studio",
-  "director",
-  "publisher",
-  "set",
-  "trailer",
-  "uniqueid",
-  "genre",
-  "thumb",
-  "fanart",
-  "tag",
-  "lockedfields",
-] as const;
-const EDITABLE_MDCZ_FIELDS = [
-  "raw_title",
-  "original_plot",
-  "translation_failures",
-  "translation_ignored",
-  "source_url",
-  "thumb_source_url",
-  "poster_source_url",
-  "fanart_source_url",
-  "trailer_source_url",
-  "scene_images",
-  "published",
-] as const;
+type NfoMerge = {
+  movieFields: readonly string[];
+  mdczFields: readonly string[];
+  /** Fields whose new values MDCz publishes, so they are not read back as someone's edits. */
+  publishedFields: readonly NfoEditableField[];
+  editorFields?: readonly NfoEditorField[];
+  editorData?: CrawlerData;
+  translationFields?: readonly TranslationField[];
+  libraryEdit?: LibraryEdit;
+};
+
+const EDITOR_FIELDS: Record<NfoEditorField, { movie?: string[]; mdcz?: string[]; enabled?: NfoField }> = {
+  title: { movie: ["title", "originaltitle"], mdcz: ["raw_title"] },
+  title_zh: { movie: ["title", "originaltitle"], mdcz: ["raw_title"] },
+  number: { movie: ["num", "uniqueid"] },
+  website: { movie: ["uniqueid"] },
+  actors: { movie: ["actor"] },
+  actor_profiles: { movie: ["actor"] },
+  genres: { movie: ["genre"], enabled: "genres" },
+  content_type: { movie: ["tag"], enabled: "tags" },
+  studio: { movie: ["studio"], enabled: "studio" },
+  director: { movie: ["director"], enabled: "director" },
+  publisher: { movie: ["publisher"], enabled: "publisher" },
+  series: { movie: ["set"], enabled: "series" },
+  plot: { movie: ["plot", "outline"], mdcz: ["original_plot"], enabled: "plot" },
+  plot_zh: { movie: ["plot", "outline"], mdcz: ["original_plot"], enabled: "plot" },
+  release_date: { movie: ["premiered", "releasedate", "year"], enabled: "release" },
+  durationSeconds: { movie: ["runtime", "fileinfo"], enabled: "runtime" },
+  rating: { movie: ["rating"], enabled: "rating" },
+  thumb_url: { movie: ["thumb"], enabled: "thumb" },
+  poster_url: { movie: ["thumb"], enabled: "poster" },
+  fanart_url: { movie: ["fanart"], enabled: "fanart" },
+  trailer_url: { movie: ["trailer"], enabled: "trailer" },
+  thumb_source_url: { mdcz: ["thumb_source_url"], enabled: "thumb" },
+  poster_source_url: { mdcz: ["poster_source_url"], enabled: "poster" },
+  fanart_source_url: { mdcz: ["fanart_source_url"], enabled: "fanart" },
+  trailer_source_url: { mdcz: ["trailer_source_url"], enabled: "trailer" },
+  scene_images: { mdcz: ["scene_images"], enabled: "sceneImages" },
+};
+
+export const isNfoEditorFieldEnabled = (field: NfoEditorField, enabledFields?: readonly NfoField[]): boolean => {
+  const enabled = EDITOR_FIELDS[field].enabled;
+  return !enabled || isNfoFieldEnabled(enabledFields, enabled);
+};
 
 const requireXmlRecord = (value: unknown, message: string): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -346,31 +447,115 @@ const requireXmlRecord = (value: unknown, message: string): Record<string, unkno
 const toRecordOrEmpty = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
-const mergeEditableNfoDocuments = (existingXml: string, generatedXml: string): string => {
+const mergeNfoDocuments = (existingXml: string, generatedXml: string, merge: NfoMerge): string => {
+  const validation = XMLValidator.validate(existingXml);
+  if (validation !== true) throw new Error(`NFO XML 无效：${validation.err.msg}`);
   const existingRoot = requireXmlRecord(parser.parse(existingXml), "NFO 根节点无效");
   const existingMovie = requireXmlRecord(existingRoot.movie, "NFO 影片节点无效");
   const generatedRoot = requireXmlRecord(parser.parse(generatedXml), "生成的 NFO 根节点无效");
   const generatedMovie = requireXmlRecord(generatedRoot.movie, "生成的 NFO 影片节点无效");
   const existingMdcz = toRecordOrEmpty(existingMovie.mdcz);
-  // Editing is not publishing: keeping the fingerprints of what MDCz published makes the changed values read as edits.
+  const generatedMdcz = requireXmlRecord(generatedMovie.mdcz, "生成的 NFO mdcz 节点无效");
+  const generatedPublished = parseFingerprints(generatedMdcz.published);
   const published = formatFingerprints({
     ...fingerprintNfo(existingMovie),
     ...parseFingerprints(existingMdcz.published),
+    ...Object.fromEntries(merge.publishedFields.map((field) => [field, generatedPublished[field]])),
   });
 
-  for (const field of EDITABLE_MOVIE_FIELDS) {
-    if (field in generatedMovie) existingMovie[field] = generatedMovie[field];
+  for (const field of merge.movieFields) {
+    const generated = generatedMovie[field];
+    if (field === "actor") {
+      existingMovie.actor = mergeActorNodes(
+        existingMovie.actor,
+        generated,
+        merge.editorFields?.includes("actor_profiles") ?? false,
+        !merge.libraryEdit && (merge.editorFields?.includes("actors") ?? false),
+        merge.libraryEdit,
+      );
+      continue;
+    }
+    if (field === "uniqueid") {
+      const ids = toArray(existingMovie.uniqueid);
+      const index = ids.findIndex((id) => Object.values(Website).includes(toRecordOrEmpty(id)["@_type"] as Website));
+      if (index < 0) ids.push(generated);
+      else ids[index] = { ...toRecordOrEmpty(ids[index]), ...toRecordOrEmpty(generated) };
+      existingMovie.uniqueid = ids;
+      continue;
+    }
+    if (field === "set" && generated !== undefined && typeof existingMovie.set === "object") {
+      const collection = toRecordOrEmpty(existingMovie.set);
+      existingMovie.set = { ...collection, ["name" in collection ? "name" : "#text"]: generated };
+      continue;
+    }
+    if (field === "thumb") {
+      const thumbs = toArray(existingMovie.thumb);
+      for (const [key, aspects] of [
+        ["poster_url", ["poster"]],
+        ["thumb_url", ["thumb", "landscape", ""]],
+      ] as const) {
+        if (!merge.editorFields?.includes(key)) continue;
+        const index = thumbs.findIndex((thumb) =>
+          (aspects as readonly string[]).includes(String(toRecordOrEmpty(thumb)["@_aspect"] ?? "").toLowerCase()),
+        );
+        const replacement = toArray(generated).find((thumb) =>
+          (aspects as readonly string[]).includes(String(toRecordOrEmpty(thumb)["@_aspect"] ?? "").toLowerCase()),
+        );
+        if (replacement === undefined) {
+          if (index >= 0) thumbs.splice(index, 1);
+        } else if (index < 0) thumbs.push(replacement);
+        else thumbs[index] = { ...toRecordOrEmpty(thumbs[index]), "#text": toRecordOrEmpty(replacement)["#text"] };
+      }
+      existingMovie.thumb = thumbs;
+      continue;
+    }
+    if (field === "fanart") {
+      const fanart = toRecordOrEmpty(existingMovie.fanart);
+      const thumbs = toArray(fanart.thumb);
+      const replacement = merge.editorData?.fanart_url ? toRecordOrEmpty(generated).thumb : undefined;
+      if (replacement === undefined) thumbs.shift();
+      else thumbs.splice(0, 1, { ...toRecordOrEmpty(thumbs[0]), "#text": merge.editorData?.fanart_url });
+      existingMovie.fanart = { ...fanart, thumb: thumbs };
+      continue;
+    }
+    if (field === "fileinfo") {
+      const fileinfo = toRecordOrEmpty(existingMovie.fileinfo);
+      const streams = toRecordOrEmpty(fileinfo.streamdetails);
+      const video = { ...toRecordOrEmpty(streams.video) };
+      if (merge.editorData?.durationSeconds === undefined) delete video.durationinseconds;
+      else video.durationinseconds = Math.floor(merge.editorData.durationSeconds);
+      existingMovie.fileinfo = { ...fileinfo, streamdetails: { ...streams, video } };
+      continue;
+    }
+    if (field === "tag") {
+      existingMovie.tag = [
+        ...toArray(existingMovie.tag).filter((tag) => !String(tag).startsWith("mdcz:content_type:")),
+        ...toArray(generated).filter((tag) => String(tag).startsWith("mdcz:content_type:")),
+      ];
+      continue;
+    }
+    if (generated !== undefined) existingMovie[field] = generated;
     else delete existingMovie[field];
   }
-  existingMovie.actor = mergeActorNodes(existingMovie.actor, generatedMovie.actor);
 
-  const generatedMdcz: Record<string, unknown> = {
-    ...requireXmlRecord(generatedMovie.mdcz, "生成的 NFO mdcz 节点无效"),
-    published,
-  };
-  for (const field of EDITABLE_MDCZ_FIELDS) {
-    if (field in generatedMdcz) existingMdcz[field] = generatedMdcz[field];
+  const mdcz: Record<string, unknown> = { ...generatedMdcz, published };
+  for (const field of merge.editorFields ?? []) {
+    if (field.endsWith("_source_url")) mdcz[field] = merge.editorData?.[field];
+  }
+  for (const field of merge.mdczFields) {
+    if (mdcz[field] !== undefined) existingMdcz[field] = mdcz[field];
     else delete existingMdcz[field];
+  }
+  for (const key of ["translation_failures", "translation_ignored"] as const) {
+    if (!merge.translationFields?.length) continue;
+    const values = { ...toRecordOrEmpty(existingMdcz[key]) };
+    const generatedValues = toRecordOrEmpty(generatedMdcz[key]);
+    for (const field of merge.translationFields) {
+      if (generatedValues[field] !== undefined) values[field] = generatedValues[field];
+      else delete values[field];
+    }
+    if (Object.keys(values).length) existingMdcz[key] = values;
+    else delete existingMdcz[key];
   }
   existingMovie.mdcz = existingMdcz;
 
@@ -385,15 +570,30 @@ const actorNodeName = (value: unknown): string => {
   return typeof name === "string" ? name.trim() : "";
 };
 
-const mergeActorNodes = (existing: unknown, generated: unknown): unknown => {
+const mergeActorNodes = (
+  existing: unknown,
+  generated: unknown,
+  updateProfiles: boolean,
+  updateOrder: boolean,
+  edit?: LibraryEdit,
+): unknown => {
   const existingActors = toArray(existing);
   const generatedActors = toArray(generated);
   const existingByName = new Map(existingActors.map((actor) => [normalizeActorKey(actorNodeName(actor)), actor]));
   return generatedActors.map((actor) => {
-    const previous = existingByName.get(normalizeActorKey(actorNodeName(actor)));
+    const name = normalizeActorKey(actorNodeName(actor));
+    const previous =
+      existingByName.get(name) ??
+      (edit?.field === "actors" && edit.operation === "rename" && name === normalizeActorKey(edit.to)
+        ? existingByName.get(normalizeActorKey(edit.from))
+        : undefined);
     if (!(previous && typeof previous === "object" && actor && typeof actor === "object")) return actor;
-    const merged = { ...(previous as Record<string, unknown>), ...(actor as Record<string, unknown>) };
-    if (!("thumb" in (actor as Record<string, unknown>))) delete merged.thumb;
+    const next = actor as Record<string, unknown>;
+    const merged: Record<string, unknown> = { ...(previous as Record<string, unknown>), name: next.name };
+    if (updateOrder) Object.assign(merged, { order: next.order, sortorder: next.sortorder });
+    if (updateProfiles) {
+      delete merged.thumb;
+    }
     return merged;
   });
 };

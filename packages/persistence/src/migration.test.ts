@@ -82,6 +82,7 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 15, when: 1_793_404_800_000, tag: "0015_cleared_activities" }),
       expect.objectContaining({ idx: 16, when: 1_793_491_200_000, tag: "0016_pending_deletion" }),
       expect.objectContaining({ idx: 17, when: 1_794_355_200_000, tag: "0017_pending_actions" }),
+      expect.objectContaining({ idx: 18, when: 1_794_400_000_000, tag: "0018_library_health_ignores" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });

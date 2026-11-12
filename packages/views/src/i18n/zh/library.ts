@@ -1,6 +1,33 @@
 import type { Messages } from "../en";
 
 export const library: Messages["library"] = {
+  edit: {
+    action: "编辑",
+    all: (count: number) => `编辑全部 ${count} 部`,
+    title: (count: number) => `编辑 ${count} 部影片`,
+    description: "请核对下方基于媒体库记录的预估。操作会应用到每份 NFO 的当前值，且无法撤销。",
+    field: "字段",
+    operation: "操作",
+    operations: { set: "设置", clear: "清空", add: "添加", remove: "移除", rename: "重命名" },
+    genres: "类型",
+    from: "原值",
+    to: "新值",
+    value: "值",
+    excluded: "已被 download.nfoIgnoreFields 设置排除",
+    estimate: (changed: number, unchanged: number) => `媒体库预估：${changed} 部将更改 · ${unchanged} 部无变化`,
+    noChange: "无变化",
+    oldValue: "原值",
+    newValue: "新值",
+    confirm: (count: number) => `更改 ${count} 部影片`,
+    loading: "正在收集影片…",
+    running: (current: number, total: number) => `正在编辑 ${current} / ${total} 部影片…`,
+    completed: "编辑完成",
+    failed: "编辑失败",
+    result: (changed: number, unchanged: number, skipped: number, failed: number) =>
+      `已更改 ${changed} 部 · 无变化 ${unchanged} 部 · 跳过 ${skipped} 部（无 NFO）· 失败 ${failed} 部`,
+    newEdit: "开始新的编辑",
+    close: "关闭",
+  },
   filter: {
     all: "全部",
     available: "可用",
@@ -26,6 +53,10 @@ export const library: Messages["library"] = {
     },
     fix: (count: number) => `从站点刷新 ${count} 部`,
     fixHint: "打开刷新结果的预览，应用之前不会写入任何内容。",
+    ignored: "已忽略",
+    ignore: (count: number) => `忽略这 ${count} 部`,
+    ignoreHint: "忽略后不再计入健康状况，可在“已忽略”中恢复。",
+    restore: (count: number) => `取消忽略 ${count} 部`,
     fixStarted: (count: number) => `正在预览 ${count} 部影片的刷新`,
     mixedRoots: "这些影片分布在多个媒体目录，请先选定一个媒体库再修复。",
     clear: "清除筛选",
@@ -54,6 +85,10 @@ export const library: Messages["library"] = {
   scrapeInfo: "刮削信息",
   openFolder: "打开所在目录",
   removeFromLibrary: "从媒体库移除",
+  multiSelect: "多选",
+  selectEntry: (id: string) => `选择 ${id}`,
+  selectAllLoaded: "全选已加载",
+  selectedCount: (count: number) => `已选 ${count} 部影片`,
   availabilityNotChecked: "可用性尚未检查",
 
   // Availability labels
@@ -64,8 +99,8 @@ export const library: Messages["library"] = {
 
   // Delete dialog
   removeDialogTitle: "从媒体库移除",
-  removeDialogDescription: (fileCount: number, assetCount: number) =>
-    `将移除 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录。`,
+  removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
+    `将移除 ${movieCount} 部影片的 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录，磁盘上的文件不会被删除。`,
   removing: "正在移除...",
   confirmRemove: "确认移除",
 

@@ -1,6 +1,7 @@
 import type { Configuration } from "./config";
 import type { DeletionJob, DeletionJobInput, DeletionJobList, DeletionRetryResponse } from "./deletions";
 import type { EmbyDeletionSettings, EmbyDeletionStatus } from "./embyDeletion";
+import type { LibraryEditJobDto, LibraryEditStartInput } from "./libraryEdit";
 import type { MaintenanceActiveSessionSnapshot } from "./maintenanceTasks";
 import type {
   MediaLibraryDto,
@@ -51,11 +52,14 @@ import type {
   IntegrationStatusResponse,
   LibraryAvailabilityInput,
   LibraryAvailabilityResponse,
+  LibraryDeleteInput,
   LibraryDetailInput,
   LibraryDetailResponse,
+  LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
   LibraryRelinkInput,
+  LibraryRestoreIgnoredInput,
   LibrarySummaryInput,
   LibrarySummaryResponse,
   LogListInput,
@@ -189,6 +193,10 @@ export interface ServerApiContract {
     clearCompleted(): Promise<{ cleared: number }>;
   };
   library: {
+    edit: {
+      start(input: LibraryEditStartInput): Promise<LibraryEditJobDto>;
+      status(): Promise<LibraryEditJobDto | null>;
+    };
     removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<{ success: true }>;
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
@@ -197,7 +205,9 @@ export interface ServerApiContract {
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
     relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
-    delete(input: LibraryDetailInput): Promise<{ success: true }>;
+    delete(input: LibraryDeleteInput): Promise<{ success: true }>;
+    ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }>;
+    restoreIgnored(input: LibraryRestoreIgnoredInput): Promise<{ success: true }>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;

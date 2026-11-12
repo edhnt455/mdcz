@@ -217,6 +217,10 @@ export const api: ServerApiContract = {
     clearCompleted: () => trpcMutation("activity.clearCompleted"),
   },
   library: {
+    edit: {
+      start: (input) => trpcMutation("library.edit.start", input),
+      status: () => trpcQuery("library.edit.status"),
+    },
     removeFile: (input) => trpcMutation("library.removeFile", input),
     availability: (input) => trpcQuery("library.availability", input),
     list: (input) => trpcQuery("library.list", input),
@@ -226,6 +230,8 @@ export const api: ServerApiContract = {
     rescan: (input) => trpcMutation("library.rescan", input),
     relink: (input) => trpcMutation("library.relink", input),
     delete: (input) => trpcMutation("library.delete", input),
+    ignoreHealth: (input) => trpcMutation("library.ignoreHealth", input),
+    restoreIgnored: (input) => trpcMutation("library.restoreIgnored", input),
   },
   overview: {
     summary: () => trpcQuery("overview.summary"),

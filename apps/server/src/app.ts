@@ -41,6 +41,7 @@ import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
 import { DeletionService } from "./services/deletionService";
 import { EmbyDeletionService } from "./services/embyDeletionService";
+import { LibraryEditService } from "./services/libraryEditService";
 import { LibraryService } from "./services/libraryService";
 import { LibraryWatchService } from "./services/libraryWatchService";
 import { MaintenanceService } from "./services/maintenanceService";
@@ -153,7 +154,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
   const library =
-    options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries, () => config.get());
+    options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries, () => config.get(), taskGate);
   const maintenanceRuntime =
     options.resources?.maintenanceRuntime ??
     createServerMaintenanceRuntime({
@@ -278,6 +279,9 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     libraries,
     libraryWatch,
     library,
+    libraryEdit:
+      options.services?.libraryEdit ??
+      new LibraryEditService(config, persistence, mediaRoots, taskEvents, taskGate, networkClient),
     maintenance,
     mediaRoots,
     persistence,
@@ -358,7 +362,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     const results = await Promise.allSettled([services.qbittorrent.close()]);
     results.push(...(await Promise.allSettled([services.libraryWatch.close()])));
     results.push(
-      ...(await Promise.allSettled([services.scans.close(), services.scrape.close(), services.maintenance.close()])),
+      ...(await Promise.allSettled([
+        services.scans.close(),
+        services.scrape.close(),
+        services.maintenance.close(),
+        services.libraryEdit.close(),
+      ])),
     );
     results.push(...(await Promise.allSettled([imageHostCooldownStore.flush()])));
     results.push(...(await Promise.allSettled([services.persistence.close()])));

@@ -6,6 +6,7 @@ import type { BrowserService } from "./services/browserService";
 import type { ServerConfigService } from "./services/configService";
 import type { DeletionService } from "./services/deletionService";
 import type { EmbyDeletionService } from "./services/embyDeletionService";
+import type { LibraryEditService } from "./services/libraryEditService";
 import type { LibraryService } from "./services/libraryService";
 import type { LibraryWatchService } from "./services/libraryWatchService";
 import type { MaintenanceService } from "./services/maintenanceService";
@@ -33,6 +34,7 @@ export interface ServerServices {
   libraries: MediaLibraryService;
   libraryWatch: LibraryWatchService;
   library: LibraryService;
+  libraryEdit: LibraryEditService;
   maintenance: MaintenanceService;
   mediaRoots: MediaRootService;
   pending: PendingService;

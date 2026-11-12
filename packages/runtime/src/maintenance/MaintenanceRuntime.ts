@@ -456,7 +456,18 @@ export class MaintenanceRuntime {
     const config = await this.getPresetConfig(input.presetId);
     throwIfAborted(signal);
 
-    const crawlerData = committed?.crawlerData ?? entry.crawlerData;
+    const crawlerData =
+      committed?.crawlerData ??
+      entry.crawlerData ??
+      (preset.output === "none"
+        ? {
+            title: entry.fileInfo.fileName,
+            number: entry.fileInfo.number,
+            actors: [],
+            genres: [],
+            scene_images: [],
+          }
+        : undefined);
     if (!crawlerData) throw new Error("维护输出需要影片元数据");
 
     const plans = await this.buildPlans(files, config, preset, crawlerData, signal);
@@ -578,7 +589,7 @@ export class MaintenanceRuntime {
         nfoNaming: config.download.nfoNaming,
         writeNfo: async (assets, writeFile) =>
           preset.output === "none"
-            ? entry.nfoPath
+            ? (entry.nfoPath ?? files.find((file) => file.nfoPath)?.nfoPath)
             : await writePreparedNfo({
                 assets,
                 config,
@@ -753,6 +764,9 @@ export class MaintenanceRuntime {
       };
     } catch (error) {
       if (isAbortError(error) || error instanceof PublicationConflictError || publication === undefined) throw error;
+      (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
+        `应用维护条目 ${entry.fileInfo.filePath} 失败：${toErrorMessage(error)}`,
+      );
       return { status: "failed", error: toErrorMessage(error) };
     } finally {
       if (stagingDir) {

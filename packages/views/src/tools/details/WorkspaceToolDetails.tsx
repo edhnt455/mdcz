@@ -737,7 +737,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
                   const result = resultByPath.get(item.filePath);
                   const displayFields =
                     status === "ignored" ? [] : result ? result.translatedFields : item.pendingFields;
-                  const displayPath = result?.savedNfoPath || item.nfoPath;
+                  const displayPath = item.nfoPath;
 
                   return (
                     <tr key={item.filePath} className="align-top transition-colors hover:bg-surface-low/45">

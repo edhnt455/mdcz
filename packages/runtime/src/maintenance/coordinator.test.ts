@@ -397,32 +397,48 @@ describe("MaintenanceSessionCoordinator", () => {
   });
 
   it.each(["conflict", "failure"] as const)("continues the batch after a movie %s", async (outcome) => {
-    const fixture = createCoordinator({
-      applyEntry: vi.fn(async ({ entry }) => {
-        if (entry.fileInfo.number === "one") {
-          if (outcome === "conflict") throw new PublicationConflictError("source", "target", "occupied");
-          throw new Error("database unavailable");
-        }
-        return { status: "success" as const };
-      }),
-    });
-    const preview = await fixture.coordinator.startPreview({
-      rootId: root.id,
-      presetId: "local_organize",
-      refs: [ref("one.mp4"), ref("two.mp4")],
-    });
-    const batch = await preview.completion;
-    const apply = await fixture.coordinator.beginApply({
-      sessionId: preview.session.id,
-      selections: batch.items.map((item) => ({ previewId: item.id })),
-    });
-    const result = await apply.completion;
-    expect(result.applied.map((item) => item.status)).toEqual([
-      outcome === "conflict" ? "skipped" : "failed",
-      "success",
-    ]);
-    expect(result.session).toMatchObject({ status: "completed", successCount: 1, failedCount: 1 });
-    await fixture.coordinator.close();
+    for (const behavior of outcome === "failure" ? ["throw", "return"] : ["throw"]) {
+      const fixture = createCoordinator({
+        applyEntry: vi.fn(async ({ entry }) => {
+          if (entry.fileInfo.number === "one") {
+            if (outcome === "conflict") throw new PublicationConflictError("source", "target", "occupied");
+            if (behavior === "return") return { status: "failed" as const, error: "database unavailable" };
+            throw new Error("database unavailable");
+          }
+          return { status: "success" as const };
+        }),
+      });
+      const preview = await fixture.coordinator.startPreview({
+        rootId: root.id,
+        presetId: "local_organize",
+        refs: [ref("one.mp4"), ref("two.mp4")],
+      });
+      const batch = await preview.completion;
+      const apply = await fixture.coordinator.beginApply({
+        sessionId: preview.session.id,
+        selections: batch.items.map((item) => ({ previewId: item.id })),
+      });
+      const result = await apply.completion;
+      expect(result.applied.map((item) => item.status)).toEqual([
+        outcome === "conflict" ? "skipped" : "failed",
+        "success",
+      ]);
+      expect(result.session).toMatchObject({ status: "completed", successCount: 1, failedCount: 1 });
+      if (outcome === "failure") {
+        expect((await fixture.coordinator.getActiveSession())?.previews).toEqual(
+          expect.arrayContaining([expect.objectContaining({ relativePath: "one.mp4", status: "failed" })]),
+        );
+        expect(fixture.events).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              kind: "log",
+              event: expect.objectContaining({ type: "failed", message: "one.mp4：database unavailable" }),
+            }),
+          ]),
+        );
+      }
+      await fixture.coordinator.close();
+    }
   });
 
   it("commits the active preview once while paused and resumes only pending refs", async () => {
@@ -650,7 +666,7 @@ describe("MaintenanceSessionCoordinator", () => {
     await apply.completion;
     const snapshot = await fixture.coordinator.getActiveSession();
 
-    expect(snapshot?.previews.map((item) => item.id)).toEqual([second?.id]);
+    expect(snapshot?.previews.map((item) => item.id)).toEqual([first?.id, second?.id]);
     expect(snapshot?.draft.fieldSelections).toEqual({ [second?.id ?? ""]: { title: "old" } });
     expect(snapshot?.currentBatch?.items).toHaveLength(1);
     expect(snapshot?.currentBatch?.items[0]?.result).toMatchObject({

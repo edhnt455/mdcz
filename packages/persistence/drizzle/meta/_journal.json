@@ -127,6 +127,13 @@
       "when": 1794355200000,
       "tag": "0017_pending_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794400000000,
+      "tag": "0018_library_health_ignores",
+      "breakpoints": true
     }
   ]
 }

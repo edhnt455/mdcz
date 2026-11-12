@@ -388,6 +388,7 @@ export class MaintenanceSession {
         (preview) =>
           preview.status === "ready" ||
           preview.status === "blocked" ||
+          preview.status === "failed" ||
           preview.status === "pending" ||
           preview.status === "processing",
       )

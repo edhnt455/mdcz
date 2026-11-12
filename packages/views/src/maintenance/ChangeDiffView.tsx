@@ -3,6 +3,7 @@ import { cn, Dialog, DialogContent, DialogDescription, DialogTitle } from "@mdcz
 import { ChevronLeft, ChevronRight, Clock, ImageIcon, LoaderCircle, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { ImageOptionCard } from "../common";
+import { TrailerPlayer } from "../detail/TrailerPlayer";
 import { getT, useT } from "../i18n";
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
@@ -565,11 +566,9 @@ function TrailerOptionCard({
       )}
       {currentSrc ? (
         <div className="space-y-2">
-          {/* biome-ignore lint/a11y/useMediaCaption: Trailers do not provide caption tracks. */}
-          <video
-            className="w-full max-h-60 rounded-md bg-black object-contain"
-            controls
-            preload="metadata"
+          <TrailerPlayer
+            key={currentSrc}
+            className="w-full max-h-60 rounded-md"
             src={currentSrc}
             onError={handleVideoError}
           />

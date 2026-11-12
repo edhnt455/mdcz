@@ -1153,6 +1153,7 @@ describe("buildServer scrape integration", () => {
         rootId: result.nfoRootId,
         relativePath: nfoRelativePath,
         data: { ...nfoResponse.json().result.data.data, title: "Edited independent output" },
+        changedFields: ["title"],
       },
     });
     expect(edit.statusCode).toBe(200);

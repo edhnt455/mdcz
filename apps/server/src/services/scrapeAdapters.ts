@@ -87,6 +87,7 @@ export class ServerNfoAdapter {
       nfoPath: resolveRootRelativePath(root, input.relativePath),
       videoPath: input.videoRelativePath ? resolveRootRelativePath(root, input.videoRelativePath) : undefined,
       data: input.data,
+      changedFields: input.changedFields,
       configuration,
       nfoGenerator: this.nfoGenerator,
       publication: {
@@ -98,7 +99,7 @@ export class ServerNfoAdapter {
     return {
       rootId: input.rootId,
       relativePath: input.relativePath,
-      effectiveRelativePath: toRootRelativePath(root, canonicalPath),
+      effectiveRelativePath: toRootRelativePath(root, canonicalPath.path),
       data: input.data,
     };
   }

@@ -312,7 +312,8 @@ export const settingsFields: Messages["settingsFields"] = {
     "naming.assetNamingMode": { label: "附属文件命名", description: "海报、横版缩略图、背景图与预告片的文件名规则。" },
     "naming.nfoTitleTemplate": {
       label: "NFO 标题模板",
-      description: "NFO 中 title 字段的格式。可用占位符：{number} {title} {originaltitle}",
+      description:
+        "支持元数据占位符，如 {number}、{title}、{originaltitle}、{actor}、{studio}、{year}，以及 [...] 可选组。",
     },
     "naming.actorNameMax": { label: "演员名最大数量" },
     "naming.actorNameMore": { label: "演员名超出后缀" },

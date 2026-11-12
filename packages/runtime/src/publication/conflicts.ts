@@ -49,7 +49,9 @@ export const assertMovieDirectoryOwnership = async (input: {
       throw new PublicationConflictError(
         sourcePaths[0] ?? directory,
         directory,
-        "此输出目录已属于其他影片。请使用能为每部影片生成独立目录的文件夹模板，例如包含 {number} 的模板",
+        /\{\s*(?:raw)?number\s*\}/iu.test(input.target.folderTemplate)
+          ? "此输出目录已属于其他影片，当前模板已包含番号。请核对媒体库中的两部影片并移出错误记录"
+          : "此输出目录已属于其他影片。请在文件夹模板中加入 {number}，为每部影片生成独立目录",
       );
     }
   }

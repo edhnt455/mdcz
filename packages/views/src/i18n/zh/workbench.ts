@@ -1,6 +1,11 @@
 import type { Messages } from "../en";
-
 export const workbench: Messages["workbench"] = {
+  taskConflict: {
+    scrape: "刮削任务正在运行，请等待完成或停止任务",
+    maintenance: "维护任务正在运行，请等待完成或停止任务",
+    edit: "媒体库批量编辑正在运行，请等待完成",
+    pending: "文件处理任务正在运行，请等待完成",
+  },
   // Return button
   returnDialogDescription: "返回后会清空当前工作台内容，确定继续吗？",
   returnDialogTitle: "返回工作台初始页面",

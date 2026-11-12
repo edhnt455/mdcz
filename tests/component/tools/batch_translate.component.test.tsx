@@ -22,7 +22,6 @@ test("shows current text and persists individual and bulk manual completion with
       ...item,
       success: true,
       translatedFields: item.pendingFields,
-      savedNfoPath: item.nfoPath,
     })),
   );
   onApply.mockRejectedValueOnce(new Error("Permission denied"));

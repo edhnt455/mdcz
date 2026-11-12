@@ -36,7 +36,9 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     lockedFields.length === 0 &&
     !published &&
     !localState.fileinfo &&
-    !localState.sourcePin
+    !localState.sourcePin &&
+    !localState.dateAdded &&
+    !Object.keys(localState.foreignElements ?? {}).length
   )
     return undefined;
   return {
@@ -47,6 +49,8 @@ export const normalizeNfoLocalState = (localState: NfoLocalState | undefined): N
     edits,
     fileinfo: localState.fileinfo,
     sourcePin: localState.sourcePin,
+    dateAdded: localState.dateAdded,
+    foreignElements: localState.foreignElements,
   };
 };
 

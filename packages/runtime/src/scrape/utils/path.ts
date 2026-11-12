@@ -39,20 +39,10 @@ export const sanitizePathSegment = (input: string): string => {
     .replace(/[ .]+$/gu, "");
 };
 
-export const renderPathTemplate = (template: string, data: TemplateData): string => {
-  return template.replace(TEMPLATE_PLACEHOLDER, (_match, key: string) => {
-    const value = data[key];
-    if (value === undefined || value === null) {
-      return "";
-    }
-    return String(value);
-  });
-};
-
 const renderTemplateValue = (
   template: string,
   data: TemplateData,
-  transformValue?: (value: string) => string,
+  transformValue: (value: string) => string,
 ): string => {
   return template.replace(TEMPLATE_PLACEHOLDER, (_match, key: string) => {
     const value = data[key];
@@ -61,7 +51,7 @@ const renderTemplateValue = (
     }
 
     const stringValue = String(value);
-    return transformValue ? transformValue(stringValue) : stringValue;
+    return transformValue(stringValue);
   });
 };
 
@@ -89,13 +79,11 @@ const hasRenderablePlaceholderValue = (
   return { hasPlaceholder, hasValue };
 };
 
-const sanitizeTemplateValue = (value: string): string => sanitizePathSegment(value);
-
 const trimTemplateEdges = (value: string): string => value.replace(TEMPLATE_EDGE_SEPARATORS, "");
 
-const renderSafeSegment = (template: string, data: TemplateData): string => {
+const renderSegment = (template: string, data: TemplateData, transformValue: (value: string) => string): string => {
   const resolvedOptionalGroups = template.replace(OPTIONAL_GROUP, (match, inner: string) => {
-    const state = hasRenderablePlaceholderValue(inner, data, sanitizeTemplateValue);
+    const state = hasRenderablePlaceholderValue(inner, data, transformValue);
     if (!state.hasPlaceholder) {
       return match;
     }
@@ -104,7 +92,7 @@ const renderSafeSegment = (template: string, data: TemplateData): string => {
       return "";
     }
 
-    const content = trimTemplateEdges(renderTemplateValue(inner, data, sanitizeTemplateValue));
+    const content = trimTemplateEdges(renderTemplateValue(inner, data, transformValue));
     if (!content) {
       return "";
     }
@@ -112,7 +100,7 @@ const renderSafeSegment = (template: string, data: TemplateData): string => {
     return `[${content}]`;
   });
 
-  return renderTemplateValue(resolvedOptionalGroups, data, sanitizeTemplateValue);
+  return renderTemplateValue(resolvedOptionalGroups, data, transformValue);
 };
 
 const splitTemplateSegments = (template: string): string[] => {
@@ -148,16 +136,21 @@ const splitTemplateSegments = (template: string): string[] => {
 
 export const buildSafePath = (template: string, data: TemplateData): string => {
   return splitTemplateSegments(template)
-    .map((segment) => sanitizePathSegment(trimTemplateEdges(renderSafeSegment(segment, data))))
+    .map((segment) => sanitizePathSegment(trimTemplateEdges(renderSegment(segment, data, sanitizePathSegment))))
     .filter((segment) => segment.length > 0)
     .join(sep);
 };
 
 export const buildSafeFileName = (template: string, data: TemplateData): string => {
-  return sanitizePathSegment(trimTemplateEdges(renderSafeSegment(template, data)));
+  return sanitizePathSegment(trimTemplateEdges(renderSegment(template, data, sanitizePathSegment)));
 };
 
 export const normalizeCrossPlatformPath = (inputPath: string): string => {
   const normalized = normalize(inputPath);
   return normalized.replace(/[\\/]+/gu, sep);
 };
+
+export const renderTextTemplate = (template: string, data: TemplateData): string =>
+  renderSegment(template, data, (value) => value)
+    .replace(REPLACED_WHITESPACE, " ")
+    .trim();

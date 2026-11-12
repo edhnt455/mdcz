@@ -116,7 +116,10 @@ export const useWebTaskSync = (): void => {
       },
       onNotification: (payload) => {
         recordDispatch();
+        if (payload.kind === "library-edit") queryClient.setQueryData(queryKeys.libraryEdit, payload.job);
         if (payload.kind !== "invalidate") return;
+        if (payload.resources.includes("ready"))
+          void queryClient.invalidateQueries({ queryKey: queryKeys.libraryEdit });
         if (
           payload.resources.some((resource) =>
             ["ready", "scan", "scrape-live", "scrape-history", "maintenance", "activity"].includes(resource),

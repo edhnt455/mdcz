@@ -1,4 +1,5 @@
 export const queryKeys = {
+  libraryEdit: ["library-edit"] as const,
   deletions: {
     all: ["pending", "deletions"] as const,
     detail: (id: string) => ["pending", "deletions", id] as const,

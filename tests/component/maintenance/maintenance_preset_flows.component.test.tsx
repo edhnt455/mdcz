@@ -1,5 +1,10 @@
 import type { MaintenancePresetId } from "@mdcz/shared/types";
-import { MaintenanceBatchBarView, type MaintenanceBatchBarViewProps, PathPlanView } from "@mdcz/views/maintenance";
+import {
+  ChangeDiffView,
+  MaintenanceBatchBarView,
+  type MaintenanceBatchBarViewProps,
+  PathPlanView,
+} from "@mdcz/views/maintenance";
 import { WorkbenchSetupView } from "@mdcz/views/workbench";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
@@ -166,4 +171,37 @@ test("diff presets expose replacement confirmation and changed path evidence", a
   await expect.element(screen.getByText("路径将调整")).toBeVisible();
   await screen.getByRole("button", { name: "开始批量执行 1 项" }).click();
   expect(onExecute).toHaveBeenCalledOnce();
+  await screen.unmount();
+  const props = {
+    fileId: "one",
+    diffs: [
+      {
+        kind: "value" as const,
+        field: "trailer_url" as const,
+        oldValue: "/old.mp4",
+        newValue: "/new.mp4",
+        changed: true,
+      },
+    ],
+    resolveImageCandidates: async (candidates: string[]) => candidates,
+  };
+  const preview = await render(<ChangeDiffView {...props} />);
+  expect(document.querySelector("video")).toBeNull();
+  let createdPlayer = false;
+  const observer = new MutationObserver((records) => {
+    if (
+      records.some((record) =>
+        [...record.addedNodes].some(
+          (node) => node instanceof Element && (node.matches("video") || node.querySelector("video")),
+        ),
+      )
+    )
+      createdPlayer = true;
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  await preview.getByRole("button", { name: "播放预告片" }).first().click();
+  await expect.poll(() => createdPlayer).toBe(true);
+  observer.disconnect();
+  await preview.rerender(<ChangeDiffView {...props} fileId="two" />);
+  await expect.poll(() => document.querySelector("video")).toBeNull();
 });

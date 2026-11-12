@@ -72,6 +72,11 @@ export interface CrawlerData {
   website?: Website;
 }
 
+export type NfoEditorField = Exclude<
+  keyof CrawlerData,
+  "original_title" | "translation_failures" | "translation_ignored"
+>;
+
 export interface FileInfo {
   filePath: string;
   fileName: string;
@@ -162,6 +167,8 @@ export interface NfoLocalState {
   fileinfo?: Record<string, unknown>;
   /** The detail page someone chose for this movie; scrapes and refreshes use it instead of searching by number. */
   sourcePin?: { site: Website; url: string };
+  dateAdded?: string;
+  foreignElements?: Record<string, unknown>;
 }
 
 export interface UncensoredConfirmResultItem {

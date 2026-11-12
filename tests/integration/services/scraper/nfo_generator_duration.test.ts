@@ -10,7 +10,7 @@ import {
   resolveFilenameNfoPath,
 } from "@mdcz/runtime/scrape";
 import { pathExists } from "@mdcz/runtime/scrape/utils/filesystem";
-import { NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
+import { configurationSchema, NFO_FIELD_OPTIONS, type NfoField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { CrawlerData, DownloadedAssets, FileInfo } from "@mdcz/shared/types";
 import { afterEach, describe, expect, it } from "vitest";
@@ -218,12 +218,27 @@ describe("NfoGenerator", () => {
         title_zh: "中文标题",
       }),
       {
-        nfoTitleTemplate: "{number} {originaltitle}",
+        titleNaming: { ...configurationSchema.parse({}).naming, nfoTitleTemplate: "{number} {originaltitle}" },
       },
     );
 
     expect(xml).toContain("<title>ABC-123 Original Title</title>");
     expect(xml).toContain("<originaltitle>Original Title</originaltitle>");
+    const data = createCrawlerData({
+      title: "A / B: C",
+      actors: ["Alice", "Bob"],
+      studio: "Studio",
+      release_date: "2026-01-02",
+    });
+    const naming = {
+      ...configurationSchema.parse({}).naming,
+      nfoTitleTemplate: "{title} [{actor}] {studio} {year} [{director}]",
+    };
+    const metadataTitle = buildXml(data, { titleNaming: naming });
+    expect(metadataTitle).toContain("<title>A / B: C [Alice Bob] Studio 2026</title>");
+    expect(buildXml({ ...data, actors: [] }, { titleNaming: { ...naming, nfoTitleTemplate: "[{actor}]" } })).toContain(
+      "<title>A / B: C</title>",
+    );
   });
 
   it("uses thumb artwork as fallback fanart and persists sample image urls under mdcz", () => {
@@ -291,6 +306,7 @@ describe("NfoGenerator", () => {
     const merged = new NfoGenerator().mergeEditableXml(
       existingXml.replace("<mdcz>", "<mdcz><original_plot>Old original plot</original_plot>"),
       createCrawlerData({ title: "New", actors: ["Actor A"] }),
+      ["title", "actors", "plot"],
     );
 
     expect(merged).toContain('<movie custom="keep">');
@@ -430,7 +446,7 @@ describe("NfoGenerator", () => {
     }
 
     const customTitleWithEmptyPolicy = generator.buildXml(data, {
-      nfoTitleTemplate: "{number} {title}",
+      titleNaming: { ...configurationSchema.parse({}).naming, nfoTitleTemplate: "{number} {title}" },
       enabledFields: [],
     });
     expect(customTitleWithEmptyPolicy).toContain("<raw_title>中文标题</raw_title>");

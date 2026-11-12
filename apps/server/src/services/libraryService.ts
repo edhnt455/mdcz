@@ -9,6 +9,7 @@ import {
   toLibraryEntryDto,
   toLibraryEntryFilter,
 } from "@mdcz/runtime/library";
+import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { Configuration } from "@mdcz/shared/config";
 import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
@@ -17,8 +18,10 @@ import type {
   LibraryAvailabilityResponse,
   LibraryDetailResponse,
   LibraryEntryDto,
+  LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
+  LibraryRestoreIgnoredInput,
   LibrarySummaryInput,
   LibrarySummaryResponse,
   MediaRootDto,
@@ -40,6 +43,7 @@ export class LibraryService {
     private readonly mediaRoots: MediaRootService,
     private readonly libraries: MediaLibraryService,
     private readonly getConfiguration: () => Promise<Configuration>,
+    private readonly taskGate: LibraryTaskGate,
   ) {}
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
@@ -51,6 +55,18 @@ export class LibraryService {
     return state.repositories.library.summary(
       await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration()),
     );
+  }
+
+  async ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }> {
+    const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
+    (await this.persistence.getState()).repositories.library.ignoreHealth({ ...filter, health: input.health });
+    return { success: true };
+  }
+
+  async restoreIgnored(input: LibraryRestoreIgnoredInput): Promise<{ success: true }> {
+    const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
+    (await this.persistence.getState()).repositories.library.restoreIgnored(filter);
+    return { success: true };
   }
 
   async removeFile(input: { fileId: string }): Promise<{ success: true }> {
@@ -123,13 +139,10 @@ export class LibraryService {
     return { success: true };
   }
 
-  async deleteEntry(id: string): Promise<{ success: true }> {
-    const normalizedId = id.trim();
-    if (!normalizedId) {
-      throw new Error("必须提供媒体库条目 ID");
-    }
+  async deleteEntries(ids: readonly string[]): Promise<{ success: true }> {
     const state = await this.persistence.getState();
-    state.repositories.library.deleteEntry(normalizedId);
+    this.taskGate.assertAvailable();
+    state.repositories.library.deleteEntries(ids);
     return { success: true };
   }
 
