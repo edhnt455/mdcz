@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
-import { and, asc, desc, eq, inArray, isNull, lt, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { LibraryRepository } from "./libraryRepository";
 import {
@@ -115,13 +115,13 @@ export class EmbyDeletionRepository {
     return this.database.db.select().from(embyDeletionEvents).orderBy(desc(embyDeletionEvents.receivedAt)).all();
   }
 
-  clearCompleted(processingId: string | null): number {
+  clearCompleted(processingIds: readonly string[]): number {
     return this.database.db
       .delete(embyDeletionEvents)
       .where(
         and(
           inArray(embyDeletionEvents.status, ["completed", "ignored"]),
-          processingId ? ne(embyDeletionEvents.id, processingId) : undefined,
+          processingIds.length ? notInArray(embyDeletionEvents.id, [...processingIds]) : undefined,
         ),
       )
       .run().changes;
@@ -179,6 +179,22 @@ export class EmbyDeletionRepository {
       }
     }
     return undefined;
+  }
+
+  findDeepDeletion(serverId: string, absolutePath: string): EmbyDeletionEventRow | undefined {
+    return this.database.db
+      .select()
+      .from(embyDeletionEvents)
+      .where(
+        and(
+          eq(embyDeletionEvents.serverId, serverId),
+          eq(embyDeletionEvents.path, absolutePath),
+          eq(embyDeletionEvents.eventType, "deep.delete"),
+        ),
+      )
+      .orderBy(desc(embyDeletionEvents.receivedAt))
+      .limit(1)
+      .get();
   }
 
   knownFiles(bindings: readonly EmbyDeletionLibraryBinding[]) {

@@ -203,7 +203,7 @@ export const settings = {
     openDeletionTasks: "View deletion tasks in the workbench",
     title: "Emby deletion sync",
     description:
-      "Move libraries clean records on ordinary deletion. Copy STRM libraries use Strm Assistant deep.delete to remove the verified cloud file and Normal source. Validate in observation mode first.",
+      "Move libraries clean records on ordinary deletion. Copy STRM libraries treat library.deleted and deep.delete as deep deletion of the verified 115 file and Normal source. Validate in observation mode first.",
     loading: "Loading deletion sync status…",
     generate: "Generate webhook address",
     rotate: "Rotate webhook address",
@@ -217,7 +217,7 @@ export const settings = {
     libraries: "Allowed move or copy STRM libraries",
     noLibraries: "No move or copy libraries configured.",
     scopeHint:
-      "Copy libraries require MoviePilot and verified sources. Only deep.delete can remove cloud files and Normal sources; missing-file checks cannot. Task history, downloader deduplication and disk artwork are retained.",
+      "Copy libraries require MoviePilot and verified sources. Both deletion events start deep deletion, merged per file version, with up to 3 concurrent movies. Missing-file checks cannot delete cloud files. Task history, downloader deduplication and disk artwork are retained.",
     moviePilot: {
       title: "MoviePilot · 115 STRM sync",
       description:
@@ -254,11 +254,15 @@ export const settings = {
       file_record_changed: "File record changed; stale event skipped",
       already_removed: "Record already removed",
       file_still_exists: "Video still exists; records retained",
+      waiting_for_link_removal: "Waiting for Emby to remove the output file (up to 60 seconds)",
+      link_wait_timeout: "Output file did not disappear in time or reappeared; review and retry",
+      waiting_for_resource: "Waiting for another operation on the same resource",
       confirming_missing_file: "File missing; waiting for confirmation",
       would_remove_records: "Observation: file missing, records eligible for cleanup",
       records_removed: "Related business records removed",
       settings_changed: "Sync settings changed; old event cancelled",
-      deep_delete_required: "Copy libraries require deep.delete; ordinary notifications retain associations",
+      deep_delete_required:
+        "An older version ignored this ordinary deletion; review the resource and resend the notification to start deep deletion",
       deep_delete_requires_copy_strm: "Deep deletion requires an explicitly enabled copy STRM library",
       cloud_binding_unverified: "Cloud source is unverified; nothing deleted",
       mount_paths_mismatch: "Notification Mount Paths do not match the registered source; nothing deleted",

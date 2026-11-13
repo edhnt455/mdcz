@@ -30,7 +30,7 @@ it("clears all finished deletion records while preserving unfinished work and me
       completedAt: now,
     });
     if (index === 0) {
-      services.embyDeletion.processingId = event.id;
+      services.embyDeletion.processing.set(event.id, Promise.resolve());
       retained.push(`emby/${event.id}`);
     }
   }
@@ -83,7 +83,7 @@ it("clears all finished deletion records while preserving unfinished work and me
   expect((await fastify.inject({ ...request, headers })).json().result.data).toEqual({ cleared: 0 });
   expect(fetcher).not.toHaveBeenCalled();
   fetcher.mockRestore();
-  services.embyDeletion.processingId = null;
+  services.embyDeletion.processing.clear();
   const databasePath = services.persistence.databasePath;
   await fastify.close();
   const reopened = createPersistenceDatabase({ path: databasePath });

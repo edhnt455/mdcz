@@ -188,7 +188,7 @@ export const settings: Messages["settings"] = {
     openDeletionTasks: "在工作台查看联动删除任务",
     title: "Emby 删除联动",
     description:
-      "移动库接收普通删除通知清理记录；复制 STRM 库通过神医 deep.delete 联动 MP 云端文件和 Normal 来源。先用观察模式验证。",
+      "移动库接收普通删除通知清理记录；复制 STRM 库收到 library.deleted 或 deep.delete 后联动删除已核验的 115 视频和 Normal 来源。先用观察模式验证。",
     loading: "正在读取删除联动状态…",
     generate: "生成 Webhook 地址",
     rotate: "轮换 Webhook 地址",
@@ -202,7 +202,7 @@ export const settings: Messages["settings"] = {
     libraries: "允许联动的移动或复制 STRM 媒体库",
     noLibraries: "暂无使用“移动”或“复制”方式的媒体库。",
     scopeHint:
-      "复制库须先配置 MP 并核验来源关联，仅 deep.delete 可触发云端和 Normal 清理；普通缺失核对不删除云端。保留任务历史、下载器去重和磁盘残留海报。",
+      "复制库须先配置 MP 并核验来源关联；两种删除通知统一触发深度删除，同文件版本合并为一个任务，最多 3 部并发。普通缺失核对不删除云端。保留任务历史、下载器去重和磁盘残留海报。",
     moviePilot: {
       title: "MoviePilot · 115 STRM 联动",
       description:
@@ -240,11 +240,14 @@ export const settings: Messages["settings"] = {
       file_record_changed: "文件记录已更新，已跳过旧事件",
       already_removed: "记录此前已删除",
       file_still_exists: "视频文件仍存在，保留记录",
+      waiting_for_link_removal: "等待 Emby 移除输出文件（最多 60 秒）",
+      link_wait_timeout: "输出文件未在等待窗口内消失或重新出现，请检查后重试",
+      waiting_for_resource: "等待同一资源的其他操作结束",
       confirming_missing_file: "文件缺失，等待再次确认",
       would_remove_records: "观察模式：确认缺失，可清理记录",
       records_removed: "关联业务记录已清理",
       settings_changed: "联动设置已变更，取消旧事件",
-      deep_delete_required: "复制库仅接受 deep.delete，普通通知保留来源关联",
+      deep_delete_required: "旧版普通删除通知已忽略，核对资源后重新发送通知可触发深度删除",
       deep_delete_requires_copy_strm: "深度删除仅适用于显式启用的复制 STRM 库",
       cloud_binding_unverified: "云端来源尚未核验，未执行删除",
       mount_paths_mismatch: "通知中的 Mount Paths 与登记来源不一致，未执行删除",

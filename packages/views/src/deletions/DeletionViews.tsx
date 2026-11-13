@@ -7,6 +7,12 @@ import { useState } from "react";
 import { type Messages, useT } from "../i18n";
 
 const date = (value: number) => new Date(value).toLocaleString();
+const statusLabel = (job: DeletionJob, text: Messages["deletions"]): string =>
+  job.status === "ignored" &&
+  ["would_remove_records", "would_delete_strm_resource", "would_keep_shared_resource"].includes(job.result ?? "")
+    ? text.observed
+    : text.status[job.status];
+
 const resultMessage = (value: string, t: Messages): string => {
   const reference = (Object.keys(strmReferenceErrors) as (keyof typeof strmReferenceErrors)[]).find((key) =>
     value.startsWith(`${strmReferenceErrors[key]}\n`),
@@ -53,7 +59,7 @@ export function DeletionQueueView({
           <li key={job.id} className="space-y-3 rounded-lg border p-4">
             <div className="flex items-start justify-between gap-3">
               <h2 className="break-all font-semibold">{job.name}</h2>
-              <Badge>{t.deletions.status[job.status]}</Badge>
+              <Badge>{statusLabel(job, t.deletions)}</Badge>
             </div>
             <p className="text-xs text-muted-foreground">
               {job.libraryName} · {t.deletions.steps[job.step]}
@@ -173,10 +179,11 @@ export function DeletionWorkbenchView({
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="break-all text-sm font-semibold">{job.name}</span>
-                    <Badge variant="outline">{text.status[job.status]}</Badge>
+                    <Badge variant="outline">{statusLabel(job, text)}</Badge>
                   </span>
                   <span className="mt-2 block text-xs text-muted-foreground">
-                    {text.source[job.source]} · {text.steps[job.step]}
+                    {text.source[job.source]} ·{" "}
+                    {job.status === "ignored" ? statusLabel(job, text) : text.steps[job.step]}
                   </span>
                   {job.error ? <span className="mt-1 block text-xs text-destructive">{text.failure}</span> : null}
                 </button>
@@ -199,7 +206,7 @@ export function DeletionWorkbenchView({
                     {selected.libraryName || text.unknownLibrary} · {text.source[selected.source]}
                   </p>
                 </div>
-                <Badge>{text.status[selected.status]}</Badge>
+                <Badge>{statusLabel(selected, text)}</Badge>
               </div>
               {selected.status === "paused" ? (
                 <p className="rounded-lg bg-muted p-3 text-sm">
@@ -223,51 +230,60 @@ export function DeletionWorkbenchView({
                   {resultMessage(actionError || selected.error || "", t)}
                 </div>
               ) : null}
-              <ol aria-label={text.openWorkbench} className="space-y-3">
-                {steps.map((step, index) => {
-                  const skipped =
-                    selected.sharedResource &&
-                    (["deleting_cloud", "verifying_cloud"].includes(step) ||
-                      (selected.source === "emby" && step === "cleaning_source"));
-                  const done = selected.status === "completed" || index < current;
-                  const active = index === current && selected.status !== "completed" && selected.status !== "ignored";
-                  const Icon =
-                    skipped || done
-                      ? CheckCircle2
-                      : active && selected.error
-                        ? AlertCircle
-                        : active && selected.status === "running"
-                          ? Loader2
-                          : active
-                            ? Clock3
-                            : Circle;
-                  return (
-                    <li
-                      key={step}
-                      aria-current={active ? "step" : undefined}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg border p-3 text-sm",
-                        active && "border-primary",
-                        active && selected.error && "border-destructive",
-                      )}
-                    >
-                      <Icon
-                        className={cn("h-4 w-4 shrink-0", active && selected.status === "running" && "animate-spin")}
-                      />
-                      <span className="flex-1">{text.steps[step]}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {skipped
-                          ? text.skippedStep
-                          : done
-                            ? text.finishedStep
+              {selected.status === "ignored" ? (
+                <section className="space-y-2 rounded-lg border p-4">
+                  <h3 className="font-semibold">{text.result}</h3>
+                  <p className="whitespace-pre-wrap break-all text-sm text-muted-foreground">
+                    {selected.result ? resultMessage(selected.result, t) : statusLabel(selected, text)}
+                  </p>
+                </section>
+              ) : (
+                <ol aria-label={text.openWorkbench} className="space-y-3">
+                  {steps.map((step, index) => {
+                    const skipped =
+                      selected.sharedResource &&
+                      (["deleting_cloud", "verifying_cloud"].includes(step) ||
+                        (selected.source === "emby" && step === "cleaning_source"));
+                    const done = selected.status === "completed" || index < current;
+                    const active = index === current && selected.status !== "completed";
+                    const Icon =
+                      skipped || done
+                        ? CheckCircle2
+                        : active && selected.error
+                          ? AlertCircle
+                          : active && selected.status === "running"
+                            ? Loader2
                             : active
-                              ? text.currentStep
-                              : text.pendingStep}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ol>
+                              ? Clock3
+                              : Circle;
+                    return (
+                      <li
+                        key={step}
+                        aria-current={active ? "step" : undefined}
+                        className={cn(
+                          "flex items-center gap-3 rounded-lg border p-3 text-sm",
+                          active && "border-primary",
+                          active && selected.error && "border-destructive",
+                        )}
+                      >
+                        <Icon
+                          className={cn("h-4 w-4 shrink-0", active && selected.status === "running" && "animate-spin")}
+                        />
+                        <span className="flex-1">{text.steps[step]}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {skipped
+                            ? text.skippedStep
+                            : done
+                              ? text.finishedStep
+                              : active
+                                ? text.currentStep
+                                : text.pendingStep}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
               {selected.canRetry ? (
                 <Button disabled={retrying} onClick={() => onRetry(selected.id)}>
                   {retrying ? t.common.loading : selected.source === "duplicate" ? text.continue : text.retry}
@@ -326,7 +342,7 @@ export function DeletionWorkbenchView({
                   </div>
                 ) : null}
               </dl>
-              {selected.result && !selected.error ? (
+              {selected.status !== "ignored" && selected.result && !selected.error ? (
                 <p className="whitespace-pre-wrap break-all text-sm text-muted-foreground">
                   {resultMessage(selected.result, t)}
                 </p>

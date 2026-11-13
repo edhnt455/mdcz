@@ -13,7 +13,7 @@ export class DeletionService {
     private readonly deps: {
       persistence: Pick<ServerPersistenceService, "getState">;
       config: Pick<ServerConfigService, "get">;
-      emby: Pick<EmbyDeletionService, "processingId" | "retry">;
+      emby: Pick<EmbyDeletionService, "processing" | "retry">;
       scrape: Pick<ScrapeService, "conflicts">;
     },
   ) {}
@@ -42,7 +42,7 @@ export class DeletionService {
         ["would_remove_records", "would_delete_strm_resource", "would_keep_shared_resource"].includes(
           event.result ?? "",
         );
-      const running = this.deps.emby.processingId === event.id;
+      const running = this.deps.emby.processing.has(event.id);
       const paused = event.status === "pending" && configuration.embyDeletion.mode === "off";
       const file = !snapshot && event.path ? events.findFile(event.path) : undefined;
       const error =
@@ -52,6 +52,8 @@ export class DeletionService {
           ![
             "confirming_missing_file",
             "waiting_for_media_tasks",
+            "waiting_for_link_removal",
+            "waiting_for_resource",
             "deleting_cloud",
             "verifying_cloud",
             "cleaning_source",
@@ -158,7 +160,7 @@ export class DeletionService {
     const { database } = await this.deps.persistence.getState();
     return database.sqlite.transaction(() => ({
       cleared:
-        new EmbyDeletionRepository(database).clearCompleted(this.deps.emby.processingId) +
+        new EmbyDeletionRepository(database).clearCompleted([...this.deps.emby.processing.keys()]) +
         new ScrapeConflictRepository(database).clearCompleted(),
     }))();
   }

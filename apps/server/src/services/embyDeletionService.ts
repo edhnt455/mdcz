@@ -3,7 +3,7 @@ import { lstat, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
 import { type EmbyDeletionEventRow, type EmbyDeletionLibraryBinding, EmbyDeletionRepository } from "@mdcz/persistence";
-import { type MediaLibraryService, mediaPathOwnership } from "@mdcz/runtime/library";
+import { type MediaLibraryService, MediaPathBusyError, mediaPathOwnership } from "@mdcz/runtime/library";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import {
   type EmbyDeletionConfig,
@@ -24,6 +24,8 @@ import { moviePilotConnectionOf, readStrmBinding, StrmDeletionService } from "./
 
 const MARKER_NAME = ".mdcz-library-id";
 const CONFIRMATION_MS = 5_000;
+const LINK_WAIT_MS = 60_000;
+const CONCURRENCY = 3;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 
 interface Dependencies {
@@ -43,9 +45,10 @@ interface Dependencies {
 
 export class EmbyDeletionService {
   private timer?: ReturnType<typeof setTimeout>;
-  private inFlight?: Promise<void>;
+  private readonly polls = new Set<Promise<void>>();
+  private dispatching = false;
   private closed = false;
-  processingId: string | null = null;
+  readonly processing = new Map<string, Promise<void>>();
   private lastBindingAt = 0;
   private stored: EmbyDeletionConfig = embyDeletionConfigSchema.parse({});
   private readonly now: () => number;
@@ -184,7 +187,7 @@ export class EmbyDeletionService {
   }
 
   async retry(id: string): Promise<{ success: true }> {
-    if (this.processingId === id) throw new Error("删除任务正在运行");
+    if (this.processing.has(id)) throw new Error("删除任务正在运行");
     const repository = await this.repository();
     const event = repository.event(id);
     if (event?.eventType === "deep.delete" && (!event.snapshotJson || event.result === "cloud_binding_unverified")) {
@@ -264,7 +267,8 @@ export class EmbyDeletionService {
       : undefined;
     const file = normalized && binding ? repository.findFile(normalized) : undefined;
     const cloudBinding = file && binding?.source ? readStrmBinding(repository, file.id) : undefined;
-    const deep = notification.Event === "deep.delete";
+    const supported = notification.Event === "deep.delete" || notification.Event === "library.deleted";
+    const deep = Boolean(binding?.source) && supported;
     const mountPaths = notification.Description?.match(/(?:^|\r?\n)Mount Paths\s*:\s*([\s\S]*)/iu)?.[1]
       .split(/\r?\n/u)
       .map((line) => line.trim())
@@ -272,13 +276,12 @@ export class EmbyDeletionService {
     let reason: string | null = null;
     if (settings.mode === "off") reason = "sync_disabled";
     else if (notification.Server.Id !== settings.serverId) reason = "server_not_allowed";
-    else if (notification.Event !== "library.deleted" && !deep) reason = "event_not_supported";
+    else if (!supported) reason = "event_not_supported";
     else if (notification.Item?.Type !== "Movie" || notification.Item.IsFolder) reason = "item_not_a_movie_file";
     else if (!notification.Date) reason = "event_date_missing";
     else if (!binding) reason = "path_not_allowed";
     else if (!file) reason = "file_not_registered";
-    else if (binding.source && !deep) reason = "deep_delete_required";
-    else if (deep && !binding.source) reason = "deep_delete_requires_copy_strm";
+    else if (notification.Event === "deep.delete" && !binding.source) reason = "deep_delete_requires_copy_strm";
     else if (
       deep &&
       (!cloudBinding?.source.resourceIdentity ||
@@ -299,13 +302,26 @@ export class EmbyDeletionService {
       reason = "mount_paths_mismatch";
     else if (Date.parse(notification.Date) > now + 60_000) reason = "event_date_in_future";
     else if (Date.parse(notification.Date) < file.updatedAt.getTime() - 60_000) reason = "event_predates_file_record";
+    if (deep && reason === "file_not_registered" && notification.Date && normalized) {
+      const previous = repository.findDeepDeletion(notification.Server.Id, normalized);
+      const eventAt = Date.parse(notification.Date);
+      if (
+        previous?.status === "completed" &&
+        previous.completedAt !== null &&
+        eventAt <= now + 60_000 &&
+        eventAt <= previous.completedAt + 60_000 &&
+        eventAt >= (previous.fileUpdatedAt ?? now) - 60_000
+      )
+        return { id: previous.id, status: previous.status, duplicate: true };
+    }
     const dedupKey = hash(
       JSON.stringify([
         notification.Server.Id,
-        notification.Event,
+        deep ? "deep.delete" : notification.Event,
         deep && file ? file.id : notification.Item?.Id,
         deep && file ? file.updatedAt.getTime() : (notification.Date ?? null),
-        rawPath ?? null,
+        normalized ?? rawPath ?? null,
+        reason === "cloud_binding_unverified" ? null : reason,
       ]),
     );
     const { event, duplicate } = repository.enqueue({
@@ -324,7 +340,7 @@ export class EmbyDeletionService {
       nextAttemptAt: now + CONFIRMATION_MS,
       result: reason,
       completedAt: reason ? now : null,
-      eventType: notification.Event,
+      eventType: deep ? "deep.delete" : notification.Event,
       snapshotJson: deep && cloudBinding ? JSON.stringify(cloudBinding) : null,
     });
     if (!duplicate) this.logEvent(event);
@@ -354,15 +370,11 @@ export class EmbyDeletionService {
   start(): void {
     const tick = () => {
       if (this.closed) return;
-      this.inFlight = this.runDue()
-        .catch((error: unknown) => this.deps.logger.error(`Emby 删除任务执行失败：${error}`))
-        .finally(() => {
-          this.inFlight = undefined;
-          if (!this.closed) {
-            this.timer = setTimeout(tick, 2_000);
-            this.timer.unref();
-          }
-        });
+      const poll = this.runDue().catch((error: unknown) => this.deps.logger.error(`Emby 删除任务执行失败：${error}`));
+      this.polls.add(poll);
+      void poll.finally(() => this.polls.delete(poll));
+      this.timer = setTimeout(tick, 2_000);
+      this.timer.unref();
     };
     this.timer = setTimeout(tick, 2_000);
     this.timer.unref();
@@ -371,39 +383,43 @@ export class EmbyDeletionService {
   async close(): Promise<void> {
     this.closed = true;
     clearTimeout(this.timer);
-    await this.inFlight;
+    await Promise.all([...this.polls, ...this.processing.values()]);
   }
 
   async runDue(): Promise<void> {
-    const repository = await this.repository();
-    const settings = await this.load();
-    if (settings.mode === "off") return;
-    repository.status(this.now());
-    if (
-      settings.moviePilot &&
-      !repository.hasCloudWork() &&
-      !repository.hasLiveScrapes() &&
-      !this.deps.maintenance.isBusy &&
-      this.now() - this.lastBindingAt >= 30_000 &&
-      repository
-        .knownFiles(settings.libraries.filter((binding) => binding.source))
-        .some(
-          ({ file, path: filePath }) =>
-            path.extname(filePath).toLowerCase() === ".strm" &&
-            readStrmBinding(repository, file.id)?.fileUpdatedAt !== file.updatedAt.getTime(),
-        )
-    ) {
-      this.lastBindingAt = this.now();
-      try {
-        await this.bindSources();
-      } catch (error) {
-        this.deps.logger.warn(`STRM 关联核验失败：${error instanceof Error ? error.message : String(error)}`);
+    if (this.closed || this.dispatching) return;
+    this.dispatching = true;
+    const launched: Promise<void>[] = [];
+    try {
+      const repository = await this.repository();
+      const settings = await this.load();
+      if (settings.mode === "off" || this.closed) return;
+      repository.status(this.now());
+      if (
+        !this.processing.size &&
+        settings.moviePilot &&
+        !repository.hasCloudWork() &&
+        !repository.hasLiveScrapes() &&
+        !this.deps.maintenance.isBusy &&
+        this.now() - this.lastBindingAt >= 30_000 &&
+        repository
+          .knownFiles(settings.libraries.filter((binding) => binding.source))
+          .some(
+            ({ file, path: filePath }) =>
+              path.extname(filePath).toLowerCase() === ".strm" &&
+              readStrmBinding(repository, file.id)?.fileUpdatedAt !== file.updatedAt.getTime(),
+          )
+      ) {
+        this.lastBindingAt = this.now();
+        try {
+          await this.bindSources();
+        } catch (error) {
+          this.deps.logger.warn(`STRM 关联核验失败：${error instanceof Error ? error.message : String(error)}`);
+        }
       }
-    }
-    for (const event of repository.due(this.now())) {
-      if (this.closed) return;
-      let release: (() => void) | undefined;
-      try {
+      for (const event of repository.due(this.now())) {
+        if (this.closed || this.processing.size >= CONCURRENCY) break;
+        if (this.processing.has(event.id)) continue;
         if (repository.hasLiveScrapes() || this.deps.maintenance.isBusy) {
           repository.update(event.id, {
             nextAttemptAt: this.now() + CONFIRMATION_MS,
@@ -411,36 +427,66 @@ export class EmbyDeletionService {
           });
           continue;
         }
-        const snapshot = event.snapshotJson
-          ? (JSON.parse(event.snapshotJson) as import("@mdcz/shared/moviePilot").StrmCloudBinding)
-          : undefined;
-        release = mediaPathOwnership.acquireAll([event.path ?? "", ...(snapshot ? [snapshot.source.sourcePath] : [])]);
-        this.processingId = event.id;
-        await this.process(repository, event);
-        const updated = repository.event(event.id);
-        if (
-          updated &&
-          (updated.status !== event.status || updated.step !== event.step || updated.result !== event.result)
-        )
-          this.logEvent(updated);
-      } catch (error) {
-        const attempts = event.attempts + 1;
-        const message = error instanceof Error ? error.message : String(error);
-        if (attempts >= 8)
-          repository.update(event.id, { status: "needs_review", attempts, result: message, completedAt: this.now() });
-        else
-          repository.update(event.id, {
-            attempts,
-            nextAttemptAt: this.now() + Math.min(300_000, CONFIRMATION_MS * 2 ** attempts),
-            result: message,
+        const snapshot = event.snapshotJson ? (JSON.parse(event.snapshotJson) as StrmCloudBinding) : undefined;
+        let release: () => void;
+        try {
+          release = mediaPathOwnership.acquireAll([
+            event.path ?? "",
+            ...(snapshot
+              ? [
+                  snapshot.source.sourcePath,
+                  `moviepilot:${snapshot.connectionId}:${snapshot.target.fileid}`,
+                  `strm:${snapshot.source.resourceIdentity}`,
+                  ...repository
+                    .relatedBindings(snapshot.connectionId, snapshot.target.fileid)
+                    .map((row) => row.sourcePath),
+                ]
+              : []),
+          ]);
+        } catch (error) {
+          if (!(error instanceof MediaPathBusyError)) throw error;
+          repository.update(event.id, { nextAttemptAt: this.now() + CONFIRMATION_MS, result: "waiting_for_resource" });
+          continue;
+        }
+        const task = this.process(repository, event)
+          .then(() => {
+            const updated = repository.event(event.id);
+            if (
+              updated &&
+              (updated.status !== event.status || updated.step !== event.step || updated.result !== event.result)
+            )
+              this.logEvent(updated);
+          })
+          .catch((error: unknown) => {
+            const attempts = event.attempts + 1;
+            const message = error instanceof Error ? error.message : String(error);
+            if (attempts >= 8)
+              repository.update(event.id, {
+                status: "needs_review",
+                attempts,
+                result: message,
+                completedAt: this.now(),
+              });
+            else
+              repository.update(event.id, {
+                attempts,
+                nextAttemptAt: this.now() + Math.min(300_000, CONFIRMATION_MS * 2 ** attempts),
+                result: message,
+              });
+            this.deps.logger.warn(`Emby 删除 ${event.id}：${message}`);
+            this.deps.taskEvents.invalidate("pending");
+          })
+          .finally(() => {
+            this.processing.delete(event.id);
+            release();
           });
-        this.deps.logger.warn(`Emby 删除 ${event.id}：${message}`);
-        this.deps.taskEvents.invalidate("pending");
-      } finally {
-        this.processingId = null;
-        release?.();
+        this.processing.set(event.id, task);
+        launched.push(task);
       }
+    } finally {
+      this.dispatching = false;
     }
+    await Promise.all(launched);
   }
 
   private async process(repository: EmbyDeletionRepository, event: EmbyDeletionEventRow): Promise<void> {
@@ -490,7 +536,15 @@ export class EmbyDeletionService {
     }
     try {
       await lstat(event.path);
-      repository.finish(event.id, "ignored", "file_still_exists", this.now());
+      if (event.step !== "validating" || this.now() - event.receivedAt >= LINK_WAIT_MS) {
+        repository.finish(event.id, "needs_review", "link_wait_timeout", this.now());
+      } else {
+        repository.update(event.id, {
+          missingSince: null,
+          nextAttemptAt: this.now() + CONFIRMATION_MS,
+          result: "waiting_for_link_removal",
+        });
+      }
       return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;

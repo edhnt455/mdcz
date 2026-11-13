@@ -24,8 +24,9 @@ export const deletions = {
     paused: "Paused",
     needs_review: "Needs attention",
     completed: "Completed",
-    ignored: "Observed / ignored",
+    ignored: "Ignored",
   },
+  observed: "Observation complete",
   source: { emby: "Emby deletion", duplicate: "Duplicate resolution" },
   steps: {
     validating: "Verify this movie",

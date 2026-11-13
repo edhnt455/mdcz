@@ -117,8 +117,33 @@ test("deletion actions follow persisted progress, recover stalled requests and r
     await expect.element(screen.getByRole("button", { name: "加载中…" })).toBeDisabled();
     finishSecond({ runId: null });
     await expect.element(resume).toBeEnabled();
+    for (const result of [
+      "deep_delete_required",
+      "file_still_exists",
+      "would_remove_records",
+      "would_delete_strm_resource",
+      "would_keep_shared_resource",
+    ]) {
+      const observed = result.startsWith("would_");
+      jobs = [{ ...pending, status: "ignored", result, canRetry: observed }];
+      await client.invalidateQueries({ queryKey: queryKeys.deletions.all });
+      await expect.element(screen.getByRole("list", { name: "查看删除流程" })).not.toBeInTheDocument();
+      await expect.element(screen.getByText("等待执行", { exact: true })).not.toBeInTheDocument();
+      await expect
+        .element(screen.getByRole("button", { name: /Pending movie/ }))
+        .toHaveTextContent(observed ? "观察完成" : "已忽略");
+      await expect.element(screen.getByRole("button", { name: /Pending movie/ })).not.toHaveTextContent("核验当前影片");
+      await expect.element(screen.getByRole("heading", { name: "处理结果 / 原因" })).toBeVisible();
+      if (result === "deep_delete_required")
+        await expect
+          .element(screen.getByText("旧版普通删除通知已忽略，核对资源后重新发送通知可触发深度删除"))
+          .toBeVisible();
+      if (observed) await expect.element(screen.getByRole("button", { name: "重试未完成步骤" })).toBeEnabled();
+      else await expect.element(screen.getByRole("button", { name: "重试未完成步骤" })).not.toBeInTheDocument();
+    }
     jobs = [{ ...pending, status: "completed" }];
     await client.invalidateQueries({ queryKey: queryKeys.deletions.all });
+    await expect.element(screen.getByRole("list", { name: "查看删除流程" })).toBeVisible();
     await screen.getByRole("button", { name: "清除已结束记录" }).click();
     await expect.element(screen.getByText("暂无删除任务")).toBeVisible();
     await expect.element(screen.getByText("选择影片，查看联动删除流程")).toBeVisible();

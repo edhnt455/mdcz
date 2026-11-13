@@ -25,8 +25,9 @@ export const deletions: Messages["deletions"] = {
     paused: "已暂停",
     needs_review: "待检查",
     completed: "已完成",
-    ignored: "观察 / 已忽略",
+    ignored: "已忽略",
   },
+  observed: "观察完成",
   source: { emby: "Emby 删除", duplicate: "重复版本处理" },
   steps: {
     validating: "核验当前影片",

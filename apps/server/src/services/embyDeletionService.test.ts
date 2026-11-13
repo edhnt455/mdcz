@@ -105,7 +105,7 @@ const fixture = async (mode: "off" | "delete" | "observe" = "delete", cloud = fa
     const body = JSON.parse(String(init?.body)) as MoviePilotFile;
     if (url.pathname.endsWith("/storage/delete")) {
       remote.deleteCalls++;
-      expect(body).toEqual(cloudFile);
+      expect(remote.files).toContainEqual(body);
       if (remote.rejectDeletion) return Response.json({ success: false, message: "denied", data: null });
       remote.files = remote.files.filter((file) => file.fileid !== body.fileid);
       if (remote.loseAcknowledgement) throw new Error("Connection reset after deletion");
@@ -384,14 +384,18 @@ describe("Emby deletion sync", () => {
     await f.advance();
     expect(f.count("library_items")).toBe(1);
     expect(f.events()[0]).toMatchObject({
-      status: "ignored",
+      status: condition === "existing" || condition === "reappeared" ? "pending" : "ignored",
       result:
         condition === "observe"
           ? "would_remove_records"
           : condition === "updated"
             ? "file_record_changed"
-            : "file_still_exists",
+            : "waiting_for_link_removal",
     });
+    if (condition === "existing" || condition === "reappeared") {
+      for (let i = 0; i < 9; i++) await f.advance();
+      expect(f.events()[0]).toMatchObject({ status: "needs_review", result: "link_wait_timeout", attempts: 0 });
+    }
   });
 
   it("recovers queued work after reopening the database and allows secret rotation independently of jobs", async () => {
@@ -651,14 +655,32 @@ describe("copy STRM deep deletion", () => {
       await expect(readFile(path.join(f.source, name))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("requires explicit deep intent and allows reviewed observations to resume in delete mode", async () => {
+  it("serializes simultaneous notifications for shared resources without consuming error retries", async () => {
+    const f = await strmFixture("delete", ["ABC-123.strm", "shared.strm"]);
+    await rm(path.join(f.output, "shared.strm"));
+    await f.service.accept(f.event);
+    const shared = await f.service.accept(f.notification("shared.strm"));
+    await f.advance();
+    expect(f.repository().event(shared.id)).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      result: "waiting_for_resource",
+    });
+    for (let i = 0; i < 5; i++) await f.advance();
+    expect(f.remote.deleteCalls).toBe(1);
+    expect(f.count("library_item_files")).toBe(0);
+    expect(f.events().every((event) => event.status === "completed" && event.attempts === 0)).toBe(true);
+    for (const name of ["ABC-123.strm", "shared.strm"])
+      await expect(readFile(path.join(f.source, name))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("merges both deletion events and allows reviewed observations to resume in delete mode", async () => {
     const f = await strmFixture("observe");
     expect(await f.service.reconcile()).toEqual({ queued: 0 });
-    expect(await f.service.accept({ ...f.event, Event: "library.deleted" })).toMatchObject({ status: "ignored" });
-    expect(f.events()[0].result).toBe("deep_delete_required");
     f.database.sqlite.prepare("DELETE FROM strm_cloud_bindings WHERE file_id = ?").run("movie-0");
-    const event = await f.service.accept(f.event);
+    const event = await f.service.accept({ ...f.event, Event: "library.deleted" });
     expect(event.status).toBe("needs_review");
+    expect(await f.service.accept(f.event)).toMatchObject({ id: event.id, duplicate: true });
     await f.service.retry(event.id);
     expect(f.repository().event(event.id)?.snapshotJson).toBeTruthy();
     await f.advance();
@@ -672,6 +694,8 @@ describe("copy STRM deep deletion", () => {
     await f.advance();
     expect(f.remote.deleteCalls).toBe(1);
     expect(f.count("library_item_files")).toBe(0);
+    expect(await f.service.accept(f.event)).toMatchObject({ id: event.id, status: "completed", duplicate: true });
+    expect(f.events()).toHaveLength(1);
   });
 
   it.each([
@@ -725,5 +749,104 @@ describe("copy STRM deep deletion", () => {
     await f.advance();
     expect(f.count("library_item_files")).toBe(0);
     expect(f.remote.deleteCalls).toBe(1);
+  });
+});
+
+describe("deletion scheduling", () => {
+  it("waits for delayed Link removal without losing either notification or its missing confirmation", async () => {
+    const f = await strmFixture();
+    const link = path.join(f.output, "ABC-123.strm");
+    await writeFile(link, f.content);
+    const event = await f.service.accept({ ...f.event, Event: "library.deleted" });
+    await f.advance();
+    expect(f.events()[0]).toMatchObject({ status: "pending", attempts: 0, result: "waiting_for_link_removal" });
+    await rm(link);
+    await f.advance();
+    await writeFile(link, f.content);
+    await f.advance();
+    expect(f.events()[0].missingSince).toBeNull();
+    await rm(link);
+    await f.advance();
+    expect(f.remote.deleteCalls).toBe(0);
+    expect(await f.service.accept(f.event)).toMatchObject({ id: event.id, duplicate: true });
+    await f.advance();
+    await f.advance();
+    expect(f.remote.deleteCalls).toBe(1);
+    expect(f.events()[0].status).toBe("completed");
+  });
+
+  it("runs at most three independent resources while slow MP responses remain in flight", async () => {
+    const f = await strmFixture();
+    for (let i = 1; i <= 4; i++) {
+      const name = `movie-${i}.strm`;
+      const content = `https://mp.test/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=code-${i}\n`;
+      const sourcePath = path.join(f.source, name);
+      await writeFile(sourcePath, content);
+      await writeFile(path.join(f.output, name), content);
+      f.remote.files.push({
+        ...f.remote.files[0],
+        fileid: `cloud-${i}`,
+        path: `/Media/AV/movie-${i}.mp4`,
+        name: `movie-${i}.mp4`,
+        pickcode: `code-${i}`,
+      });
+      await new LibraryRepository(f.database).upsertEntry({
+        movie: { id: `extra-${i}`, number: `EXTRA-${i}` },
+        files: [
+          {
+            fileId: `extra-${i}`,
+            rootId: f.root.id,
+            rootRelativePath: name,
+            strmSourceJson: JSON.stringify({
+              sourcePath,
+              sha256: createHash("sha256").update(content).digest("hex"),
+              resourceIdentity: moviePilotResourceIdentity(content.trim()),
+            }),
+          },
+        ],
+      });
+    }
+    await f.service.bindSources();
+    await f.service.accept(f.event);
+    for (let i = 1; i <= 4; i++) {
+      await rm(path.join(f.output, `movie-${i}.strm`));
+      await f.service.accept(f.notification(`movie-${i}.strm`));
+    }
+    for (const event of f.events())
+      f.repository().update(event.id, { missingSince: f.now - 6_000, nextAttemptAt: f.now });
+    const original = f.fetcher.getMockImplementation();
+    if (!original) throw new Error("Missing MP fixture implementation");
+    const waiting = new Map<string, () => void>();
+    const started: string[] = [];
+    f.fetcher.mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/storage/delete")) {
+        const file = JSON.parse(String(init?.body)) as MoviePilotFile;
+        started.push(file.fileid);
+        await new Promise<void>((resolve) => waiting.set(file.fileid, resolve));
+      }
+      return original(input, init);
+    });
+    const running = f.advance();
+    await vi.waitFor(() => expect(waiting.size).toBe(3));
+    expect(f.service.processing.size).toBe(3);
+    expect(f.remote.deleteCalls).toBe(0);
+    await f.advance();
+    expect(started).toHaveLength(3);
+    const first = started[0];
+    const releaseFirst = waiting.get(first);
+    if (!releaseFirst) throw new Error("Missing suspended MP response");
+    releaseFirst();
+    await vi.waitFor(() => expect(f.service.processing.size).toBe(2));
+    const next = f.advance();
+    await vi.waitFor(() => expect(started).toHaveLength(4));
+    expect(f.service.processing.size).toBe(3);
+    for (const resolve of waiting.values()) resolve();
+    await Promise.all([running, next]);
+    f.fetcher.mockImplementation(original);
+    for (let i = 0; i < 4; i++) await f.advance();
+    expect(f.remote.deleteCalls).toBe(5);
+    expect(f.count("library_item_files")).toBe(0);
+    expect(f.events().every((event) => event.status === "completed")).toBe(true);
+    expect(f.service.processing.size).toBe(0);
   });
 });
