@@ -600,7 +600,7 @@ export class EmbyDeletionService {
       return;
     }
     if (repository.clean(event, this.now())) {
-      if (event.eventType === "deep.delete" && event.cloudDeletedAt === null)
+      if (event.eventType === "deep.delete" && repository.event(event.id)?.cloudDeletedAt === null)
         repository.update(event.id, { result: "shared_resource_retained" });
       this.deps.invalidateAvailability();
       this.deps.taskEvents.invalidate("library", "pending");

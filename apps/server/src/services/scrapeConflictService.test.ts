@@ -361,6 +361,7 @@ describe("STRM duplicate resolution", () => {
       id: input.itemId,
       conflict: { sourcePath: f.incomingNormal, targetPath: f.linkPath },
     });
+    f.remote.verificationFails = true;
     const result = await f.service.resolve({ ...input, token: preview.token, keep });
     expect(f.remote.deletions).toEqual([keep === "existing" ? "new" : "old"]);
     await expect(lstat(keep === "existing" ? f.incomingNormal : f.existingNormal)).rejects.toMatchObject({
@@ -428,7 +429,6 @@ describe("STRM duplicate resolution", () => {
     "shared reference",
     "rejected",
     "lost response",
-    "failed verification",
   ])("preserves local files on %s and resumes only acknowledged deletions", async (scenario) => {
     const f = await fixture();
     const preview = await f.service.preview(input);
@@ -486,7 +486,6 @@ describe("STRM duplicate resolution", () => {
     }
     f.remote.reject = scenario === "rejected";
     f.remote.loseResponse = scenario === "lost response";
-    f.remote.verificationFails = scenario === "failed verification";
     await expect(f.service.resolve({ ...input, keep: "incoming", token: preview.token })).rejects.toThrow();
     for (const file of [f.existingNormal, f.incomingNormal, f.linkPath])
       expect((await lstat(file)).isFile()).toBe(true);
@@ -519,13 +518,11 @@ describe("STRM duplicate resolution", () => {
       expect(f.remote.deletions).toEqual(["old"]);
       await expect(readFile(otherPath)).rejects.toMatchObject({ code: "ENOENT" });
     }
-    if (scenario === "rejected" || scenario === "failed verification") {
+    if (scenario === "rejected") {
       f.remote.reject = false;
-      f.remote.verificationFails = false;
       expect(await f.deletions.detail(`duplicate/${input.itemId}`)).toMatchObject({
         status: "needs_review",
         canRetry: true,
-        ...(scenario === "failed verification" ? { step: "verifying_cloud", cloudDeleted: true } : {}),
       });
       await f.deletions.retry(`duplicate/${input.itemId}`);
       expect(f.remote.deletions).toEqual(["old"]);

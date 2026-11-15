@@ -44,7 +44,7 @@ it("recovers durable jobs, preserves checkpoints and serializes file actions wit
     itemJson: "{}",
   }));
   const jobs = inputs.map((input) => actions.enqueue(input));
-  pending.saveDeletion(items[0].id, items[0].updatedAt, '{"step":"verifying_cloud"}');
+  pending.saveDeletion(items[0].id, items[0].updatedAt, '{"step":"cleaning_source"}');
   expect(actions.claim()?.id).toBe(jobs[0].id);
   expect(actions.enqueue(inputs[0]).id).toBe(jobs[0].id);
   expect(() => actions.enqueue({ ...inputs[0], action: "confirm" })).toThrow("已有正在执行");
@@ -66,9 +66,9 @@ it("recovers durable jobs, preserves checkpoints and serializes file actions wit
     progressed: vi.fn(),
     execute: async (job, progress) => {
       executed.push(job.id);
-      progress("正在确认删除结果");
+      progress("正在清理来源");
       if (job.id === jobs[0].id) {
-        expect(pending.get(job.itemId).deletionJson).toContain("verifying_cloud");
+        expect(pending.get(job.itemId).deletionJson).toContain("cleaning_source");
         await blocked;
       }
       pending.delete([job.itemId]);
@@ -79,7 +79,7 @@ it("recovers durable jobs, preserves checkpoints and serializes file actions wit
     await expect.poll(() => executed.length).toBe(1);
     expect(pending.listAvailable()).toEqual([]);
     expect(pending.count()).toBe(0);
-    expect(actions.list().find((job) => job.id === jobs[0].id)?.progress).toBe("正在确认删除结果");
+    expect(actions.list().find((job) => job.id === jobs[0].id)?.progress).toBe("正在清理来源");
   } finally {
     release();
   }

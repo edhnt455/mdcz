@@ -270,9 +270,8 @@ export const settings = {
       would_keep_shared_resource: "Observation: other references remain; retain cloud and source",
       would_delete_strm_resource: "Observation: cloud, Normal and records verified for cleanup",
       deleting_cloud: "Deleting verified cloud file",
-      verifying_cloud: "Deletion acknowledged; verifying cloud result",
       cleaning_source: "Cleaning corresponding Normal STRM",
-      confirming_source_cleanup: "Waiting to confirm the generator has not recreated Normal",
+      cleaning_records: "Cleaning library records",
     },
   },
   integrations: {

@@ -1390,7 +1390,7 @@ describe("buildServer scrape integration", () => {
     }
     const pending = (await services.persistence.getState()).repositories.pending;
     const item = pending.list()[0];
-    pending.saveDeletion(item.id, item.updatedAt, JSON.stringify({ step: "verifying_cloud" }));
+    pending.saveDeletion(item.id, item.updatedAt, JSON.stringify({ step: "cleaning_source" }));
     for (const [procedure, payload] of [
       ["pending.ignore", { id: item.id }],
       ["pending.retry", { id: item.id }],
@@ -1409,7 +1409,7 @@ describe("buildServer scrape integration", () => {
       payload: { ids: [item.id], action: "retry" },
     });
     expect(batch.json().result.data).toMatchObject({ succeededIds: [], failures: [{ id: item.id }] });
-    expect(pending.get(item.id).deletionJson).toContain("verifying_cloud");
+    expect(pending.get(item.id).deletionJson).toContain("cleaning_source");
   });
 
   it("batches pending work by library, reports individual failures and ignores only selected records", async () => {

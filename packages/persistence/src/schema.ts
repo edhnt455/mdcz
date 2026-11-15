@@ -342,9 +342,7 @@ export const embyDeletionEvents = sqliteTable(
     completedAt: integer("completed_at"),
     eventType: text("event_type").notNull().default("library.deleted"),
     step: text("step")
-      .$type<
-        "validating" | "deleting_cloud" | "verifying_cloud" | "cleaning_source" | "cleaning_records" | "completed"
-      >()
+      .$type<"validating" | "deleting_cloud" | "cleaning_source" | "cleaning_records" | "completed">()
       .notNull()
       .default("validating"),
     snapshotJson: text("snapshot_json"),
@@ -375,7 +373,7 @@ export const scrapeConflictResolutions = sqliteTable("scrape_conflict_resolution
   token: text("token").notNull(),
   keep: text("keep").$type<"existing" | "incoming">(),
   step: text("step")
-    .$type<"validating" | "deleting_cloud" | "verifying_cloud" | "cleaning_local" | "retrying" | "completed">()
+    .$type<"validating" | "deleting_cloud" | "cleaning_local" | "retrying" | "completed">()
     .notNull()
     .default("validating"),
   retryRunId: text("retry_run_id"),

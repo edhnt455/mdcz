@@ -344,18 +344,7 @@ export class ScrapeConflictService {
         if (target) {
           jobs.update(input.itemId, { step: "deleting_cloud" });
           await client.deleteFile(target);
-          jobs.update(input.itemId, { step: "verifying_cloud" });
-          step = "verifying_cloud";
-        } else {
-          jobs.update(input.itemId, { step: "cleaning_local" });
-          step = "cleaning_local";
         }
-      }
-      if (step === "verifying_cloud") {
-        await assertActive();
-        await client.test();
-        if (await client.verify(connection, selected.cloud))
-          throw new Error("115 已确认删除，但视频仍在列表中，请稍后重试");
         jobs.update(input.itemId, { step: "cleaning_local" });
         step = "cleaning_local";
       }

@@ -19,7 +19,7 @@ interface PendingDeletionSnapshot {
   fileId: string | null;
   fileUpdatedAt: number | null;
   linkPath: string | null;
-  step: "deleting_cloud" | "verifying_cloud" | "cleaning_source";
+  step: "deleting_cloud" | "cleaning_source";
 }
 
 export class PendingDeletionService {
@@ -231,15 +231,6 @@ export class PendingDeletionService {
         })();
         report(`删除 115 源文件：${target.path}`);
         await client.deleteFile(target);
-        snapshot.step = "verifying_cloud";
-        pending.saveDeletion(id, item.updatedAt, JSON.stringify(snapshot));
-      }
-      if (snapshot.step === "verifying_cloud") {
-        report("115 已响应删除，正在确认文件已消失");
-        await assertActive();
-        await client.test();
-        if (await client.verify(connection, snapshot.cloud))
-          throw new Error("115 已响应删除，但文件仍存在，请稍后重试");
         snapshot.step = "cleaning_source";
         pending.saveDeletion(id, item.updatedAt, JSON.stringify(snapshot));
       }

@@ -255,9 +255,8 @@ export const settings: Messages["settings"] = {
       would_keep_shared_resource: "观察模式：仍有其他引用，将保留云端及来源",
       would_delete_strm_resource: "观察模式：云端、Normal 和记录均已核验，可联动清理",
       deleting_cloud: "正在删除已核验的云端文件",
-      verifying_cloud: "已收到删除成功响应，正在确认云端结果",
       cleaning_source: "正在清理对应 Normal STRM",
-      confirming_source_cleanup: "等待确认 Normal 未被生成器重新创建",
+      cleaning_records: "正在清理影片记录",
     },
   },
   integrations: {

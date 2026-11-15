@@ -79,7 +79,6 @@ export interface StrmCloudBinding {
 export const embyDeletionSteps = [
   "validating",
   "deleting_cloud",
-  "verifying_cloud",
   "cleaning_source",
   "cleaning_records",
   "completed",

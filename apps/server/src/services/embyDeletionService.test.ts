@@ -590,10 +590,13 @@ describe("copy STRM deep deletion", () => {
     await f.advance();
     expect(f.repository().event(broken.id)?.attempts).toBeGreaterThan(0);
     expect(f.repository().event(broken.id)?.result).toContain("已被替换");
-    expect(f.events().find((event) => event.id === accepted.id)?.result).toBe("confirming_source_cleanup");
+    expect(f.repository().event(accepted.id)).toMatchObject({
+      status: "completed",
+      step: "completed",
+      result: "records_removed",
+    });
     expect(f.remote.deleteCalls).toBe(1);
-    expect(f.count("library_item_files")).toBe(2);
-    expect(f.repository().event(accepted.id)).toMatchObject({ step: "cleaning_records", status: "pending" });
+    expect(f.count("library_item_files")).toBe(1);
     await expect(readFile(path.join(f.source, "ABC-123.strm"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readFile(unrelatedSource, "utf8")).toBe("replaced-resource");
     f.reopen();
@@ -727,27 +730,34 @@ describe("copy STRM deep deletion", () => {
     }
   });
 
-  it("pauses partial deletions when disabled and detects source regeneration before removing records", async () => {
+  it("completes after cloud acknowledgement without cloud queries or source regeneration checks", async () => {
     const f = await strmFixture();
+    const fetcher = f.fetcher.getMockImplementation();
+    if (!fetcher) throw new Error("Missing fixture fetcher");
+    f.fetcher.mockImplementation(async (url, init) => {
+      if (f.remote.deleteCalls) throw new Error("Unexpected query after deletion");
+      const response = await fetcher(url, init);
+      if (new URL(String(url)).pathname.endsWith("/storage/delete")) f.maintenance.isBusy = true;
+      return response;
+    });
     const accepted = await f.service.accept(f.event);
     await f.advance();
     await f.advance();
-    await f.service.configure({ mode: "off", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] });
-    await f.advance();
+    expect(f.repository().event(accepted.id)).toMatchObject({
+      status: "pending",
+      step: "cleaning_source",
+      attempts: 0,
+    });
     expect(f.count("library_item_files")).toBe(1);
-    expect(f.events()[0]).toMatchObject({ status: "pending", step: "cleaning_records" });
-    await writeFile(path.join(f.source, "ABC-123.strm"), f.content);
-    await rename(
-      path.join(f.source, "ABC-123.strm"),
-      `${path.join(f.source, "ABC-123.strm")}.mdcz-delete-${accepted.id}`,
-    );
-    await f.service.configure({ mode: "delete", serverId: "emby-server", libraryIds: [f.mediaLibrary.id] });
-    await f.advance();
-    expect(f.count("library_item_files")).toBe(1);
-    expect(f.events()[0].result).toContain("重新创建");
-    f.database.sqlite.prepare("UPDATE emby_deletion_events SET next_attempt_at = 0").run();
-    await f.advance();
+    f.reopen();
+    f.maintenance.isBusy = false;
+    await f.advance(f.createService());
+    expect(f.repository().event(accepted.id)).toMatchObject({ status: "completed", attempts: 0 });
     expect(f.count("library_item_files")).toBe(0);
+    await writeFile(path.join(f.source, "ABC-123.strm"), f.content);
+    await f.advance();
+    expect(await readFile(path.join(f.source, "ABC-123.strm"), "utf8")).toBe(f.content);
+    expect(f.repository().event(accepted.id)).toMatchObject({ status: "completed", attempts: 0 });
     expect(f.remote.deleteCalls).toBe(1);
   });
 });

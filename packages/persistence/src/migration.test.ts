@@ -13,7 +13,7 @@ const releasedMigrationChecksums = {
 const migrationFile = "0003_additive_roots_and_scan_tasks.sql";
 
 describe("Persistence migration baseline", () => {
-  it("preserves confirmed duplicate choices and restores unverified deep deletions to the review queue", async () => {
+  it("preserves deletion progress and migrates acknowledged deletions directly to local cleanup", async () => {
     const database = createPersistenceDatabase({ path: ":memory:" });
     try {
       const files = (await readdir(defaultMigrationsFolder)).filter((entry) => /^\d{4}_.+\.sql$/u.test(entry)).sort();
@@ -41,6 +41,52 @@ describe("Persistence migration baseline", () => {
         { id: "ordinary", status: "ignored", completed_at: 2 },
         { id: "unverified", status: "needs_review", completed_at: null },
       ]);
+      for (const file of files.filter((file) => file >= "0015" && file < "0019"))
+        database.sqlite.exec(await readFile(join(defaultMigrationsFolder, file), "utf8"));
+      database.sqlite.exec(`
+        INSERT INTO media_roots (id, display_name, host_path, created_at, updated_at)
+        VALUES ('root', 'Media', '/media', 1, 1);
+        INSERT INTO pending_items (id, kind, root_id, relative_path, deletion_json, created_at, updated_at)
+        VALUES ('pending', 'failed', 'root', 'movie.strm', '{"step":"verifying_cloud","fileId":"video"}', 1, 1);
+        UPDATE emby_deletion_events SET step = 'verifying_cloud', cloud_deleted_at = 1, result = 'verifying_cloud'
+        WHERE id = 'unverified';
+        UPDATE emby_deletion_events SET step = 'cleaning_records', result = 'confirming_source_cleanup'
+        WHERE id = 'ordinary';
+      `);
+      database.sqlite.exec(
+        await readFile(join(defaultMigrationsFolder, "0019_simplify_deletion_confirmation.sql"), "utf8"),
+      );
+      expect(database.sqlite.prepare("SELECT step, keep, token FROM scrape_conflict_resolutions").get()).toEqual({
+        step: "cleaning_local",
+        keep: "incoming",
+        token: "confirmed",
+      });
+      expect(
+        database.sqlite
+          .prepare("SELECT id, step, result, cloud_deleted_at, next_attempt_at FROM emby_deletion_events ORDER BY id")
+          .all(),
+      ).toEqual([
+        {
+          id: "ordinary",
+          step: "cleaning_records",
+          result: "cleaning_records",
+          cloud_deleted_at: null,
+          next_attempt_at: 0,
+        },
+        {
+          id: "unverified",
+          step: "cleaning_source",
+          result: "cleaning_source",
+          cloud_deleted_at: 1,
+          next_attempt_at: 0,
+        },
+      ]);
+      expect(
+        JSON.parse(
+          (database.sqlite.prepare("SELECT deletion_json FROM pending_items").get() as { deletion_json: string })
+            .deletion_json,
+        ),
+      ).toEqual({ step: "cleaning_source", fileId: "video" });
     } finally {
       database.close();
     }
@@ -83,6 +129,7 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 16, when: 1_793_491_200_000, tag: "0016_pending_deletion" }),
       expect.objectContaining({ idx: 17, when: 1_794_355_200_000, tag: "0017_pending_actions" }),
       expect.objectContaining({ idx: 18, when: 1_794_400_000_000, tag: "0018_library_health_ignores" }),
+      expect.objectContaining({ idx: 19, when: 1_794_700_800_000, tag: "0019_simplify_deletion_confirmation" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });

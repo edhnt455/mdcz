@@ -112,7 +112,7 @@ export function DeletionWorkbenchView({
   );
   const steps: DeletionJobStep[] = [
     "validating",
-    ...(selected?.cloudPlanned ? (["deleting_cloud", "verifying_cloud", "cleaning_source"] as const) : []),
+    ...(selected?.cloudPlanned ? (["deleting_cloud", "cleaning_source"] as const) : []),
     ...(selected?.source === "emby" ? ["cleaning_records" as const] : []),
     ...(selected?.retryPlanned ? ["retrying" as const] : []),
     "completed",
@@ -242,8 +242,7 @@ export function DeletionWorkbenchView({
                   {steps.map((step, index) => {
                     const skipped =
                       selected.sharedResource &&
-                      (["deleting_cloud", "verifying_cloud"].includes(step) ||
-                        (selected.source === "emby" && step === "cleaning_source"));
+                      (step === "deleting_cloud" || (selected.source === "emby" && step === "cleaning_source"));
                     const done = selected.status === "completed" || index < current;
                     const active = index === current && selected.status !== "completed";
                     const Icon =

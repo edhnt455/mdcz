@@ -48,14 +48,7 @@ it("clears all finished deletion records while preserving unfinished work and me
   const version = {
     cloud: { target: { fileid: "cloud-file", path: "/cloud/movie.mp4" }, source: { sourcePath: "/Normal/movie.strm" } },
   };
-  for (const step of [
-    "validating",
-    "deleting_cloud",
-    "verifying_cloud",
-    "cleaning_local",
-    "retrying",
-    "completed",
-  ] as const) {
+  for (const step of ["validating", "deleting_cloud", "cleaning_local", "retrying", "completed"] as const) {
     conflicts.preview({
       itemId: step,
       taskId: "scrape-task",
@@ -89,7 +82,7 @@ it("clears all finished deletion records while preserving unfinished work and me
   const reopened = createPersistenceDatabase({ path: databasePath });
   try {
     expect(new EmbyDeletionRepository(reopened).jobs()).toHaveLength(3);
-    expect(new ScrapeConflictRepository(reopened).jobs()).toHaveLength(5);
+    expect(new ScrapeConflictRepository(reopened).jobs()).toHaveLength(4);
   } finally {
     reopened.close();
   }

@@ -91,12 +91,12 @@ test("deletion actions follow persisted progress, recover stalled requests and r
         ...pending,
         source: "duplicate",
         status: "needs_review",
-        step: "verifying_cloud",
+        step: "cleaning_source",
         cloudPlanned: true,
         cloudDeleted: true,
         canRetry: true,
         updatedAt: 2,
-        error: "目录核验失败",
+        error: "来源清理失败",
       },
     ];
     await client.invalidateQueries({ queryKey: queryKeys.deletions.all });
@@ -106,10 +106,10 @@ test("deletion actions follow persisted progress, recover stalled requests and r
     jobs = [{ ...jobs[0], status: "running", canRetry: false, updatedAt: 3, error: null }];
     await client.invalidateQueries({ queryKey: queryKeys.deletions.all });
     await expect.element(resume).not.toBeInTheDocument();
-    jobs = [{ ...jobs[0], status: "needs_review", canRetry: true, updatedAt: 4, error: "完整目录仍不可核验" }];
+    jobs = [{ ...jobs[0], status: "needs_review", canRetry: true, updatedAt: 4, error: "来源仍无法清理" }];
     await client.invalidateQueries({ queryKey: queryKeys.deletions.all });
     await expect.element(resume).toBeEnabled();
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("完整目录仍不可核验");
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("来源仍无法清理");
     await resume.click();
     expect(retry).toHaveBeenCalledTimes(2);
     finishFirst({ runId: null });

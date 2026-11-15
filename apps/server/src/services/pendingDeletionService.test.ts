@@ -209,8 +209,11 @@ test.each([false, true])("deletes verified 115, STRM and pending records (publis
   f.remote.beforeDelete = async () => {
     expect(await readFile(f.sourcePath, "utf8")).toBe(f.content);
     expect(f.pending.get(f.id).deletionJson).toContain("deleting_cloud");
+    f.remote.verifyFails = true;
   };
   await service.delete(f.id);
+  expect(String(f.fetcher.mock.calls.at(-1)?.[0])).toContain("/storage/delete");
+  f.remote.verifyFails = false;
   expect(f.remote.deleted).toEqual(["115-file"]);
   await expect(readFile(f.sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
   expect(f.pending.list()).toEqual([]);
@@ -285,7 +288,6 @@ test.each([false, true])("deletes verified 115, STRM and pending records (publis
 
 test.each([
   "denied",
-  "verification unavailable",
   "replacement",
   "lost response",
 ] as const)("preserves retry evidence and local files after %s", async (scenario) => {
@@ -297,7 +299,6 @@ test.each([
     expect(f.pending.get(f.id).deletionJson).toBeNull();
   }
   f.remote.reject = scenario === "denied";
-  f.remote.verifyFails = scenario === "verification unavailable";
   f.remote.loseResponse = scenario === "lost response";
   if (scenario === "replacement")
     f.remote.beforeDelete = async () => {
@@ -313,7 +314,6 @@ test.each([
     return;
   }
   f.remote.reject = false;
-  f.remote.verifyFails = false;
   f.remote.beforeDelete = undefined;
   if (scenario === "replacement") await writeFile(f.sourcePath, f.content);
   await f.restart().delete(f.id);

@@ -31,7 +31,6 @@ export const deletions = {
   steps: {
     validating: "Verify this movie",
     deleting_cloud: "Delete 115 source",
-    verifying_cloud: "Confirm cloud deletion",
     cleaning_source: "Clean up STRM files",
     cleaning_records: "Clean up library records",
     retrying: "Submit scrape retry",

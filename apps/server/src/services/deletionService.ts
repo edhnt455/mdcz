@@ -55,9 +55,8 @@ export class DeletionService {
             "waiting_for_link_removal",
             "waiting_for_resource",
             "deleting_cloud",
-            "verifying_cloud",
             "cleaning_source",
-            "confirming_source_cleanup",
+            "cleaning_records",
           ].includes(event.result ?? ""))
           ? event.result
           : null;

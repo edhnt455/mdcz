@@ -260,7 +260,7 @@ export class StrmDeletionService {
     }
     if (!sources.size) throw new Error("没有剩余的已记录 STRM 来源");
     const writable = () => active() && this.readSettings().mode === "delete";
-    const client = await this.client(connection);
+    const client = this.client(connection);
     let step = event.step;
     if (step === "validating" || step === "deleting_cloud") {
       const target = await client.verify(connection, snapshot);
@@ -281,15 +281,7 @@ export class StrmDeletionService {
       repository.update(event.id, { step: "deleting_cloud", result: "deleting_cloud" });
       if (!active()) return false;
       await client.deleteFile(target);
-      repository.update(event.id, { step: "verifying_cloud", cloudDeletedAt: now(), result: "verifying_cloud" });
-      step = "verifying_cloud";
-    }
-    if (step === "verifying_cloud") {
-      if (!active() || this.readSettings().mode !== "delete") return false;
-      await client.test();
-      if (await client.verify(connection, snapshot)) throw new Error("云端已确认删除，但文件仍在列表中");
-      if (!active()) return false;
-      repository.update(event.id, { step: "cleaning_source", result: "cleaning_source" });
+      repository.update(event.id, { step: "cleaning_source", cloudDeletedAt: now(), result: "cleaning_source" });
       step = "cleaning_source";
     }
     if (step === "cleaning_source") {
@@ -297,22 +289,11 @@ export class StrmDeletionService {
       for (const source of sources.values())
         await this.removeSource(event.id, source.library, source.snapshot, writable);
       if (!active() || this.readSettings().mode !== "delete") return false;
-      repository.update(event.id, {
-        step: "cleaning_records",
-        result: "confirming_source_cleanup",
-        nextAttemptAt: now() + 5_000,
-      });
-      return false;
+      repository.update(event.id, { step: "cleaning_records", result: "cleaning_records" });
+      step = "cleaning_records";
     }
     if (step === "cleaning_records") {
-      if (!active() || this.readSettings().mode !== "delete") return false;
-      let regenerated = false;
-      for (const source of sources.values())
-        regenerated = (await this.removeSource(event.id, source.library, source.snapshot, writable)) || regenerated;
-      if (regenerated) {
-        throw new Error("STRM 生成器重新创建了来源文件，正在等待停止生成");
-      }
-      return active();
+      return writable();
     }
     throw new Error("不支持此 STRM 删除步骤");
   }
@@ -322,7 +303,7 @@ export class StrmDeletionService {
     library: EmbyDeletionLibraryBinding,
     snapshot: StrmCloudBinding,
     active: () => boolean,
-  ): Promise<boolean> {
+  ): Promise<void> {
     await this.assertMounts(library);
     const sourcePath = snapshot.source.sourcePath;
     const parked = `${sourcePath}.mdcz-delete-${eventId}`;
@@ -339,8 +320,8 @@ export class StrmDeletionService {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     if (!parkedExists) {
-      if (!(await this.assertSource(library, snapshot, true))) return false;
-      if (!active()) return true;
+      if (!(await this.assertSource(library, snapshot, true))) return;
+      if (!active()) return;
       await rename(sourcePath, parked);
     }
     const stat = await lstat(parked);
@@ -356,9 +337,8 @@ export class StrmDeletionService {
       throw new Error("清理期间 STRM 已变化，已保留替换文件供人工检查");
     }
     // Parking first makes a generator's same-path replacement independent of the file being removed.
-    if (!active()) return true;
+    if (!active()) return;
     await unlink(parked);
-    return true;
   }
 
   async assertSource(

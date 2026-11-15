@@ -87,7 +87,7 @@ it("authenticates webhook and management routes, validates input, persists notif
   new EmbyDeletionRepository(state.database).update(accepted.json().id, {
     attempts: 1,
     step: "cleaning_records",
-    result: "confirming_source_cleanup",
+    result: "cleaning_records",
   });
   expect(await services.deletions.detail(jobId)).toMatchObject({ status: "pending", error: null, cloudPlanned: false });
   await rotate();

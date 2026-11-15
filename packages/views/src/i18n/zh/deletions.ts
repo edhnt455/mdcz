@@ -32,7 +32,6 @@ export const deletions: Messages["deletions"] = {
   steps: {
     validating: "核验当前影片",
     deleting_cloud: "删除 115 源视频",
-    verifying_cloud: "确认云端删除",
     cleaning_source: "清理 STRM 文件",
     cleaning_records: "清理影片记录",
     retrying: "提交刮削重试",
