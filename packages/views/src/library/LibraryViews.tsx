@@ -470,7 +470,7 @@ export function LibraryDeleteDialog({ entries, submitting = false, onCancel, onC
             {t.common.cancel}
           </Button>
           <Button disabled={submitting} variant="destructive" onClick={onConfirm}>
-            {submitting ? t.library.removing : t.library.confirmRemove}
+            {submitting ? t.pending.submitting : t.library.confirmRemove}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -833,7 +833,7 @@ function LibraryFileActions({ entry, file, onRemoveFile, onRelinkFile }: Library
                 }
               }}
             >
-              {action === "remove" ? (busy ? t.library.removing : t.library.confirmRemove) : t.library.confirm}
+              {action === "remove" ? (busy ? t.pending.submitting : t.library.confirmRemove) : t.library.confirm}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -83,13 +83,20 @@ it("edits each locked NFO and its record atomically, survives reattachment, and 
   const overlapping = await start();
   expect(overlapping.statusCode).toBe(409);
   expect(overlapping.body).toContain("媒体库批量编辑正在运行");
+  await writeFile(join(directory, "queued.mp4"), "queued");
+  repositories.library.writeEntry({ id: "queued" }, [{ fileId: "queued", rootId, rootRelativePath: "queued.mp4" }]);
   const removeWhileEditing = await fastify.inject({
     method: "POST",
     url: "/trpc/library.delete",
     headers,
-    payload: { ids: ["copies"] },
+    payload: { ids: ["queued"] },
   });
-  expect(removeWhileEditing.statusCode).toBe(409);
+  expect(removeWhileEditing.statusCode).toBe(200);
+  expect(
+    (await services.pending.jobs()).jobs.find((job) => job.id === removeWhileEditing.json().result.data.taskIds[0])
+      ?.status,
+  ).toBe("queued");
+  expect(await readFile(join(directory, "queued.mp4"), "utf8")).toBe("queued");
   const scrape = await fastify.inject({
     method: "POST",
     url: "/trpc/scrape.start",
@@ -207,6 +214,7 @@ it("ignores and restores scoped health issues and deep deletes a batch", async (
   expect(await summary()).toMatchObject({ issues: { noNfo: 2 }, ignored: 0 });
   await post("ignoreHealth", { libraryId, health: "noNfo" });
   expect((await post("delete", { ids: ["First", "Second", "already-gone", "First"] })).statusCode).toBe(200);
+  await services.pending.waitForIdle();
   expect(await summary()).toMatchObject({ total: 0, ignored: 0 });
   await expect(readFile(join(directory, "First.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
   await expect(readFile(join(directory, "Second.mp4"))).rejects.toMatchObject({ code: "ENOENT" });

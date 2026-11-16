@@ -83,6 +83,14 @@ export class PendingRepository {
     return row;
   }
 
+  findByFile(ref: { rootId: string; relativePath: string }): PendingItemRecord | undefined {
+    return this.database.db
+      .select()
+      .from(pendingItems)
+      .where(and(eq(pendingItems.rootId, ref.rootId), eq(pendingItems.relativePath, ref.relativePath)))
+      .get();
+  }
+
   saveDeletion(id: string, expectedUpdatedAt: Date, deletionJson: string): void {
     const result = this.database.db
       .update(pendingItems)

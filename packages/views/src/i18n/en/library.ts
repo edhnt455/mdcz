@@ -100,9 +100,9 @@ export const library = {
   // Delete dialog
   removeDialogTitle: "Deep delete",
   removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
-    `Will deep delete ${fileCount} media file(s) for ${movieCount} movie(s) and remove ${assetCount} asset record(s). STRM deletion also deletes the 115 source and local STRM files; other media deletion removes the disk media files and recorded retained sources. This cannot be undone.`,
-  removing: "Deep deleting…",
-  confirmRemove: "Confirm deep delete",
+    `Will queue deep deletion of ${fileCount} media file(s) for ${movieCount} movie(s). The background queue deletes files one by one and removes ${assetCount} asset record(s). STRM deletion also deletes the 115 source and local STRM files; other media deletion removes the disk media files and recorded retained sources. You can leave after submitting. This cannot be undone.`,
+  deletionQueued: "Files will be deleted in the background. View progress and retry failed tasks in the workbench.",
+  confirmRemove: "Queue deep deletion",
 
   // File rows
   fileStatus: {
@@ -118,7 +118,7 @@ export const library = {
   // Relink / remove file dialog
   relinkFileTitle: "Relink File",
   removeFileDescription:
-    "Deep delete this file: STRM deletion also deletes the 115 source and local STRM files; other media deletion removes the disk media file and its recorded retained source. Other disc parts will be kept. This cannot be undone.",
+    "Queue deep deletion of this file in the background: STRM deletion also deletes the 115 source and local STRM files; other media deletion removes the disk media file and its recorded retained source. Other disc parts will be kept. You can leave after submitting. This cannot be undone.",
   mediaFolderLabel: (name: string) => `Media root: ${name}`,
   newRelativePath: "New relative path",
   confirm: "Confirm",

@@ -34,7 +34,6 @@ export const web = {
   copyServerPath: "Copy server path",
 
   // Library
-  removedFromLibrary: "Deep deletion complete",
 
   // Tools
   openWorkbench: "Open Workbench",

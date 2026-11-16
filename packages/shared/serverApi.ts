@@ -14,6 +14,7 @@ import type {
 } from "./mediaLibrary";
 import type { MoviePilotSettings } from "./moviePilot";
 import type {
+  LibraryDeletionResponse,
   PendingActionJob,
   PendingActionResponse,
   PendingBatchInput,
@@ -197,7 +198,7 @@ export interface ServerApiContract {
       start(input: LibraryEditStartInput): Promise<LibraryEditJobDto>;
       status(): Promise<LibraryEditJobDto | null>;
     };
-    removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<{ success: true }>;
+    removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<LibraryDeletionResponse>;
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
     summary(input?: LibrarySummaryInput): Promise<LibrarySummaryResponse>;
@@ -205,7 +206,7 @@ export interface ServerApiContract {
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
     relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
-    delete(input: LibraryDeleteInput): Promise<{ success: true }>;
+    delete(input: LibraryDeleteInput): Promise<LibraryDeletionResponse>;
     ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }>;
     restoreIgnored(input: LibraryRestoreIgnoredInput): Promise<{ success: true }>;
   };

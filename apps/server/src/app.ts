@@ -13,7 +13,7 @@ import { NumberRecognitionService } from "@mdcz/runtime/scrape/NumberRecognition
 import { LlmApiClient } from "@mdcz/runtime/scrape/translate/engines/LlmApiClient";
 import { LlmRequestService } from "@mdcz/runtime/scrape/translate/engines/LlmRequestService";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
-import { LibraryTaskGate } from "@mdcz/runtime/tasks";
+import { LibraryTaskConflictError, LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { FileTranslationMappingStore } from "@mdcz/runtime/translate";
 import { embyDeletionNotificationSchema } from "@mdcz/shared/embyDeletion";
 import {
@@ -162,7 +162,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     });
   const invalidateLibrary = () => {
     library.invalidateAvailability();
-    taskEvents.invalidate("pending", "library");
+    taskEvents.invalidate("pending", "pending-actions", "library");
   };
   const pendingDeletion = new PendingDeletionService({
     persistence,
@@ -176,7 +176,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     persistence,
     () => config.get(),
     pendingDeletion,
-    taskGate,
+    () => pending.wake(),
     invalidateLibrary,
   );
   const library =
@@ -260,8 +260,18 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       repositories: async () => (await persistence.getState()).repositories,
       mediaRoots,
       deleteFile: async (id, progress) => await pendingDeletion.delete(id, progress),
+      deleteLibraryFile: (id, target, progress) => libraryDeletion.execute(id, target, progress),
       captureDelete: async (id) => await pendingDeletion.capture(id),
-      isMediaBusy: async () => maintenance.isBusy || (await scrape.liveRuns()).runs.length > 0,
+      isMediaBusy: async () => {
+        if (maintenance.isBusy || (await scrape.liveRuns()).runs.length > 0) return true;
+        try {
+          taskGate.assertAvailable("pending");
+          return false;
+        } catch (error) {
+          if (error instanceof LibraryTaskConflictError) return true;
+          throw error;
+        }
+      },
       startScrape: async (input) => ({ taskId: (await scrape.start(input)).task.id }),
       getConfiguration: async () => await config.get(),
       updateConfiguration: async (patch) => await config.update(patch),
@@ -269,7 +279,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       recognitionService: new NumberRecognitionService(
         new LlmRequestService(runtimeLogs.getLogger("NumberRecognition"), new LlmApiClient(networkClient)),
       ),
-      onChanged: () => taskEvents.invalidate("pending", "scrape-history"),
+      onChanged: () => taskEvents.invalidate("pending", "pending-actions", "scrape-history", "library"),
       onProgress: () => taskEvents.invalidate("pending-actions"),
       onLibraryChanged: () => taskEvents.invalidate("library"),
     });

@@ -111,19 +111,28 @@ export function LibraryPage() {
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     retry: false,
   });
+  const notifyDeletionQueued = (taskIds: string[]) => {
+    toast.success(t.pending.queued, {
+      description: t.library.deletionQueued,
+      action: {
+        label: t.pending.viewWorkbench,
+        onClick: () => void navigate({ to: "/workbench", search: { intent: "actions", jobId: taskIds[0] } }),
+      },
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.pending.all });
+  };
   const deleteLibraryM = useMutation({
-    mutationFn: async (entries: LibraryEntryDto[]) => {
-      await api.library.delete({ ids: entries.map((entry) => entry.id) });
-    },
-    onSuccess: async () => {
-      toast.success(t.web.removedFromLibrary);
+    mutationFn: (entries: LibraryEntryDto[]) => api.library.delete({ ids: entries.map((entry) => entry.id) }),
+    onSuccess: (result) => {
       setDeleteTargets([]);
+      notifyDeletionQueued(result.taskIds);
     },
     onError: (error) => {
       toast.error(toErrorMessage(error));
-      setDeleteTargets([]);
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.library.all }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+    },
   });
   const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
   const availabilityQs = useQueries({
@@ -207,12 +216,9 @@ export function LibraryPage() {
         onEditEntries={(entries) => void openEdit(entries)}
         onEditAll={() => openEdit()}
         onRemoveFile={async (input) => {
-          try {
-            await api.library.removeFile(input);
-            toast.success(t.web.removedFromLibrary);
-          } finally {
-            await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
-          }
+          const result = await api.library.removeFile(input);
+          notifyDeletionQueued(result.taskIds);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
         }}
         onRelinkFile={async (input) => {
           await api.library.relink(input);

@@ -12,6 +12,7 @@ import {
 import type { Configuration } from "@mdcz/shared/config";
 import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
+import type { LibraryDeletionResponse } from "@mdcz/shared/pending";
 import type {
   LibraryAvailabilityInput,
   LibraryAvailabilityResponse,
@@ -69,9 +70,8 @@ export class LibraryService {
     return { success: true };
   }
 
-  async removeFile(input: { fileId: string }): Promise<{ success: true }> {
-    await this.deletion.delete(input);
-    return { success: true };
+  async removeFile(input: { fileId: string }): Promise<LibraryDeletionResponse> {
+    return this.deletion.submit(input);
   }
 
   /**
@@ -139,9 +139,8 @@ export class LibraryService {
     return { success: true };
   }
 
-  async deleteEntries(ids: readonly string[]): Promise<{ success: true }> {
-    await this.deletion.delete({ ids });
-    return { success: true };
+  async deleteEntries(ids: readonly string[]): Promise<LibraryDeletionResponse> {
+    return this.deletion.submit({ ids });
   }
 
   async overview(): Promise<OverviewSummaryResponse> {

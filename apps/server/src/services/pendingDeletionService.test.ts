@@ -7,11 +7,11 @@ import {
   EmbyDeletionRepository,
   LibraryRepository,
   MediaRootRepository,
+  PendingActionRepository,
   PendingRepository,
   runMigrations,
 } from "@mdcz/persistence";
 import type { MediaLibrary } from "@mdcz/runtime/library";
-import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
 import { afterEach, expect, test, vi } from "vitest";
@@ -45,6 +45,7 @@ async function fixture() {
   const root = await mediaRoots.ensurePath(normal);
   const library = new LibraryRepository(database);
   const pending = new PendingRepository(database);
+  const pendingActions = new PendingActionRepository(database);
   pending.upsert({ rootId: root.id, relativePath: "ABC-123.strm", libraryId: "library", kind: "failed" });
   const id = pending.list()[0].id;
   const configuration = structuredClone(defaultConfiguration);
@@ -118,7 +119,7 @@ async function fixture() {
   const logger = { info: vi.fn(), error: vi.fn() };
   const deps = {
     persistence: {
-      getState: async () => ({ database, repositories: { pending, mediaRoots, library } }),
+      getState: async () => ({ database, repositories: { pending, pendingActions, mediaRoots, library } }),
     } as unknown as Pick<ServerPersistenceService, "getState">,
     config: { get: async () => configuration },
     libraries: {
@@ -135,6 +136,7 @@ async function fixture() {
     content,
     remote,
     pending,
+    pendingActions,
     library,
     mediaRoots,
     link,
@@ -148,7 +150,7 @@ async function fixture() {
         deps.persistence,
         deps.config.get,
         new PendingDeletionService(deps),
-        new LibraryTaskGate(),
+        vi.fn(),
         deps.invalidate,
       ),
     setBusy: () => {
@@ -230,12 +232,34 @@ test.each([
   };
   const remove = async () => {
     if (mode === "pending") await service.delete(f.id);
-    else if (mode === "file") await f.libraryDeletion().delete({ fileId: "published" });
-    else await f.libraryDeletion().delete({ ids: [(await f.library.getEntryByFileId("published")).id] });
+    else {
+      const deletion = f.libraryDeletion();
+      const submitted = await deletion.submit(
+        mode === "file" ? { fileId: "published" } : { ids: [(await f.library.getEntryByFileId("published")).id] },
+      );
+      let job = f.pendingActions.claim();
+      if (!job) throw new Error("Missing deletion job");
+      expect(job.id).toBe(submitted.taskIds[0]);
+      if (mode === "entries") {
+        const snapshot = job.inputJson;
+        f.pendingActions.recover();
+        job = f.pendingActions.claim();
+        if (!job) throw new Error("Missing recovered deletion job");
+        expect(job.inputJson).toBe(snapshot);
+        expect(job.id).toBe(submitted.taskIds[0]);
+      }
+      try {
+        await deletion.execute(job.itemId, JSON.parse(job.inputJson).libraryFile, vi.fn());
+        f.pendingActions.finish(job);
+      } catch (error) {
+        f.pendingActions.finish(job, String(error));
+        throw error;
+      }
+    }
   };
   if (published) {
     f.remote.reject = true;
-    await expect(remove()).rejects.toThrow("已删除 0 个文件");
+    await expect(remove()).rejects.toThrow("业务请求未成功");
     expect(f.pending.get(f.id).deletionJson).toContain("deleting_cloud");
     expect((await f.library.getEntryByFileId("published")).files).toHaveLength(1);
     expect(await readFile(linkPath, "utf8")).toBe(f.content);

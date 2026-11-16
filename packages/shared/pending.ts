@@ -1,4 +1,5 @@
 import { Website } from "./enums";
+import type { MediaLibrarySettings } from "./mediaLibrary";
 import { rootFileRefSchema } from "./mediaRef";
 import { siteResultSchema } from "./siteResults";
 import { z } from "./zod";
@@ -153,6 +154,23 @@ export interface PendingActionJob {
 
 export interface PendingActionResponse {
   taskId: string;
+}
+
+export interface LibraryDeletionTarget {
+  fileId: string;
+  fileUpdatedAt: number;
+  rootId: string;
+  relativePath: string;
+  rootPath: string;
+  rootRealPath: string | null;
+  library: (Pick<MediaLibrarySettings, "sourcePath" | "outputPath" | "placement"> & { id: string }) | null;
+  moviePilotConnectionId: string | null;
+}
+
+export type PendingDeleteInput = { fingerprint: string | null } | { libraryFile: LibraryDeletionTarget };
+
+export interface LibraryDeletionResponse {
+  taskIds: string[];
 }
 
 export const pendingRetryResponseSchema = z.object({ taskId: z.string() });

@@ -1,7 +1,6 @@
-export type LibraryTaskKind = "scrape" | "maintenance" | "pending" | "edit" | "delete";
+export type LibraryTaskKind = "scrape" | "maintenance" | "pending" | "edit";
 
 const CONFLICT_MESSAGES: Record<LibraryTaskKind, string> = {
-  delete: "媒体库深度删除正在运行，请等待完成后再开始媒体任务",
   edit: "媒体库批量编辑正在运行，请等待完成后再开始媒体任务",
   pending: "文件处理任务正在运行，请等待完成后再开始媒体任务",
   maintenance: "维护任务正在运行，请停止后再开始刮削",

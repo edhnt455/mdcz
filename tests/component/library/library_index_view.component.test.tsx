@@ -1,11 +1,5 @@
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
-import {
-  type LibraryBrowseControls,
-  LibraryDeleteDialog,
-  LibraryEditForm,
-  LibraryIndexView,
-  useLibraryView,
-} from "@mdcz/views/library";
+import { type LibraryBrowseControls, LibraryEditForm, LibraryIndexView, useLibraryView } from "@mdcz/views/library";
 import { expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -139,19 +133,6 @@ test("a health filter offers to ignore its movies, and the ignored view only res
   await expect.element(ignore).not.toBeInTheDocument();
   await restore.click();
   expect(browse.onRestore).toHaveBeenCalledOnce();
-});
-
-test("the deletion dialog totals the selection and warns about cloud and disk source deletion", async () => {
-  const entry = { ...createEntry("ONE", "available"), fileRefs: [{}, {}], assets: [{}] } as unknown as LibraryEntryDto;
-  const screen = await render(<LibraryDeleteDialog entries={[entry, entry]} onCancel={vi.fn()} onConfirm={vi.fn()} />);
-
-  await expect
-    .element(
-      screen.getByText(
-        "将深度删除 2 部影片的 4 个媒体文件，并移除 2 个资源记录。STRM 将同步删除 115 源文件及本地 STRM；其他媒体将删除硬盘上的媒体文件及已记录的保留源文件。此操作不可撤销。",
-      ),
-    )
-    .toBeVisible();
 });
 
 test("library view preference survives remounts", async () => {

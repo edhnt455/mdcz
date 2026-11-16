@@ -100,9 +100,9 @@ export const library: Messages["library"] = {
   // Delete dialog
   removeDialogTitle: "深度删除",
   removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
-    `将深度删除 ${movieCount} 部影片的 ${fileCount} 个媒体文件，并移除 ${assetCount} 个资源记录。STRM 将同步删除 115 源文件及本地 STRM；其他媒体将删除硬盘上的媒体文件及已记录的保留源文件。此操作不可撤销。`,
-  removing: "正在深度删除...",
-  confirmRemove: "确认深度删除",
+    `将提交 ${movieCount} 部影片的 ${fileCount} 个媒体文件的深度删除任务，后台逐个删除文件并移除 ${assetCount} 个资源记录。STRM 将同步删除 115 源文件及本地 STRM；其他媒体将删除硬盘上的媒体文件及已记录的保留源文件。提交后可离开页面，此操作不可撤销。`,
+  deletionQueued: "删除将在后台逐个执行，可在工作台查看进度和重试失败任务。",
+  confirmRemove: "提交深度删除",
 
   // File rows
   fileStatus: {
@@ -118,7 +118,7 @@ export const library: Messages["library"] = {
   // Relink / remove file dialog
   relinkFileTitle: "重新关联文件",
   removeFileDescription:
-    "将深度删除该文件：STRM 会同步删除 115 源文件及本地 STRM；其他媒体会删除硬盘上的媒体文件及已记录的保留源文件。其他分盘文件仍会保留。此操作不可撤销。",
+    "将提交该文件的深度删除任务，后台删除文件并清理记录：STRM 会同步删除 115 源文件及本地 STRM；其他媒体会删除硬盘上的媒体文件及已记录的保留源文件。其他分盘文件仍会保留。提交后可离开页面，此操作不可撤销。",
   mediaFolderLabel: (name: string) => `所在媒体目录：${name}`,
   newRelativePath: "新相对路径",
   confirm: "确认",

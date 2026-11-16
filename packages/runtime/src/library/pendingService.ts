@@ -12,12 +12,14 @@ import { toErrorMessage } from "@mdcz/shared/error";
 import {
   type AmbiguousCandidate,
   ambiguousCandidateSchema,
+  type LibraryDeletionTarget,
   numberRecognitionAttemptSchema,
   type PendingActionJob,
   type PendingActionResponse,
   type PendingBatchInput,
   type PendingBatchResponse,
   type PendingConfirmUncensoredInput,
+  type PendingDeleteInput,
   type PendingDetailResponse,
   type PendingItemDto,
   type PendingListResponse,
@@ -54,6 +56,7 @@ export interface PendingServiceDependencies {
   maintenanceRuntime: Pick<MaintenanceRuntime, "applyLibraryEntry">;
   recognitionService: Pick<NumberRecognitionService, "recognize">;
   deleteFile: (id: string, progress: (message: string) => void) => Promise<void>;
+  deleteLibraryFile: (id: string, target: LibraryDeletionTarget, progress: (message: string) => void) => Promise<void>;
   captureDelete: (id: string) => Promise<string | null>;
   isMediaBusy: () => Promise<boolean>;
   onChanged?: () => void;
@@ -78,7 +81,11 @@ export class PendingService {
         if (!current) return;
         if (current.updatedAt.getTime() !== job.itemUpdatedAt) throw new Error("任务提交后条目已变化，请检查最新结果");
         if (job.action === "delete") {
-          const input = JSON.parse(job.inputJson) as { fingerprint: string | null };
+          const input = JSON.parse(job.inputJson) as PendingDeleteInput;
+          if ("libraryFile" in input) {
+            await deps.deleteLibraryFile(job.itemId, input.libraryFile, progress);
+            return;
+          }
           if (
             !current.deletionJson &&
             input.fingerprint &&
@@ -106,6 +113,9 @@ export class PendingService {
   async waitForIdle(): Promise<void> {
     await this.queue.waitForIdle();
   }
+  wake(): void {
+    this.queue.wake();
+  }
 
   async jobs(): Promise<{ jobs: PendingActionJob[] }> {
     const { pendingActions, pending } = await this.deps.repositories();
@@ -125,6 +135,10 @@ export class PendingService {
     if (!job || job.status !== "failed") throw new Error("此任务当前无法重试");
     pending.assertAvailable(job.itemId);
     if (pending.get(job.itemId).taskId !== job.id) throw new Error("此任务已被新的处理结果替代，请检查最新条目");
+    if (job.action === "delete") {
+      const input = JSON.parse(job.inputJson) as PendingDeleteInput;
+      if ("libraryFile" in input) return this.enqueueDelete(job.itemId, input);
+    }
     return job.action === "delete"
       ? this.delete(job.itemId)
       : this.confirmUncensored(pendingConfirmUncensoredInputSchema.parse(JSON.parse(job.inputJson)));
@@ -304,14 +318,27 @@ export class PendingService {
       if (active.action !== "delete") throw new Error("此文件已有正在执行的操作");
       return { taskId: active.id };
     }
+    const previous = item.taskId
+      ? pendingActions.list().find((job) => job.id === item.taskId && job.action === "delete")
+      : undefined;
+    if (previous) {
+      const input = JSON.parse(previous.inputJson) as PendingDeleteInput;
+      if ("libraryFile" in input) return this.enqueueDelete(id, input);
+    }
     if (path.extname(item.relativePath).toLowerCase() !== ".strm") throw new Error("仅支持删除 STRM 及其 115 源文件");
-    const detail = await this.detail(id);
     const fingerprint = await this.deps.captureDelete(id);
+    return this.enqueueDelete(id, { fingerprint });
+  }
+
+  private async enqueueDelete(id: string, input: PendingDeleteInput): Promise<PendingActionResponse> {
+    const { pending, pendingActions } = await this.deps.repositories();
+    const item = pending.get(id);
+    const detail = await this.detail(id);
     const job = pendingActions.enqueue({
       itemId: id,
       itemUpdatedAt: item.updatedAt.getTime(),
       action: "delete",
-      inputJson: JSON.stringify({ id, fingerprint }),
+      inputJson: JSON.stringify(input),
       itemJson: JSON.stringify(detail.item),
     });
     this.deps.onChanged?.();
