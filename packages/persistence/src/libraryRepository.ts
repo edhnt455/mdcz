@@ -518,10 +518,14 @@ export class LibraryRepository {
     return await this.getEntryById(file.itemId);
   }
 
-  async getEntryByFileId(fileId: string): Promise<LibraryEntryRecord> {
+  getFileById(fileId: string): LibraryItemFileRow {
     const file = this.database.db.select().from(libraryItemFiles).where(eq(libraryItemFiles.id, fileId)).get();
     if (!file) throw new Error(`未找到媒体库文件：${fileId}`);
-    return this.getEntryById(file.itemId);
+    return file;
+  }
+
+  async getEntryByFileId(fileId: string): Promise<LibraryEntryRecord> {
+    return this.getEntryById(this.getFileById(fileId).itemId);
   }
 
   removeFile(fileId: string): void {

@@ -833,7 +833,7 @@ function LibraryFileActions({ entry, file, onRemoveFile, onRelinkFile }: Library
                 }
               }}
             >
-              {t.library.confirm}
+              {action === "remove" ? (busy ? t.library.removing : t.library.confirmRemove) : t.library.confirm}
             </Button>
           </DialogFooter>
         </DialogContent>

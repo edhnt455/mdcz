@@ -67,7 +67,7 @@ test("batch removal acts on the selected movies the list still shows", async () 
   const multiSelect = screen.getByRole("button", { name: "多选" });
   const selectAll = screen.getByRole("checkbox", { name: "全选已加载" });
   const selectAvailable = screen.getByRole("checkbox", { name: "选择 AVAILABLE" });
-  const removeSelected = screen.getByRole("button", { name: "从媒体库移除", exact: true }).last();
+  const removeSelected = screen.getByRole("button", { name: "深度删除", exact: true }).last();
 
   await expect.element(selectAvailable).not.toBeInTheDocument();
   await expect.element(selectAll).not.toBeInTheDocument();
@@ -141,12 +141,16 @@ test("a health filter offers to ignore its movies, and the ignored view only res
   expect(browse.onRestore).toHaveBeenCalledOnce();
 });
 
-test("the removal dialog totals the selection and says files stay on disk", async () => {
+test("the deletion dialog totals the selection and warns about cloud and disk source deletion", async () => {
   const entry = { ...createEntry("ONE", "available"), fileRefs: [{}, {}], assets: [{}] } as unknown as LibraryEntryDto;
   const screen = await render(<LibraryDeleteDialog entries={[entry, entry]} onCancel={vi.fn()} onConfirm={vi.fn()} />);
 
   await expect
-    .element(screen.getByText("将移除 2 部影片的 4 个视频文件记录和 2 个资源记录，磁盘上的文件不会被删除。"))
+    .element(
+      screen.getByText(
+        "将深度删除 2 部影片的 4 个媒体文件，并移除 2 个资源记录。STRM 将同步删除 115 源文件及本地 STRM；其他媒体将删除硬盘上的媒体文件及已记录的保留源文件。此操作不可撤销。",
+      ),
+    )
     .toBeVisible();
 });
 

@@ -65,6 +65,7 @@ export class PendingDeletionService {
       onProgress?.(message);
     };
     let release: (() => void) | undefined;
+    let releaseCloud: (() => void) | undefined;
     report("开始处理，115 网络请求总时限 120 秒");
     try {
       const state = await this.deps.persistence.getState();
@@ -86,7 +87,12 @@ export class PendingDeletionService {
         onProgress: report,
       });
       const file = repository.findFile(itemPath);
-      const recorded = file?.strmSourceJson ? (JSON.parse(file.strmSourceJson) as StrmSourceSnapshot) : null;
+      const binding = file ? readStrmBinding(repository, file.id) : undefined;
+      const recorded = file?.strmSourceJson
+        ? (JSON.parse(file.strmSourceJson) as StrmSourceSnapshot)
+        : binding?.connectionId === connection.id && binding.fileUpdatedAt === file?.updatedAt.getTime()
+          ? binding.source
+          : null;
       const sourcePath = recorded?.sourcePath ?? itemPath;
       release = mediaPathOwnership.acquireAll([itemPath, filesystemPathKey(sourcePath)]);
       report(`核验 STRM：${itemPath}`);
@@ -139,7 +145,6 @@ export class PendingDeletionService {
         if (!resourceIdentity?.startsWith(`${expected.origin}${expected.pathname}?pickcode=`))
           throw new Error("STRM 未指向已配置的 MoviePilot 115 文件");
         const pickcode = new URL(resourceIdentity).searchParams.get("pickcode") ?? "";
-        const binding = file ? readStrmBinding(repository, file.id) : undefined;
         let candidates: { target: StrmCloudBinding["target"]; ancestors: StrmCloudBinding["ancestors"] }[];
         if (
           binding?.connectionId === connection.id &&
@@ -196,6 +201,10 @@ export class PendingDeletionService {
         snapshot.cloud.source.sourcePath !== filesystemPathKey(sourcePath)
       )
         throw new Error("删除任务的来源关联已变化，需要检查");
+      releaseCloud = mediaPathOwnership.acquireAll([
+        `moviepilot:${connection.id}:${snapshot.cloud.target.fileid}`,
+        `strm:${snapshot.cloud.source.resourceIdentity}`,
+      ]);
       await assertActive();
       if (snapshot.fileId && (file?.id !== snapshot.fileId || file.updatedAt.getTime() !== snapshot.fileUpdatedAt))
         throw new Error("已入库文件记录已变化，需要检查");
@@ -254,6 +263,7 @@ export class PendingDeletionService {
       );
       throw error;
     } finally {
+      releaseCloud?.();
       release?.();
     }
   }

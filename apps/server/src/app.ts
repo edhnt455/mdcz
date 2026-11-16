@@ -42,6 +42,7 @@ import { BrowserService } from "./services/browserService";
 import { ServerConfigService } from "./services/configService";
 import { DeletionService } from "./services/deletionService";
 import { EmbyDeletionService } from "./services/embyDeletionService";
+import { LibraryDeletionService } from "./services/libraryDeletionService";
 import { LibraryEditService } from "./services/libraryEditService";
 import { LibraryService } from "./services/libraryService";
 import { LibraryWatchService } from "./services/libraryWatchService";
@@ -159,8 +160,28 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       aggregationService: options.resources?.aggregationService,
       prepareScrapeItem: options.resources?.prepareScrapeItem,
     });
+  const invalidateLibrary = () => {
+    library.invalidateAvailability();
+    taskEvents.invalidate("pending", "library");
+  };
+  const pendingDeletion = new PendingDeletionService({
+    persistence,
+    config,
+    libraries,
+    logger: runtimeLogs.getLogger("PendingDeletion"),
+    isBusy: () => maintenance.isBusy,
+    invalidate: invalidateLibrary,
+  });
+  const libraryDeletion = new LibraryDeletionService(
+    persistence,
+    () => config.get(),
+    pendingDeletion,
+    taskGate,
+    invalidateLibrary,
+  );
   const library =
-    options.services?.library ?? new LibraryService(persistence, mediaRoots, libraries, () => config.get(), taskGate);
+    options.services?.library ??
+    new LibraryService(persistence, mediaRoots, libraries, () => config.get(), libraryDeletion);
   const maintenanceRuntime =
     options.resources?.maintenanceRuntime ??
     createServerMaintenanceRuntime({
@@ -232,17 +253,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       logger: runtimeLogs.getLogger("Automation"),
     });
   scrape.onPending = (count) => automation.notePending(count);
-  const pendingDeletion = new PendingDeletionService({
-    persistence,
-    config,
-    libraries,
-    logger: runtimeLogs.getLogger("PendingDeletion"),
-    isBusy: () => maintenance.isBusy,
-    invalidate: () => {
-      library.invalidateAvailability();
-      taskEvents.invalidate("pending", "library");
-    },
-  });
   const pending =
     options.services?.pending ??
     new PendingService({

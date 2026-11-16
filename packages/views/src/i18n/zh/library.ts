@@ -84,7 +84,7 @@ export const library: Messages["library"] = {
   fileActions: "文件操作",
   scrapeInfo: "刮削信息",
   openFolder: "打开所在目录",
-  removeFromLibrary: "从媒体库移除",
+  removeFromLibrary: "深度删除",
   multiSelect: "多选",
   selectEntry: (id: string) => `选择 ${id}`,
   selectAllLoaded: "全选已加载",
@@ -98,11 +98,11 @@ export const library: Messages["library"] = {
   },
 
   // Delete dialog
-  removeDialogTitle: "从媒体库移除",
+  removeDialogTitle: "深度删除",
   removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
-    `将移除 ${movieCount} 部影片的 ${fileCount} 个视频文件记录和 ${assetCount} 个资源记录，磁盘上的文件不会被删除。`,
-  removing: "正在移除...",
-  confirmRemove: "确认移除",
+    `将深度删除 ${movieCount} 部影片的 ${fileCount} 个媒体文件，并移除 ${assetCount} 个资源记录。STRM 将同步删除 115 源文件及本地 STRM；其他媒体将删除硬盘上的媒体文件及已记录的保留源文件。此操作不可撤销。`,
+  removing: "正在深度删除...",
+  confirmRemove: "确认深度删除",
 
   // File rows
   fileStatus: {
@@ -113,11 +113,12 @@ export const library: Messages["library"] = {
   copyPath: "复制路径",
   openLocation: "打开位置",
   relink: "重新关联",
-  removeFile: "从媒体库移除",
+  removeFile: "深度删除",
 
   // Relink / remove file dialog
   relinkFileTitle: "重新关联文件",
-  removeFileDescription: "将从媒体库移除该文件记录，其他分盘文件仍会保留。",
+  removeFileDescription:
+    "将深度删除该文件：STRM 会同步删除 115 源文件及本地 STRM；其他媒体会删除硬盘上的媒体文件及已记录的保留源文件。其他分盘文件仍会保留。此操作不可撤销。",
   mediaFolderLabel: (name: string) => `所在媒体目录：${name}`,
   newRelativePath: "新相对路径",
   confirm: "确认",

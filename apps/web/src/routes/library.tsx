@@ -118,11 +118,12 @@ export function LibraryPage() {
     onSuccess: async () => {
       toast.success(t.web.removedFromLibrary);
       setDeleteTargets([]);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
     },
     onError: (error) => {
       toast.error(toErrorMessage(error));
+      setDeleteTargets([]);
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.library.all }),
   });
   const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
   const availabilityQs = useQueries({
@@ -206,8 +207,12 @@ export function LibraryPage() {
         onEditEntries={(entries) => void openEdit(entries)}
         onEditAll={() => openEdit()}
         onRemoveFile={async (input) => {
-          await api.library.removeFile(input);
-          await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+          try {
+            await api.library.removeFile(input);
+            toast.success(t.web.removedFromLibrary);
+          } finally {
+            await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+          }
         }}
         onRelinkFile={async (input) => {
           await api.library.relink(input);

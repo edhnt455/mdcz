@@ -84,7 +84,7 @@ export const library = {
   fileActions: "File actions",
   scrapeInfo: "Scrape Info",
   openFolder: "Open folder",
-  removeFromLibrary: "Remove from library",
+  removeFromLibrary: "Deep delete",
   multiSelect: "Multi-select",
   selectEntry: (id: string) => `Select ${id}`,
   selectAllLoaded: "Select all loaded",
@@ -98,11 +98,11 @@ export const library = {
   },
 
   // Delete dialog
-  removeDialogTitle: "Remove from Library",
+  removeDialogTitle: "Deep delete",
   removeDialogDescription: (movieCount: number, fileCount: number, assetCount: number) =>
-    `Will remove ${fileCount} video file record(s) and ${assetCount} asset record(s) for ${movieCount} movie(s). Files on disk are not deleted.`,
-  removing: "Removing…",
-  confirmRemove: "Confirm Remove",
+    `Will deep delete ${fileCount} media file(s) for ${movieCount} movie(s) and remove ${assetCount} asset record(s). STRM deletion also deletes the 115 source and local STRM files; other media deletion removes the disk media files and recorded retained sources. This cannot be undone.`,
+  removing: "Deep deleting…",
+  confirmRemove: "Confirm deep delete",
 
   // File rows
   fileStatus: {
@@ -113,11 +113,12 @@ export const library = {
   copyPath: "Copy path",
   openLocation: "Open location",
   relink: "Relink",
-  removeFile: "Remove from library",
+  removeFile: "Deep delete",
 
   // Relink / remove file dialog
   relinkFileTitle: "Relink File",
-  removeFileDescription: "This file record will be removed from the library; other disc parts will be kept.",
+  removeFileDescription:
+    "Deep delete this file: STRM deletion also deletes the 115 source and local STRM files; other media deletion removes the disk media file and its recorded retained source. Other disc parts will be kept. This cannot be undone.",
   mediaFolderLabel: (name: string) => `Media root: ${name}`,
   newRelativePath: "New relative path",
   confirm: "Confirm",

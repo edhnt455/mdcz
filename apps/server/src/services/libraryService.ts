@@ -9,7 +9,6 @@ import {
   toLibraryEntryDto,
   toLibraryEntryFilter,
 } from "@mdcz/runtime/library";
-import type { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import type { Configuration } from "@mdcz/shared/config";
 import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
 import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
@@ -28,6 +27,7 @@ import type {
   OverviewSummaryResponse,
 } from "@mdcz/shared/serverDtos";
 import type { ActorProfile } from "@mdcz/shared/types";
+import type { LibraryDeletionService } from "./libraryDeletionService";
 import type { MediaRootService } from "./mediaRootService";
 import type { ServerPersistenceService } from "./persistenceService";
 
@@ -43,7 +43,7 @@ export class LibraryService {
     private readonly mediaRoots: MediaRootService,
     private readonly libraries: MediaLibraryService,
     private readonly getConfiguration: () => Promise<Configuration>,
-    private readonly taskGate: LibraryTaskGate,
+    private readonly deletion: LibraryDeletionService,
   ) {}
 
   async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
@@ -70,7 +70,7 @@ export class LibraryService {
   }
 
   async removeFile(input: { fileId: string }): Promise<{ success: true }> {
-    (await this.persistence.getState()).repositories.library.removeFile(input.fileId);
+    await this.deletion.delete(input);
     return { success: true };
   }
 
@@ -140,9 +140,7 @@ export class LibraryService {
   }
 
   async deleteEntries(ids: readonly string[]): Promise<{ success: true }> {
-    const state = await this.persistence.getState();
-    this.taskGate.assertAvailable();
-    state.repositories.library.deleteEntries(ids);
+    await this.deletion.delete({ ids });
     return { success: true };
   }
 

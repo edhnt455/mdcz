@@ -162,7 +162,7 @@ it("edits each locked NFO and its record atomically, survives reattachment, and 
   expect(excluded.body).toContain("已在 NFO 设置中禁用");
 });
 
-it("ignores and restores scoped health issues and removes a batch without deleting files", async () => {
+it("ignores and restores scoped health issues and deep deletes a batch", async () => {
   const { fastify, services } = await createTestServer();
   const token = await loginAsAdmin(fastify);
   const headers = { authorization: `Bearer ${token}` };
@@ -208,6 +208,6 @@ it("ignores and restores scoped health issues and removes a batch without deleti
   await post("ignoreHealth", { libraryId, health: "noNfo" });
   expect((await post("delete", { ids: ["First", "Second", "already-gone", "First"] })).statusCode).toBe(200);
   expect(await summary()).toMatchObject({ total: 0, ignored: 0 });
-  expect(await readFile(join(directory, "First.mp4"), "utf8")).toBe("First");
-  expect(await readFile(join(directory, "Second.mp4"), "utf8")).toBe("Second");
+  await expect(readFile(join(directory, "First.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(readFile(join(directory, "Second.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
 });

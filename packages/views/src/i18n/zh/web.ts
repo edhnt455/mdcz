@@ -29,7 +29,7 @@ export const web: Messages["web"] = {
   browserCannotOpenFolder: "浏览器无法打开服务器文件夹，请复制上方服务器路径。",
   copyServerPath: "复制服务器路径",
 
-  removedFromLibrary: "已从媒体库移除",
+  removedFromLibrary: "深度删除完成",
 
   openWorkbench: "打开工作台",
   jellyfinInfoMissing: "仅补全缺失的演员简介与基础资料。",

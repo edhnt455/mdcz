@@ -11,9 +11,11 @@ import {
   runMigrations,
 } from "@mdcz/persistence";
 import type { MediaLibrary } from "@mdcz/runtime/library";
+import { LibraryTaskGate } from "@mdcz/runtime/tasks";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
 import { afterEach, expect, test, vi } from "vitest";
+import { LibraryDeletionService } from "./libraryDeletionService";
 import { PendingDeletionService } from "./pendingDeletionService";
 import type { ServerPersistenceService } from "./persistenceService";
 
@@ -141,13 +143,26 @@ async function fixture() {
     logger,
     repository: new EmbyDeletionRepository(database),
     restart: () => new PendingDeletionService(deps),
+    libraryDeletion: () =>
+      new LibraryDeletionService(
+        deps.persistence,
+        deps.config.get,
+        new PendingDeletionService(deps),
+        new LibraryTaskGate(),
+        deps.invalidate,
+      ),
     setBusy: () => {
       busy = true;
     },
   };
 }
 
-test.each([false, true])("deletes verified 115, STRM and pending records (published: %s)", async (published) => {
+test.each([
+  "pending",
+  "file",
+  "entries",
+] as const)("deep deletes verified 115, local STRM and records via %s", async (mode) => {
+  const published = mode !== "pending";
   const f = await fixture();
   const service = f.restart();
   const linkPath = path.join(f.link, "ABC-123.strm");
@@ -206,12 +221,28 @@ test.each([false, true])("deletes verified 115, STRM and pending records (publis
     f.remote.files.push({ ...f.remote.files[0], fileid: "second", path: "/AV/second.mp4", pickcode: "second" });
     f.remote.files.push({ ...f.remote.files[0], fileid: "stale", path: "/AV/stale.mp4", pickcode: "stale" });
   }
+  if (mode === "entries") f.pending.delete([f.id]);
   f.remote.beforeDelete = async () => {
+    if (mode === "entries") f.id = f.pending.list()[0].id;
     expect(await readFile(f.sourcePath, "utf8")).toBe(f.content);
     expect(f.pending.get(f.id).deletionJson).toContain("deleting_cloud");
     f.remote.verifyFails = true;
   };
-  await service.delete(f.id);
+  const remove = async () => {
+    if (mode === "pending") await service.delete(f.id);
+    else if (mode === "file") await f.libraryDeletion().delete({ fileId: "published" });
+    else await f.libraryDeletion().delete({ ids: [(await f.library.getEntryByFileId("published")).id] });
+  };
+  if (published) {
+    f.remote.reject = true;
+    await expect(remove()).rejects.toThrow("已删除 0 个文件");
+    expect(f.pending.get(f.id).deletionJson).toContain("deleting_cloud");
+    expect((await f.library.getEntryByFileId("published")).files).toHaveLength(1);
+    expect(await readFile(linkPath, "utf8")).toBe(f.content);
+    f.remote.reject = false;
+    f.logger.error.mockClear();
+  }
+  await remove();
   expect(String(f.fetcher.mock.calls.at(-1)?.[0])).toContain("/storage/delete");
   f.remote.verifyFails = false;
   expect(f.remote.deleted).toEqual(["115-file"]);
