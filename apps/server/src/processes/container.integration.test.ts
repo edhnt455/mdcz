@@ -62,16 +62,13 @@ describe.skipIf(process.platform === "win32")("single-container process isolatio
     const latestPid = (role: string) =>
       Number([...logs.matchAll(new RegExp(`MDCz ${role} 进程已启动 pid=(\\d+)`, "gu"))].at(-1)?.[1]);
     let token: string | undefined;
-    const rpc = async (path: string, input?: unknown, mutation = false) => {
-      const response = await fetch(
-        `${base}/trpc/${path}${!mutation && input !== undefined ? `?input=${encodeURIComponent(JSON.stringify(input))}` : ""}`,
-        {
-          method: mutation ? "POST" : "GET",
-          headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-          body: mutation ? JSON.stringify(input ?? null) : undefined,
-          signal: AbortSignal.timeout(3000),
-        },
-      );
+    const rpc = async (path: string, input?: unknown) => {
+      const response = await fetch(`${base}/trpc/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(input),
+        signal: AbortSignal.timeout(3000),
+      });
       const result = (await response.json()) as { result?: { data: unknown }; error?: unknown };
       if (!response.ok || result.error) throw new Error(`RPC ${path} failed: ${JSON.stringify(result)}`);
       return result.result?.data;
@@ -79,14 +76,16 @@ describe.skipIf(process.platform === "win32")("single-container process isolatio
     try {
       await wait(async () => (await fetch(`${base}/ready`)).ok);
       expect(await (await fetch(`${base}/`)).text()).toContain("MDCz test");
-      const login = (await rpc("auth.login", { password: "test-password" }, true)) as { token: string };
+      expect(await rpc("auth.status")).toMatchObject({ authenticated: false });
+      const login = (await rpc("auth.login", { password: "test-password" })) as { token: string };
       token = login.token;
+      expect(await rpc("auth.status")).toMatchObject({ authenticated: true });
       const invalid = await fetch(
         `${base}/trpc/activity.list?input=${encodeURIComponent(JSON.stringify({ limit: -1 }))}`,
         { headers: { authorization: `Bearer ${token}` } },
       );
       expect(invalid.status).toBe(400);
-      const secret = (await rpc("embyDeletion.rotateSecret", undefined, true)) as { token: string };
+      const secret = (await rpc("embyDeletion.rotateSecret")) as { token: string };
       const webhook = (id: string) =>
         fetch(`${base}/api/webhooks/emby/${secret.token}`, {
           method: "POST",
@@ -102,6 +101,7 @@ describe.skipIf(process.platform === "win32")("single-container process isolatio
       stoppedWorker = latestPid("worker");
       expect(stoppedWorker).toBeGreaterThan(0);
       process.kill(stoppedWorker, "SIGSTOP");
+      expect(await rpc("auth.status")).toMatchObject({ authenticated: true });
       const streamController = new AbortController();
       const stream = await fetch(`${base}/events/tasks`, {
         headers: { authorization: `Bearer ${token}` },
@@ -143,6 +143,7 @@ describe.skipIf(process.platform === "win32")("single-container process isolatio
       stoppedApi = undefined;
       process.kill(apiPid, "SIGKILL");
       await wait(async () => latestPid("api") !== apiPid && (await fetch(`${base}/ready`)).ok);
+      expect(await rpc("auth.status")).toMatchObject({ authenticated: true });
       expect(await rpc("library.list", {})).toMatchObject({ entries: [] });
       process.kill(stoppedWorker, "SIGKILL");
       stoppedWorker = undefined;
@@ -154,6 +155,8 @@ describe.skipIf(process.platform === "win32")("single-container process isolatio
       expect(await rpc("deletions.list")).toMatchObject({
         jobs: [expect.objectContaining({ status: "ignored" }), expect.objectContaining({ status: "ignored" })],
       });
+      expect(await rpc("auth.logout")).toMatchObject({ authenticated: false });
+      expect(await rpc("auth.status")).toMatchObject({ authenticated: false });
       const exited = once(child, "exit");
       child.kill("SIGTERM");
       const [code] = await exited;

@@ -4,8 +4,9 @@ import { basename, extname, join } from "node:path";
 import type { DeletionJob } from "@mdcz/shared/deletions";
 import { embyDeletionNotificationSchema } from "@mdcz/shared/embyDeletion";
 import { activityListInputSchema, scrapeTaskControlInputSchema } from "@mdcz/shared/serverDtos";
-import { TRPCError } from "@trpc/server";
+import { type AnyTRPCProcedure, TRPCError } from "@trpc/server";
 import { buildServer } from "../app";
+import { appRouter } from "../routers";
 import { ServerConfigService } from "../services/configService";
 import type { TaskResource } from "../taskEvents";
 import { proxyHttp } from "./httpProxy";
@@ -78,7 +79,9 @@ export const startApiProcess = async (directory: string, inboxPath: string): Pro
     services: { config },
     isDeletionRunning: (source, id) =>
       (source === "emby" ? snapshot.processingDeletions : snapshot.processingDuplicates).includes(id),
-    dispatch: async ({ path, type, input, token }) => {
+    dispatch: async ({ path, type, getRawInput, token }) => {
+      const procedure = Reflect.get(appRouter._def.procedures, path) as AnyTRPCProcedure;
+      const input = procedure._def.inputs.length ? await getRawInput() : undefined;
       if (type === "mutation" || (!localQueries.has(path) && !(path in snapshot.queries))) {
         const data = await callWorker(join(directory, "worker.sock"), { path, input, token });
         return { handled: true, data };

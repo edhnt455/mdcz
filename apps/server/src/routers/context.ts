@@ -11,7 +11,7 @@ export interface RouterContext {
   dispatch?: (input: {
     path: string;
     type: string;
-    input: unknown;
+    getRawInput: () => Promise<unknown>;
     token?: string;
   }) => Promise<{ handled: false } | { handled: true; data: unknown }>;
 }
@@ -34,7 +34,7 @@ const router = initTRPC.context<RouterContext>().create({
 export const t = {
   ...router,
   procedure: router.procedure.use(async ({ ctx, path, type, getRawInput, next }) => {
-    const result = await ctx.dispatch?.({ path, type, input: await getRawInput(), token: ctx.token });
+    const result = await ctx.dispatch?.({ path, type, getRawInput, token: ctx.token });
     if (result?.handled)
       return { ok: true, data: result.data, marker: "middlewareMarker" as Awaited<ReturnType<typeof next>>["marker"] };
     return next();
