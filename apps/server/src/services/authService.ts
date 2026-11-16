@@ -38,6 +38,7 @@ export class AuthService {
     private readonly paths: Pick<ServerRuntimePaths, "configDir">,
     private readonly persistence: Pick<ServerPersistenceService, "getState">,
     private readonly environmentPassword = process.env.MDCZ_ADMIN_PASSWORD || undefined,
+    private readonly readOnly = false,
   ) {}
 
   get environmentPasswordConfigured(): boolean {
@@ -153,6 +154,11 @@ export class AuthService {
     if (!token || token.startsWith(API_KEY_PREFIX)) return false;
     const tokenHash = hashSecret(token);
     const now = Date.now();
+    if (this.readOnly)
+      return (await this.persistence.getState()).repositories.credentials.hasSession(
+        tokenHash,
+        new Date(now - SESSION_IDLE_MS),
+      );
     const touched = this.#touchedSessions.get(tokenHash);
     if (touched !== undefined && now - touched < SESSION_TOUCH_INTERVAL_MS) return true;
     const valid = (await this.persistence.getState()).repositories.credentials.touchSession(

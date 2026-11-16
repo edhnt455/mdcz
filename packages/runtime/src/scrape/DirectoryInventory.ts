@@ -1,6 +1,7 @@
 import type { Dirent, Stats } from "node:fs";
 import fs from "node:fs/promises";
 import { basename, dirname, join, parse } from "node:path";
+import { setImmediate } from "node:timers/promises";
 import { canonicalPath, filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type { Configuration } from "@mdcz/shared/config";
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
@@ -21,6 +22,7 @@ export class DirectoryInventory {
   }
   private readonly directoryPaths = new Map<string, Promise<string>>();
   private readonly directories = new Map<string, Promise<readonly Dirent[]>>();
+  private readonly media = new Map<string, Promise<{ entries: readonly Dirent[]; names: ReadonlySet<string> }>>();
   private readonly fileObservations = new Map<string, Promise<{ entryPath: string; stats: Stats }>>();
   private readonly nfos = new Map<string, Promise<ParsedNfoSnapshot | undefined>>();
   private readonly nfoContents = new Map<string, Promise<string | undefined>>();
@@ -178,28 +180,60 @@ export class DirectoryInventory {
    * files. Names are filtered before any stat because each stat is a round trip on network mounts.
    */
   async files(directory: string, include: (name: string) => boolean = () => true): Promise<readonly Dirent[]> {
-    const entries = await Promise.all(
-      (await this.entries(directory)).map(async (entry) => {
-        if (!include(entry.name)) return undefined;
-        if (entry.isFile()) return entry;
-        if (!entry.isSymbolicLink()) return undefined;
-        try {
-          return (await this.stats(join(directory, entry.name))).isFile() ? entry : undefined;
-        } catch (error) {
-          if (["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined;
-          throw error;
-        }
-      }),
-    );
-    return entries.filter((entry) => entry !== undefined);
+    const listing = await this.entries(directory);
+    const entries: Dirent[] = [];
+    let yieldedAt = performance.now();
+    for (let offset = 0; offset < listing.length; offset += 16) {
+      if (performance.now() - yieldedAt >= 8) {
+        await setImmediate();
+        yieldedAt = performance.now();
+      }
+      const batch = await Promise.all(
+        listing.slice(offset, offset + 16).map(async (entry) => {
+          if (!include(entry.name)) return undefined;
+          if (entry.isFile()) return entry;
+          if (!entry.isSymbolicLink()) return undefined;
+          try {
+            return (await this.stats(join(directory, entry.name))).isFile() ? entry : undefined;
+          } catch (error) {
+            if (["ENOENT", "ENOTDIR", "ELOOP"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined;
+            throw error;
+          }
+        }),
+      );
+      entries.push(...batch.filter((entry) => entry !== undefined));
+    }
+    return entries;
   }
 
   async mediaEntries(directory: string): Promise<readonly Dirent[]> {
-    const videos = await this.files(directory, isPrimaryVideoFile);
-    const baseKey = (entry: Dirent) => filesystemPathKey(join(directory, parse(entry.name).name));
-    const isStrm = (entry: Dirent) => parse(entry.name).ext.toLowerCase() === ".strm";
-    return videos.filter(
-      (entry) => !isStrm(entry) || !videos.some((sibling) => !isStrm(sibling) && baseKey(sibling) === baseKey(entry)),
-    );
+    return (await this.mediaIndex(directory)).entries;
+  }
+
+  async hasMediaEntry(path: string): Promise<boolean> {
+    return (await this.mediaIndex(dirname(path))).names.has(basename(path));
+  }
+
+  private async mediaIndex(directory: string) {
+    const canonical = await this.canonicalDirectory(directory);
+    const key = filesystemPathKey(canonical);
+    let pending = this.media.get(key);
+    if (!pending) {
+      pending = this.files(canonical, isPrimaryVideoFile).then((videos) => {
+        const originals = new Set(
+          videos
+            .filter((entry) => parse(entry.name).ext.toLowerCase() !== ".strm")
+            .map((entry) => filesystemPathKey(join(canonical, parse(entry.name).name))),
+        );
+        const entries = videos.filter(
+          (entry) =>
+            parse(entry.name).ext.toLowerCase() !== ".strm" ||
+            !originals.has(filesystemPathKey(join(canonical, parse(entry.name).name))),
+        );
+        return { entries, names: new Set(entries.map((entry) => entry.name)) };
+      });
+      this.media.set(key, pending);
+    }
+    return pending;
   }
 }

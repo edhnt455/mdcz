@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempDirectory } from "../../../tests/harness/tempDirectory";
@@ -34,7 +34,7 @@ describe("defaultWebStaticDir", () => {
       await writeFile(join(webRoot, "index.html"), "<!doctype html>", "utf8");
       process.chdir(directory.path);
 
-      expect(defaultWebStaticDir()).toBe(webRoot);
+      expect(await realpath(defaultWebStaticDir())).toBe(await realpath(webRoot));
     } finally {
       process.chdir(originalCwd);
       await directory.cleanup();

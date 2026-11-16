@@ -91,6 +91,11 @@ export class RuntimeLogService {
     return { logs: [...this.entries] };
   }
 
+  adoptLogs(logs: LogEntryDto[], taskLogsClearedAt: string | null): void {
+    this.entries.splice(0, this.entries.length, ...logs.slice(-this.maxEntries));
+    this.taskLogsClearedAt = taskLogsClearedAt;
+  }
+
   clear(): number {
     const count = this.entries.length;
     this.entries.length = 0;

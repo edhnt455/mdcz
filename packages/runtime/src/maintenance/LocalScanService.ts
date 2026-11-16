@@ -1,4 +1,4 @@
-import { basename, dirname, extname, join, parse, resolve } from "node:path";
+import { dirname, extname, join, parse, resolve } from "node:path";
 import { deterministicMediaRootId, type MediaRoot, toRootRelativePath } from "@mdcz/media-store";
 import { buildMovieAssetFileNames, isMovieNfoBaseName } from "@mdcz/shared/assetNaming";
 import type { Configuration } from "@mdcz/shared/config";
@@ -233,8 +233,7 @@ export class LocalScanService {
 
       if (
         isGeneratedSidecarVideo(videoPath) ||
-        (extname(videoPath).toLowerCase() === ".strm" &&
-          !(await inventory.mediaEntries(dirname(videoPath))).some((entry) => entry.name === basename(videoPath)))
+        (extname(videoPath).toLowerCase() === ".strm" && !(await inventory.hasMediaEntry(videoPath)))
       ) {
         throw new Error(`无法单独维护自动生成的附属视频文件：${videoPath}`);
       }

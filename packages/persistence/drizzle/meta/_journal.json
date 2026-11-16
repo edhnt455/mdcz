@@ -141,6 +141,20 @@
       "when": 1794700800000,
       "tag": "0019_simplify_deletion_confirmation",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794787200000,
+      "tag": "0020_responsive_library_reads",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794787200001,
+      "tag": "0021_webhook_receipts",
+      "breakpoints": true
     }
   ]
 }

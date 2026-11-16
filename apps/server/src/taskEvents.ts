@@ -50,7 +50,7 @@ export class TaskEventBus {
     this.emit({ kind: "person-sync", job });
   }
 
-  private emit(notification: TaskNotificationDto): void {
+  emit(notification: TaskNotificationDto): void {
     for (const listener of this.#listeners) listener(notification);
   }
 

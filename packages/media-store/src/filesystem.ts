@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Dirent, Stats } from "node:fs";
 import { copyFile, stat as fsStat, mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setImmediate } from "node:timers/promises";
 
 import { canonicalPath } from "./entryIdentity";
 import { toStorageError } from "./errors";
@@ -175,6 +176,7 @@ export const walkFiles = async (
     });
   };
   const queue: Array<() => Promise<void>> = [];
+  let lastYield = performance.now();
   const visit = async (absolutePath: string, ancestors: ReadonlySet<string>, isRoot: boolean) => {
     // Skip excluded names before I/O, then reject aliases of excluded targets.
     if (
@@ -196,6 +198,10 @@ export const walkFiles = async (
     signal?.throwIfAborted();
     directories += 1;
     for (const entry of entries) {
+      if (performance.now() - lastYield >= 8) {
+        await setImmediate();
+        lastYield = performance.now();
+      }
       signal?.throwIfAborted();
       progress();
       const entryAbsolutePath = path.join(absolutePath, entry.name);

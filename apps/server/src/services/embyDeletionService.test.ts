@@ -402,15 +402,24 @@ describe("Emby deletion sync", () => {
     const f = await fixture();
     await f.addMovie();
     await f.service.assertToken(f.token);
-    await f.service.accept(f.notification());
+    const payload = f.notification();
+    const receipt = { id: "durable-receipt", receivedAt: Date.now() - 5000 };
+    const accepted = await f.service.accept(payload, receipt);
+    expect(await f.service.accept(payload, { ...receipt, id: "second-delivery" })).toMatchObject({
+      id: accepted.id,
+      duplicate: true,
+    });
     await f.advance();
     f.reopen();
     const restarted = f.createService();
+    expect(await restarted.accept(payload, receipt)).toMatchObject({ id: accepted.id, duplicate: true });
     const next = await restarted.rotateSecret();
     await expect(restarted.assertToken(f.token)).rejects.toThrow("Emby Webhook 凭证无效");
     await restarted.assertToken(next.token);
     await f.advance(restarted);
     expect(f.count("library_items")).toBe(0);
+    expect(await restarted.accept(payload, receipt)).toMatchObject({ id: accepted.id, duplicate: true });
+    expect(f.events()).toHaveLength(1);
     expect(JSON.stringify(await restarted.status())).not.toContain(next.token);
   });
 

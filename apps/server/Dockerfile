@@ -43,7 +43,7 @@ LABEL org.opencontainers.image.version=$MDCZ_RELEASE_VERSION \
       org.opencontainers.image.revision=$MDCZ_REVISION
 WORKDIR /app
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-wqy-zenhei gosu \
+    && apt-get install -y --no-install-recommends fonts-wqy-zenhei gosu tini \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=deps /app /app
 COPY docker/server-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -59,5 +59,5 @@ EXPOSE 3838
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD node -e 'fetch("http://127.0.0.1:" + process.env.PORT + "/ready", {signal: AbortSignal.timeout(4000)}).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
 VOLUME /data
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "docker-entrypoint.sh"]
 CMD ["node", "server.js"]

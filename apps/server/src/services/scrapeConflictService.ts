@@ -48,6 +48,10 @@ export class ScrapeConflictService {
     return this.running.has(itemId);
   }
 
+  runningIds(): string[] {
+    return [...this.running];
+  }
+
   constructor(
     private readonly deps: {
       persistence: Pick<ServerPersistenceService, "getState">;

@@ -33,6 +33,7 @@ import { writeTaskEventsStream } from "./http/sse";
 import { defaultWebStaticDir, registerStaticWeb } from "./http/staticWeb";
 import { createServerMaintenanceRuntime } from "./maintenanceRuntimeFactory";
 import { appRouter } from "./routers";
+import type { RouterContext } from "./routers/context";
 import type { ServerServices } from "./services";
 import { ActivityService } from "./services/activityService";
 import { AuthenticationError, AuthService } from "./services/authService";
@@ -77,6 +78,9 @@ export interface BuildServerOptions {
   services?: Partial<ServerServices>;
   resources?: ServerResourceOverrides;
   webStaticDir?: string | false;
+  readOnly?: boolean;
+  dispatch?: RouterContext["dispatch"];
+  isDeletionRunning?: (source: "emby" | "duplicate", id: string) => boolean;
 }
 
 export interface ServerApp {
@@ -86,11 +90,13 @@ export interface ServerApp {
 
 export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const config = options.services?.config ?? new ServerConfigService();
-  const persistence = options.services?.persistence ?? new ServerPersistenceService(config.runtimePaths);
+  const persistence =
+    options.services?.persistence ?? new ServerPersistenceService(config.runtimePaths, options.readOnly);
   const taskEvents = options.services?.taskEvents ?? createTaskEventBus();
   const mediaRoots = options.services?.mediaRoots ?? new MediaRootService(persistence);
   const runtimeLogs =
-    options.services?.runtimeLogs ?? new RuntimeLogService(1000, taskEvents, config.runtimePaths.logDir);
+    options.services?.runtimeLogs ??
+    new RuntimeLogService(1000, taskEvents, options.readOnly ? undefined : config.runtimePaths.logDir);
   const libraries =
     options.services?.libraries ??
     new MediaLibraryService(
@@ -196,6 +202,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     });
   let librarySettings = JSON.stringify([]);
   const unsubscribeLibraryConfig = config.onChange(({ configuration }) => {
+    if (options.readOnly) return;
     const next = JSON.stringify(configuration.libraries);
     if (next === librarySettings) return;
     librarySettings = next;
@@ -269,10 +276,12 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       config,
     });
   const services: ServerServices = {
-    deletions: options.services?.deletions ?? new DeletionService({ persistence, config, emby: embyDeletion, scrape }),
+    deletions:
+      options.services?.deletions ??
+      new DeletionService({ persistence, config, emby: embyDeletion, scrape, isRunning: options.isDeletionRunning }),
     activity,
     automation,
-    auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence),
+    auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence, undefined, options.readOnly),
     browser: options.services?.browser ?? new BrowserService(mediaRoots),
     embyDeletion,
     config,
@@ -326,6 +335,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
 
   fastify.addHook("onReady", async () => {
     await services.persistence.initialize();
+    if (options.readOnly) return;
     await services.config.load();
     // Settings that moved into libraries become the first library before the configuration is saved without them.
     const legacy = services.config.takeLegacyConversion();
@@ -351,6 +361,14 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   fastify.addHook("onClose", async () => {
     if (closed) return;
     closed = true;
+    if (options.readOnly) {
+      unsubscribeJavdbConfig();
+      unsubscribePersonConfig();
+      unsubscribeLibraryConfig();
+      await services.persistence.close();
+      await runtimeLogs.close();
+      return;
+    }
     services.automation.close();
     await services.pending.close();
     unsubscribeJavdbConfig();
@@ -454,7 +472,11 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     trpcOptions: {
       router: appRouter,
       allowMethodOverride: true,
-      createContext: ({ req }: CreateFastifyContextOptions) => ({ services, token: getBearerToken(req) }),
+      createContext: ({ req }: CreateFastifyContextOptions) => ({
+        services,
+        token: getBearerToken(req),
+        dispatch: options.dispatch,
+      }),
     },
   });
 

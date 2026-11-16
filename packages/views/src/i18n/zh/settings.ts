@@ -236,6 +236,7 @@ export const settings: Messages["settings"] = {
       file_not_registered: "未匹配到已登记文件",
       event_predates_file_record: "事件早于当前文件记录，已跳过过期事件",
       waiting_for_media_tasks: "等待刮削或整理任务结束",
+      waiting_for_worker: "通知已保存，等待处理",
       library_binding_changed: "媒体库配置已变更",
       file_record_changed: "文件记录已更新，已跳过旧事件",
       already_removed: "记录此前已删除",

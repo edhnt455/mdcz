@@ -250,6 +250,7 @@ export const settings = {
       file_not_registered: "No registered file matches",
       event_predates_file_record: "Event predates the current file record",
       waiting_for_media_tasks: "Waiting for scrape or maintenance tasks",
+      waiting_for_worker: "Notification saved; waiting for processing",
       library_binding_changed: "Library binding changed",
       file_record_changed: "File record changed; stale event skipped",
       already_removed: "Record already removed",

@@ -121,6 +121,19 @@ describe("input root", () => {
       expect(facts).not.toHaveBeenCalled();
       expect(listing).not.toHaveBeenCalled();
       expect(canonicalPaths).not.toHaveBeenCalled();
+      await writeFile(path.join(child, "ABC-123.strm"), "generated");
+      await writeFile(path.join(child, "SOLO.strm"), "original");
+      const mediaInventory = new DirectoryInventory();
+      const readMedia = vi.spyOn(mediaInventory, "files");
+      const [viaAlias, viaCanonical] = await Promise.all([
+        mediaInventory.mediaEntries(alias),
+        mediaInventory.mediaEntries(canonical),
+      ]);
+      expect(viaAlias).toBe(viaCanonical);
+      expect(viaAlias.map((entry) => entry.name).sort()).toEqual(["ABC-123.mp4", "SOLO.strm"]);
+      await expect(mediaInventory.hasMediaEntry(path.join(alias, "ABC-123.strm"))).resolves.toBe(false);
+      await expect(mediaInventory.hasMediaEntry(path.join(canonical, "SOLO.strm"))).resolves.toBe(true);
+      expect(readMedia).toHaveBeenCalledTimes(1);
       const entries = await inventory.admitRefs(discovery.refs, (id) => service.get(id));
       expect(entries).toHaveLength(2);
       if (process.platform !== "win32") {

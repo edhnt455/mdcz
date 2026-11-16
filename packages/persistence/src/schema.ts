@@ -106,7 +106,10 @@ export const libraryItems = sqliteTable(
     lastRefreshedAt: integer("last_refreshed_at", { mode: "timestamp_ms" }),
     hiddenFromRecentAt: integer("hidden_from_recent_at", { mode: "timestamp_ms" }),
   },
-  (table) => [index("library_items_created_at_idx").on(table.createdAt, table.id)],
+  (table) => [
+    index("library_items_created_at_idx").on(table.createdAt, table.id),
+    index("library_items_number_lower_idx").on(sql`lower(${table.number})`),
+  ],
 );
 
 export const libraryItemFiles = sqliteTable(
@@ -348,7 +351,10 @@ export const embyDeletionEvents = sqliteTable(
     snapshotJson: text("snapshot_json"),
     cloudDeletedAt: integer("cloud_deleted_at"),
   },
-  (table) => [index("emby_deletion_events_due_idx").on(table.status, table.nextAttemptAt)],
+  (table) => [
+    index("emby_deletion_events_due_idx").on(table.status, table.nextAttemptAt),
+    index("emby_deletion_events_history_idx").on(table.status, table.receivedAt),
+  ],
 );
 
 export const strmCloudBindings = sqliteTable(
@@ -361,8 +367,20 @@ export const strmCloudBindings = sqliteTable(
     snapshotJson: text("snapshot_json").notNull(),
     blocked: integer("blocked", { mode: "boolean" }).notNull().default(false),
   },
-  (table) => [index("strm_cloud_bindings_source_idx").on(table.sourcePath)],
+  (table) => [
+    index("strm_cloud_bindings_source_idx").on(table.sourcePath),
+    index("strm_cloud_bindings_resource_idx").on(
+      sql`json_extract(${table.snapshotJson}, '$.connectionId')`,
+      sql`json_extract(${table.snapshotJson}, '$.target.fileid')`,
+    ),
+  ],
 );
+
+export const embyNotificationReceipts = sqliteTable("emby_notification_receipts", {
+  id: text("id").primaryKey(),
+  resultJson: text("result_json").notNull(),
+  receivedAt: integer("received_at").notNull(),
+});
 
 export const scrapeConflictResolutions = sqliteTable("scrape_conflict_resolutions", {
   error: text("error"),
@@ -395,6 +413,7 @@ export const schema = {
   scrapeConflictResolutions,
   strmCloudBindings,
   embyDeletionEvents,
+  embyNotificationReceipts,
   mediaRoots,
   scanTasks,
   scanTaskEvents,

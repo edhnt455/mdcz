@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { asc, eq, lt } from "drizzle-orm";
+import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { apiKeys, authSessions } from "./schema";
 
@@ -61,5 +61,15 @@ export class CredentialRepository {
 
   deleteSession(tokenHash: string): void {
     this.database.db.delete(authSessions).where(eq(authSessions.tokenHash, tokenHash)).run();
+  }
+
+  hasSession(tokenHash: string, expiredBefore: Date): boolean {
+    return Boolean(
+      this.database.db
+        .select({ hash: authSessions.tokenHash })
+        .from(authSessions)
+        .where(and(eq(authSessions.tokenHash, tokenHash), gte(authSessions.lastSeenAt, expiredBefore)))
+        .get(),
+    );
   }
 }

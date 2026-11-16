@@ -6,6 +6,7 @@ import type { PersistenceDatabase } from "./database";
 import { LibraryRepository } from "./libraryRepository";
 import {
   embyDeletionEvents,
+  embyNotificationReceipts,
   libraryItemFiles,
   libraryItems,
   mediaRoots,
@@ -87,6 +88,35 @@ export class EmbyDeletionRepository {
       .all();
   }
 
+  relatedSourcePaths(targets: readonly { connectionId: string; fileId: string }[]): Map<string, string[]> {
+    const unique = [
+      ...new Map(targets.map((target) => [JSON.stringify([target.connectionId, target.fileId]), target])).values(),
+    ];
+    const result = new Map<string, string[]>();
+    for (let offset = 0; offset < unique.length; offset += 200) {
+      const batch = unique.slice(offset, offset + 200);
+      const where = batch
+        .map(
+          () =>
+            "(json_extract(snapshot_json, '$.connectionId') = ? AND json_extract(snapshot_json, '$.target.fileid') = ?)",
+        )
+        .join(" OR ");
+      const rows = this.database.sqlite
+        .prepare<unknown[], { connectionId: string; fileId: string; sourcePath: string }>(`
+        SELECT json_extract(snapshot_json, '$.connectionId') AS connectionId,
+          json_extract(snapshot_json, '$.target.fileid') AS fileId, source_path AS sourcePath
+        FROM strm_cloud_bindings WHERE ${where}`)
+        .all(...batch.flatMap((target) => [target.connectionId, target.fileId]));
+      for (const row of rows) {
+        const key = JSON.stringify([row.connectionId, row.fileId]);
+        const paths = result.get(key) ?? [];
+        paths.push(row.sourcePath);
+        result.set(key, paths);
+      }
+    }
+    return result;
+  }
+
   otherReference(
     fileId: string | null,
     connectionId: string,
@@ -112,7 +142,17 @@ export class EmbyDeletionRepository {
   }
 
   jobs(): EmbyDeletionEventRow[] {
-    return this.database.db.select().from(embyDeletionEvents).orderBy(desc(embyDeletionEvents.receivedAt)).all();
+    const table = this.database.db.select().from(embyDeletionEvents);
+    return [
+      ...table.where(notInArray(embyDeletionEvents.status, ["completed", "ignored"])).all(),
+      ...this.database.db
+        .select()
+        .from(embyDeletionEvents)
+        .where(inArray(embyDeletionEvents.status, ["completed", "ignored"]))
+        .orderBy(desc(embyDeletionEvents.receivedAt))
+        .limit(50)
+        .all(),
+    ];
   }
 
   clearCompleted(processingIds: readonly string[]): number {
@@ -212,20 +252,44 @@ export class EmbyDeletionRepository {
       });
   }
 
-  enqueue(input: Omit<typeof embyDeletionEvents.$inferInsert, "id">) {
-    const id = randomUUID();
-    this.database.db
-      .insert(embyDeletionEvents)
-      .values({ ...input, id })
-      .onConflictDoNothing({ target: embyDeletionEvents.dedupKey })
-      .run();
-    const event = this.database.db
+  receipt(id: string): { id: string; status: EmbyDeletionEventRow["status"] } | undefined {
+    const row = this.database.db
       .select()
-      .from(embyDeletionEvents)
-      .where(eq(embyDeletionEvents.dedupKey, input.dedupKey))
+      .from(embyNotificationReceipts)
+      .where(eq(embyNotificationReceipts.id, id))
       .get();
-    if (!event) throw new Error("Emby 删除事件未保存");
-    return { event, duplicate: event.id !== id };
+    return row ? JSON.parse(row.resultJson) : undefined;
+  }
+
+  rememberReceipt(
+    id: string,
+    result: { id: string; status: EmbyDeletionEventRow["status"] },
+    receivedAt: number,
+  ): void {
+    this.database.db
+      .insert(embyNotificationReceipts)
+      .values({ id, resultJson: JSON.stringify(result), receivedAt })
+      .onConflictDoNothing()
+      .run();
+  }
+
+  enqueue(input: Omit<typeof embyDeletionEvents.$inferInsert, "id">, receiptId?: string) {
+    return this.database.sqlite.transaction(() => {
+      const id = randomUUID();
+      this.database.db
+        .insert(embyDeletionEvents)
+        .values({ ...input, id })
+        .onConflictDoNothing({ target: embyDeletionEvents.dedupKey })
+        .run();
+      const event = this.database.db
+        .select()
+        .from(embyDeletionEvents)
+        .where(eq(embyDeletionEvents.dedupKey, input.dedupKey))
+        .get();
+      if (!event) throw new Error("Emby 删除事件未保存");
+      if (receiptId) this.rememberReceipt(receiptId, { id: event.id, status: event.status }, input.receivedAt);
+      return { event, duplicate: event.id !== id };
+    })();
   }
 
   due(now: number): EmbyDeletionEventRow[] {
@@ -312,16 +376,19 @@ export class EmbyDeletionRepository {
     })();
   }
 
-  status(now: number) {
+  pruneCompleted(now: number): void {
     this.database.db
       .delete(embyDeletionEvents)
       .where(
         and(
           lt(embyDeletionEvents.completedAt, now - 30 * 24 * 60 * 60_000),
-          sql`${embyDeletionEvents.status} in ('completed', 'ignored')`,
+          inArray(embyDeletionEvents.status, ["completed", "ignored"]),
         ),
       )
       .run();
+  }
+
+  status() {
     const counts = { pending: 0, needs_review: 0 };
     for (const row of this.database.db
       .select({ status: embyDeletionEvents.status, count: sql<number>`count(*)` })

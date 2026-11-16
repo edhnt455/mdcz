@@ -15,6 +15,7 @@ export class DeletionService {
       config: Pick<ServerConfigService, "get">;
       emby: Pick<EmbyDeletionService, "processing" | "retry">;
       scrape: Pick<ScrapeService, "conflicts">;
+      isRunning?: (source: "emby" | "duplicate", id: string) => boolean;
     },
   ) {}
 
@@ -22,7 +23,6 @@ export class DeletionService {
     const state = await this.deps.persistence.getState();
     const configuration = await this.deps.config.get();
     const events = new EmbyDeletionRepository(state.database);
-    events.status(Date.now());
     const conflicts = new ScrapeConflictRepository(state.database);
     const names = new Map(configuration.libraries.map((library) => [library.id, library.name]));
     const rows = id
@@ -35,14 +35,22 @@ export class DeletionService {
         ? [conflicts.get(id.slice(10))].filter((row) => row !== undefined)
         : []
       : conflicts.jobs();
+    const snapshots = new Map(
+      rows.map((row) => [row.id, row.snapshotJson ? (JSON.parse(row.snapshotJson) as StrmCloudBinding) : null]),
+    );
+    const sourcePaths = events.relatedSourcePaths(
+      [...snapshots.values()].flatMap((snapshot) =>
+        snapshot ? [{ connectionId: snapshot.connectionId, fileId: snapshot.target.fileid }] : [],
+      ),
+    );
     const jobs: DeletionJob[] = rows.map((event) => {
-      const snapshot = event.snapshotJson ? (JSON.parse(event.snapshotJson) as StrmCloudBinding) : null;
+      const snapshot = snapshots.get(event.id);
       const observed =
         event.status === "ignored" &&
         ["would_remove_records", "would_delete_strm_resource", "would_keep_shared_resource"].includes(
           event.result ?? "",
         );
-      const running = this.deps.emby.processing.has(event.id);
+      const running = this.deps.isRunning?.("emby", event.id) ?? this.deps.emby.processing.has(event.id);
       const paused = event.status === "pending" && configuration.embyDeletion.mode === "off";
       const file = !snapshot && event.path ? events.findFile(event.path) : undefined;
       const error =
@@ -78,7 +86,7 @@ export class DeletionService {
           ? [
               ...new Set([
                 snapshot.source.sourcePath,
-                ...events.relatedBindings(snapshot.connectionId, snapshot.target.fileid).map((row) => row.sourcePath),
+                ...(sourcePaths.get(JSON.stringify([snapshot.connectionId, snapshot.target.fileid])) ?? []),
               ]),
             ]
           : file?.id === event.fileId && file?.retainedSourceIdentity
@@ -112,7 +120,8 @@ export class DeletionService {
       const snapshot = JSON.parse(row.snapshotJson) as ScrapeConflictSnapshot;
       const selected = row.keep === "incoming" ? snapshot.existing : snapshot.incoming;
       const shared = snapshot.existing.cloud.target.fileid === snapshot.incoming.cloud.target.fileid;
-      const running = this.deps.scrape.conflicts.isRunning(row.itemId);
+      const running =
+        this.deps.isRunning?.("duplicate", row.itemId) ?? this.deps.scrape.conflicts.isRunning(row.itemId);
       const completed = row.step === "completed";
       jobs.push({
         id: `duplicate/${row.itemId}`,

@@ -1,8 +1,8 @@
 import { resolveSiteProxyUrl } from "@mdcz/runtime/config";
 import { attachNetworkFixtureCaseId } from "@mdcz/runtime/network/networkFixtureCase";
 import { createDevNetworkClient } from "@mdcz/runtime/network/networkFixtureFactory";
+import { startContainer } from "./processes/container";
 import { ServerConfigService } from "./services/configService";
-import { startServer } from "./startServer";
 
 const config = new ServerConfigService();
 const networkClient = createDevNetworkClient({
@@ -11,4 +11,7 @@ const networkClient = createDevNetworkClient({
   getRetryCount: () => config.getComputed().networkRetryCount,
 });
 
-void startServer({ services: { config }, resources: { networkClient, prepareScrapeItem: attachNetworkFixtureCaseId } });
+void startContainer({
+  services: { config },
+  resources: { networkClient, prepareScrapeItem: attachNetworkFixtureCaseId },
+});

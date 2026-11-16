@@ -79,6 +79,7 @@ export const useWebTaskSync = (): void => {
     };
     const refreshPending = (): void => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.pending.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deletions.all });
     };
     const startFastPolling = (): void => {
       refreshLiveRuns();

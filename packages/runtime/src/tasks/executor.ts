@@ -1,3 +1,5 @@
+import { setImmediate } from "node:timers/promises";
+
 export interface TaskExecutorContext {
   signal: AbortSignal;
 }
@@ -61,6 +63,7 @@ export class TaskExecutor<TItem, TResult> {
     if (!controller) throw new Error("TaskExecutor 控制器尚未初始化");
 
     let nextIndex = 0;
+    let yieldedAt = performance.now();
     let fatalError: unknown;
     const context: TaskExecutorContext = {
       signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
@@ -68,6 +71,11 @@ export class TaskExecutor<TItem, TResult> {
 
     const worker = async (): Promise<void> => {
       while (!this.pauseRequested && !this.stopRequested && fatalError === undefined) {
+        if (performance.now() - yieldedAt >= 8) {
+          await setImmediate();
+          yieldedAt = performance.now();
+          if (this.pauseRequested || this.stopRequested || fatalError !== undefined) return;
+        }
         const index = nextIndex;
         if (index >= items.length) return;
         nextIndex += 1;

@@ -69,6 +69,8 @@ export default defineConfig({
       external: [/^node:/, ...serverRuntimeExternals],
       output: {
         entryFileNames: "server.js",
+        inlineDynamicImports: false,
+        chunkFileNames: "chunks/[name]-[hash].js",
       },
     },
     ssr: true,

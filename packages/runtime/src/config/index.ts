@@ -246,6 +246,10 @@ export class RuntimeConfigService {
     return this.configuration ?? defaultConfiguration;
   }
 
+  adoptSnapshot(configuration: Configuration): void {
+    this.configuration = configuration;
+  }
+
   replaceStore(store: RuntimeConfigProfileStore): void {
     this.store = store;
   }

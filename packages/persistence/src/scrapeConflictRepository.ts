@@ -1,4 +1,4 @@
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { scrapeConflictResolutions } from "./schema";
 
@@ -24,12 +24,20 @@ export class ScrapeConflictRepository {
   }
 
   jobs(): ScrapeConflictRow[] {
-    return this.database.db
-      .select()
-      .from(scrapeConflictResolutions)
-      .where(isNotNull(scrapeConflictResolutions.keep))
-      .orderBy(desc(scrapeConflictResolutions.updatedAt))
-      .all();
+    return [
+      ...this.database.db
+        .select()
+        .from(scrapeConflictResolutions)
+        .where(and(isNotNull(scrapeConflictResolutions.keep), ne(scrapeConflictResolutions.step, "completed")))
+        .all(),
+      ...this.database.db
+        .select()
+        .from(scrapeConflictResolutions)
+        .where(and(isNotNull(scrapeConflictResolutions.keep), eq(scrapeConflictResolutions.step, "completed")))
+        .orderBy(desc(sql`json_extract(${scrapeConflictResolutions.snapshotJson}, '$.previewedAt')`))
+        .limit(50)
+        .all(),
+    ];
   }
 
   clearCompleted(): number {

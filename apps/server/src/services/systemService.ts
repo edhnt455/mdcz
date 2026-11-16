@@ -45,6 +45,7 @@ export class SystemService {
   private async readPackageJson(): Promise<PackageJson> {
     const candidates = [
       path.resolve(process.cwd(), "package.json"),
+      fileURLToPath(new URL("../package.json", import.meta.url)),
       fileURLToPath(new URL("../../../../package.json", import.meta.url)),
       fileURLToPath(new URL("../../../package.json", import.meta.url)),
       fileURLToPath(new URL("../../package.json", import.meta.url)),

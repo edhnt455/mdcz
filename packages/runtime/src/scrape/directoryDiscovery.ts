@@ -45,31 +45,24 @@ export const createMediaWalkFilters = (
       extensions.has(extname(filePath).toLowerCase()) &&
       isPrimaryVideoFile(filePath) &&
       !hasLiteralFilenameToken(basename(filePath), blacklist) &&
-      (extname(filePath).toLowerCase() !== ".strm" ||
-        (await inventory.mediaEntries(dirname(filePath))).some((entry) => entry.name === basename(filePath))),
+      (extname(filePath).toLowerCase() !== ".strm" || (await inventory.hasMediaEntry(filePath))),
     filterDirectory: (directoryPath) => !hasLiteralFilenameToken(basename(directoryPath), blacklist),
     filterStats: (filePath, stats) => extname(filePath).toLowerCase() === ".strm" || stats.size >= minVideoBytes,
   };
 };
 
 export const excludeGeneratedStrmPaths = <T>(items: readonly T[], pathOf: (item: T) => string): T[] => {
-  const namesByDir = new Map<string, string[]>();
+  const originals = new Set<string>();
   for (const item of items) {
     const filePath = pathOf(item);
-    const directory = dirname(filePath);
-    const names = namesByDir.get(directory);
-    if (names) names.push(basename(filePath));
-    else namesByDir.set(directory, [basename(filePath)]);
+    if (extname(filePath).toLowerCase() !== ".strm" && isPrimaryVideoFile(filePath))
+      originals.add(`${dirname(filePath)}\0${parse(filePath).name.toLowerCase()}`);
   }
   return items.filter((item) => {
     const filePath = pathOf(item);
     const fileName = basename(filePath);
     if (extname(fileName).toLowerCase() !== ".strm") return true;
-    const base = parse(fileName).name.toLowerCase();
-    return !(namesByDir.get(dirname(filePath)) ?? []).some(
-      (name) =>
-        extname(name).toLowerCase() !== ".strm" && isPrimaryVideoFile(name) && parse(name).name.toLowerCase() === base,
-    );
+    return !originals.has(`${dirname(filePath)}\0${parse(fileName).name.toLowerCase()}`);
   });
 };
 

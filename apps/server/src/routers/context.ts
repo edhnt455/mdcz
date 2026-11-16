@@ -1,25 +1,45 @@
 import { PersistenceError, persistenceErrorCodes } from "@mdcz/persistence";
 import { LibraryTaskConflictError } from "@mdcz/runtime/tasks";
 import { initTRPC, TRPCError } from "@trpc/server";
+import { RemoteProcedureError } from "../processes/remoteProcedureError";
 import type { ServerServices } from "../services";
 import { ServerConfigValidationError } from "../services/configService";
 
 export interface RouterContext {
   services: ServerServices;
   token?: string;
+  dispatch?: (input: {
+    path: string;
+    type: string;
+    input: unknown;
+    token?: string;
+  }) => Promise<{ handled: false } | { handled: true; data: unknown }>;
 }
 
-export const t = initTRPC.context<RouterContext>().create({
+const router = initTRPC.context<RouterContext>().create({
   // A build run without NODE_ENV must not send stack traces to clients.
   isDev: process.env.NODE_ENV === "development",
   errorFormatter: ({ shape, error }) => ({
     ...shape,
     data: {
       ...shape.data,
-      domainError: error.cause instanceof ServerConfigValidationError ? error.cause.domainError : undefined,
+      domainError:
+        error.cause instanceof ServerConfigValidationError || error.cause instanceof RemoteProcedureError
+          ? error.cause.domainError
+          : undefined,
     },
   }),
 });
+
+export const t = {
+  ...router,
+  procedure: router.procedure.use(async ({ ctx, path, type, getRawInput, next }) => {
+    const result = await ctx.dispatch?.({ path, type, input: await getRawInput(), token: ctx.token });
+    if (result?.handled)
+      return { ok: true, data: result.data, marker: "middlewareMarker" as Awaited<ReturnType<typeof next>>["marker"] };
+    return next();
+  }),
+};
 
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   try {

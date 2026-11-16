@@ -98,6 +98,10 @@ export class ServerConfigService {
     return this.paths;
   }
 
+  adoptSnapshot(configuration: Configuration): void {
+    this.config.adoptSnapshot(configuration);
+  }
+
   async load(): Promise<Configuration> {
     return await this.config.load();
   }

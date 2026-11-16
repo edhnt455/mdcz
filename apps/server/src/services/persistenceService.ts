@@ -45,7 +45,10 @@ export class ServerPersistenceService {
   private closed = false;
   private lease: Database.Database | null = null;
 
-  constructor(private readonly paths: Pick<ServerRuntimePaths, "databasePath">) {}
+  constructor(
+    private readonly paths: Pick<ServerRuntimePaths, "databasePath">,
+    readonly readOnly = false,
+  ) {}
 
   get initialized(): boolean {
     return this.state !== null;
@@ -73,15 +76,15 @@ export class ServerPersistenceService {
   }
 
   private async open(): Promise<ServerPersistenceState> {
-    this.lease = acquireDatabaseLease(this.paths.databasePath);
+    if (!this.readOnly) this.lease = acquireDatabaseLease(this.paths.databasePath);
     let database: PersistenceDatabase | undefined;
     try {
-      database = createPersistenceDatabase({ path: this.paths.databasePath });
-      runMigrations(database);
+      database = createPersistenceDatabase({ path: this.paths.databasePath, readonly: this.readOnly });
+      if (!this.readOnly) runMigrations(database);
       const scrapeRuns = new ScrapeRunRepository(database);
-      scrapeRuns.interruptUnfinished();
+      if (!this.readOnly) scrapeRuns.interruptUnfinished();
       const mediaRoots = new MediaRootRepository(database);
-      await recoverInterruptedPublications(new PublicationJournalRepository(database));
+      if (!this.readOnly) await recoverInterruptedPublications(new PublicationJournalRepository(database));
       this.state = {
         database,
         repositories: {
@@ -100,7 +103,7 @@ export class ServerPersistenceService {
       return this.state;
     } catch (error) {
       database?.close();
-      this.lease.close();
+      this.lease?.close();
       this.lease = null;
       if (isSchemaMigrationFailure(error)) {
         throw new Error(

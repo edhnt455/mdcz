@@ -76,7 +76,7 @@ export class EmbyDeletionService {
   async status(): Promise<EmbyDeletionStatus> {
     const repository = await this.repository();
     const settings = await this.load();
-    const activity = repository.status(this.now());
+    const activity = repository.status();
     return {
       moviePilot: moviePilotConnectionOf(settings.moviePilot),
       associations: repository.associationCounts(settings.moviePilot?.id),
@@ -250,9 +250,11 @@ export class EmbyDeletionService {
     else this.deps.logger.info(message);
   }
 
-  async accept(payload: unknown) {
+  async accept(payload: unknown, receipt?: { id: string; receivedAt: number }) {
     const notification = embyDeletionNotificationSchema.parse(payload);
     const repository = await this.repository();
+    const previousReceipt = receipt && repository.receipt(receipt.id);
+    if (previousReceipt) return { ...previousReceipt, duplicate: true };
     const settings = await this.load();
     const now = this.now();
     const rawPath = notification.Item?.Path;
@@ -311,8 +313,11 @@ export class EmbyDeletionService {
         eventAt <= now + 60_000 &&
         eventAt <= previous.completedAt + 60_000 &&
         eventAt >= (previous.fileUpdatedAt ?? now) - 60_000
-      )
+      ) {
+        if (receipt)
+          repository.rememberReceipt(receipt.id, { id: previous.id, status: previous.status }, receipt.receivedAt);
         return { id: previous.id, status: previous.status, duplicate: true };
+      }
     }
     const dedupKey = hash(
       JSON.stringify([
@@ -324,25 +329,28 @@ export class EmbyDeletionService {
         reason === "cloud_binding_unverified" ? null : reason,
       ]),
     );
-    const { event, duplicate } = repository.enqueue({
-      dedupKey,
-      serverId: notification.Server.Id,
-      itemId: notification.Item?.Id ?? "",
-      eventAt: notification.Date ? Date.parse(notification.Date) : null,
-      receivedAt: now,
-      path: normalized,
-      libraryId: binding?.id,
-      outputPath: binding?.outputPath,
-      fileId: file?.id,
-      movieId: file?.itemId,
-      fileUpdatedAt: file?.updatedAt.getTime(),
-      status: reason === "cloud_binding_unverified" ? "needs_review" : reason ? "ignored" : "pending",
-      nextAttemptAt: now + CONFIRMATION_MS,
-      result: reason,
-      completedAt: reason ? now : null,
-      eventType: deep ? "deep.delete" : notification.Event,
-      snapshotJson: deep && cloudBinding ? JSON.stringify(cloudBinding) : null,
-    });
+    const { event, duplicate } = repository.enqueue(
+      {
+        dedupKey,
+        serverId: notification.Server.Id,
+        itemId: notification.Item?.Id ?? "",
+        eventAt: notification.Date ? Date.parse(notification.Date) : null,
+        receivedAt: receipt?.receivedAt ?? now,
+        path: normalized,
+        libraryId: binding?.id,
+        outputPath: binding?.outputPath,
+        fileId: file?.id,
+        movieId: file?.itemId,
+        fileUpdatedAt: file?.updatedAt.getTime(),
+        status: reason === "cloud_binding_unverified" ? "needs_review" : reason ? "ignored" : "pending",
+        nextAttemptAt: now + CONFIRMATION_MS,
+        result: reason,
+        completedAt: reason ? now : null,
+        eventType: deep ? "deep.delete" : notification.Event,
+        snapshotJson: deep && cloudBinding ? JSON.stringify(cloudBinding) : null,
+      },
+      receipt?.id,
+    );
     if (!duplicate) this.logEvent(event);
     return { id: event.id, status: event.status, duplicate };
   }
@@ -394,7 +402,7 @@ export class EmbyDeletionService {
       const repository = await this.repository();
       const settings = await this.load();
       if (settings.mode === "off" || this.closed) return;
-      repository.status(this.now());
+      repository.pruneCompleted(this.now());
       if (
         !this.processing.size &&
         settings.moviePilot &&

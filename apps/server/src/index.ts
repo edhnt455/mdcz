@@ -1,8 +1,8 @@
 import { runMaintenanceCli } from "./maintenanceCli";
-import { startServer } from "./startServer";
+import { startContainer } from "./processes/container";
 
 const args = process.argv.slice(2);
-void (args.length ? runMaintenanceCli(args) : startServer()).catch((error) => {
+void (args.length ? runMaintenanceCli(args) : startContainer()).catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

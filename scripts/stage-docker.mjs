@@ -27,6 +27,7 @@ const stagingDir = resolve(stagingRoot, stagingDirName);
 const serverDist = resolve(repoRoot, "apps/server/dist");
 
 await requirePath(resolve(serverDist, "server.js"), "Server bundle");
+await requirePath(resolve(serverDist, "chunks"), "Server process bundles");
 await requirePath(resolve(serverDist, "web/index.html"), "WebUI bundle");
 await requirePath(resolve(serverDist, "persistence/drizzle"), "Drizzle migrations");
 await requirePath(resolve(serverDist, "resources/mapping_table"), "Translation mappings");
@@ -35,6 +36,7 @@ await rm(stagingDir, { recursive: true, force: true });
 await mkdir(stagingDir, { recursive: true });
 
 await cp(resolve(serverDist, "server.js"), resolve(stagingDir, "server.js"));
+await cp(resolve(serverDist, "chunks"), resolve(stagingDir, "chunks"), { recursive: true });
 await cp(resolve(serverDist, "resources/watermark"), resolve(stagingDir, "resources/watermark"), { recursive: true });
 await cp(resolve(serverDist, "web"), resolve(stagingDir, "web"), { recursive: true });
 await cp(resolve(serverDist, "persistence/drizzle"), resolve(stagingDir, "persistence/drizzle"), { recursive: true });
