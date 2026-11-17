@@ -12,7 +12,7 @@
    | 设置 | 值 |
    | --- | --- |
    | 代码变更自动构建镜像 | 开启 |
-   | 海外机器构建 | 关闭，使用国内构建，避免海外向杭州上传镜像 |
+   | 海外机器构建 | 开启；本仓库国内构建实测拉取 Node 基础镜像超时，改用海外构建 |
    | 不使用缓存 | 关闭，复用 Docker 层缓存 |
 
 3. 使用控制台已有的内置规则：
@@ -34,7 +34,7 @@ git push origin release-v0.22.1
 
 `release-v0.22.1` 标签匹配内置规则，生成 `registry.cn-hangzhou.aliyuncs.com/skyhook-image/mdcz:0.22.1`。后续发布应同步修改 `VERSION` 和标签版本；只推送 `main` 不会匹配这条标签规则。不要移动已发布标签来重用版本号。这条规则不生成 `latest`，部署时使用具体版本。
 
-在阿里云「构建日志」查看构建状态，成功后在「镜像版本」确认标签。个人版单次构建限时 30 分钟；国内构建仍需从 GitHub、Docker Hub 和依赖源下载内容，速度与成功率需要以实际构建日志为准。当前 Dockerfile 使用普通多阶段构建，不依赖 BuildKit 缓存挂载。详见[阿里云个人版构建指南](https://help.aliyun.com/zh/acr/user-guide/create-a-repository-and-build-images)。
+在阿里云「构建日志」查看构建状态，成功后在「镜像版本」确认标签。个人版单次构建限时 30 分钟；海外构建仍需将镜像传回杭州，存在跨境网络慢或超时的风险，以实际构建日志为准。国内构建实测在拉取 `node:24-bookworm-slim` 时发生 Docker Hub 连接超时，尚未进入项目编译。当前 Dockerfile 使用普通多阶段构建，不依赖 BuildKit 缓存挂载。详见[阿里云个人版构建指南](https://help.aliyun.com/zh/acr/user-guide/create-a-repository-and-build-images)。
 
 原 GitHub 发布流程使用的 `ALIYUN_USERNAME`、`ALIYUN_PASSWORD` Secrets 和 `ALIYUN_REGISTRY`、`ALIYUN_NAMESPACE` Variables 已不被工作流使用，无需继续维护；部署机器 `.env` 中的镜像地址变量仍需保留。ACR 拉取私有代码源所需的 GitHub 授权由阿里云控制台单独管理。
 
