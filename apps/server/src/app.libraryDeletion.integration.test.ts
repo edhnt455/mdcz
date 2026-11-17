@@ -70,6 +70,10 @@ it.each(["file", "entry", "batch"] as const)("deep deletes disk media through th
     await expect
       .poll(async () => (await services.pending.jobs()).jobs.some((job) => job.status === "running"))
       .toBe(true);
+    const deletionJobs = (await services.deletions.list()).jobs;
+    expect(deletionJobs.map((job) => job.id)).toEqual(taskIds.map((id) => `action/${id}`));
+    expect(deletionJobs[0]).toMatchObject({ source: "library", status: "running" });
+    expect(deletionJobs.slice(1).every((job) => job.status === "pending")).toBe(true);
     for (const name of ["CD1.mp4", "CD2.mp4", "other.mp4"])
       expect(await readFile(join(output, name), "utf8")).toBe(name);
     const read = await fastify.inject({ method: "GET", url: "/trpc/pending.jobs", headers: request.headers });
@@ -86,6 +90,7 @@ it.each(["file", "entry", "batch"] as const)("deep deletes disk media through th
   }
   await services.pending.waitForIdle();
   expect((await services.pending.jobs()).jobs.every((job) => job.status === "completed")).toBe(true);
+  expect((await services.deletions.list()).jobs.every((job) => job.status === "completed")).toBe(true);
   const removed =
     mode === "file" ? ["CD2.mp4"] : mode === "entry" ? ["CD1.mp4", "CD2.mp4"] : ["CD1.mp4", "CD2.mp4", "other.mp4"];
   for (const name of removed) {

@@ -16,7 +16,7 @@ export function PendingTasksPage({ selectedId, onSelect }: { selectedId?: string
     queryFn: () => api.pending.jobs(),
     refetchInterval: 1_000,
   });
-  const items = jobs.data?.jobs ?? [];
+  const items = jobs.data?.jobs.filter((job) => job.action !== "delete") ?? [];
   const selected = items.find((job) => job.id === selectedId) ?? items[0];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

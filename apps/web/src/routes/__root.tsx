@@ -1,4 +1,3 @@
-import { needsDeletionReview } from "@mdcz/shared/deletions";
 import { TOOL_DEFINITIONS, type ToolId } from "@mdcz/shared/toolCatalog";
 import { useT } from "@mdcz/views/i18n";
 import { AppShell, type ShellLinkProps, ThemeProvider } from "@mdcz/views/shell";
@@ -10,7 +9,6 @@ import { useEffect, useState } from "react";
 import { api } from "../client";
 import { LoginPage } from "../components/auth/LoginPage";
 import { pendingListQueryOptions } from "../hooks/pendingQueries";
-import { useDeletionJobs } from "../hooks/useDeletionJobs";
 import { useWebTaskSync } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
 import { ToolDetail } from "./tools/ToolDetail";
@@ -77,7 +75,6 @@ export const RootLayout = ({ children }: { children: ReactNode }) => {
 const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathname: string }) => {
   useWebTaskSync();
   const pendingQ = useQuery(pendingListQueryOptions());
-  const deletionsQ = useDeletionJobs();
   const [hasVisitedTools, setHasVisitedTools] = useState(pathname === "/tools");
   const isToolsRoute = pathname === "/tools";
 
@@ -93,7 +90,7 @@ const AuthenticatedShell = ({ children, pathname }: { children: ReactNode; pathn
         currentPath={pathname}
         linkComponent={ShellLink}
         navBadges={{
-          pending: (pendingQ.data?.items.length ?? 0) + (deletionsQ.data?.jobs.filter(needsDeletionReview).length ?? 0),
+          pending: pendingQ.data?.items.length ?? 0,
         }}
       >
         {children}

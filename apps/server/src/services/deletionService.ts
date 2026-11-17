@@ -1,7 +1,14 @@
 import path from "node:path";
-import { EmbyDeletionRepository, ScrapeConflictRepository } from "@mdcz/persistence";
+import {
+  EmbyDeletionRepository,
+  PendingActionRepository,
+  PendingRepository,
+  ScrapeConflictRepository,
+} from "@mdcz/persistence";
+import type { PendingService } from "@mdcz/runtime/library/pendingService";
 import type { DeletionJob, DeletionJobList, DeletionRetryResponse } from "@mdcz/shared/deletions";
 import type { StrmCloudBinding } from "@mdcz/shared/moviePilot";
+import { pendingItemSchema } from "@mdcz/shared/pending";
 import type { ServerConfigService } from "./configService";
 import type { EmbyDeletionService } from "./embyDeletionService";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -15,6 +22,7 @@ export class DeletionService {
       config: Pick<ServerConfigService, "get">;
       emby: Pick<EmbyDeletionService, "processing" | "retry">;
       scrape: Pick<ScrapeService, "conflicts">;
+      pending: Pick<PendingService, "retryJob">;
       isRunning?: (source: "emby" | "duplicate", id: string) => boolean;
     },
   ) {}
@@ -150,12 +158,52 @@ export class DeletionService {
         retryPlanned: row.keep === "incoming",
       });
     }
+    const available = new Map(new PendingRepository(state.database).list().map((item) => [item.id, item.taskId]));
+    const actions = new PendingActionRepository(state.database).list();
+    const active = new Set(
+      actions.filter((row) => ["queued", "running", "retrying"].includes(row.status)).map((row) => row.itemId),
+    );
+    for (const row of actions) {
+      if (row.action !== "delete" || (id && id !== `action/${row.id}`)) continue;
+      const item = pendingItemSchema.parse(JSON.parse(row.itemJson));
+      const input = JSON.parse(row.inputJson);
+      jobs.push({
+        id: `action/${row.id}`,
+        source: "libraryFile" in input ? "library" : "pending",
+        status: row.status === "queued" ? "pending" : row.status === "failed" ? "needs_review" : row.status,
+        step: row.status === "completed" ? "completed" : "validating",
+        name: item.fileName,
+        libraryName: item.libraryName ?? "",
+        linkPath: item.path,
+        sourcePaths: [],
+        cloudPath: null,
+        cloudFileId: null,
+        cloudSize: null,
+        cloudDeleted: false,
+        cloudPlanned: false,
+        sharedResource: false,
+        error: row.error,
+        result: null,
+        attempts: row.attempts,
+        nextAttemptAt: row.nextAttemptAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        completedAt: row.status === "completed" ? row.completedAt : null,
+        canRetry: row.status === "failed" && !active.has(row.itemId) && available.get(row.itemId) === row.id,
+        retryRunId: null,
+        retryPlanned: false,
+        progress: row.progress,
+      });
+    }
     jobs.sort((a, b) => {
-      const active = (job: DeletionJob) => (job.status === "completed" || job.status === "ignored" ? 1 : 0);
-      return active(a) - active(b) || b.createdAt - a.createdAt;
+      const rank = (job: DeletionJob) =>
+        job.status === "running" ? 0 : job.status === "completed" || job.status === "ignored" ? 2 : 1;
+      return (
+        rank(a) - rank(b) ||
+        (rank(a) === 2 ? (b.completedAt ?? b.updatedAt) - (a.completedAt ?? a.updatedAt) : a.createdAt - b.createdAt)
+      );
     });
-    let finished = 0;
-    return { jobs: jobs.filter((job) => (job.status !== "completed" && job.status !== "ignored") || finished++ < 50) };
+    return { jobs };
   }
 
   async detail(id: string): Promise<DeletionJob> {
@@ -169,13 +217,18 @@ export class DeletionService {
     return database.sqlite.transaction(() => ({
       cleared:
         new EmbyDeletionRepository(database).clearCompleted([...this.deps.emby.processing.keys()]) +
-        new ScrapeConflictRepository(database).clearCompleted(),
+        new ScrapeConflictRepository(database).clearCompleted() +
+        new PendingActionRepository(database).clearCompletedDeletions(),
     }))();
   }
 
   async retry(id: string): Promise<DeletionRetryResponse> {
     const job = await this.detail(id);
     if (!job.canRetry) throw new Error("当前状态下无法重试此删除任务");
+    if (job.source === "library" || job.source === "pending") {
+      const result = await this.deps.pending.retryJob(id.slice(7));
+      return { runId: null, jobId: `action/${result.taskId}` };
+    }
     if (job.source === "emby") {
       await this.deps.emby.retry(id.slice(5));
       return { runId: null };

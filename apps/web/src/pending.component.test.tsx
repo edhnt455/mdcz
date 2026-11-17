@@ -142,7 +142,7 @@ test("new files stay in the workbench until accepted and background actions show
     {
       id: "action",
       itemId: item.id,
-      action: "delete",
+      action: "confirm",
       item,
       status: "running",
       progress: "正在核验 115 文件",

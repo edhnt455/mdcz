@@ -185,7 +185,7 @@ export const settings: Messages["settings"] = {
     remove: "删除映射",
   },
   embyDeletion: {
-    openDeletionTasks: "在工作台查看联动删除任务",
+    openDeletionTasks: "在工作台查看删除任务",
     title: "Emby 删除联动",
     description:
       "移动库接收普通删除通知清理记录；复制 STRM 库收到 library.deleted 或 deep.delete 后联动删除已核验的 115 视频和 Normal 来源。先用观察模式验证。",

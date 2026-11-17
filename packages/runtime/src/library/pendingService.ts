@@ -119,11 +119,15 @@ export class PendingService {
 
   async jobs(): Promise<{ jobs: PendingActionJob[] }> {
     const { pendingActions, pending } = await this.deps.repositories();
-    const available = new Map(pending.listAvailable().map((item) => [item.id, item.taskId]));
+    const available = new Map(pending.list().map((item) => [item.id, item.taskId]));
+    const rows = pendingActions.list();
+    const active = new Set(
+      rows.filter((row) => ["queued", "running", "retrying"].includes(row.status)).map((row) => row.itemId),
+    );
     return {
-      jobs: pendingActions.list().map(({ inputJson: _input, itemJson, itemUpdatedAt: _version, ...row }) => ({
+      jobs: rows.map(({ inputJson: _input, itemJson, itemUpdatedAt: _version, ...row }) => ({
         ...row,
-        canRetry: row.status === "failed" && available.get(row.itemId) === row.id,
+        canRetry: row.status === "failed" && !active.has(row.itemId) && available.get(row.itemId) === row.id,
         item: pendingItemSchema.parse(JSON.parse(itemJson)),
       })),
     };

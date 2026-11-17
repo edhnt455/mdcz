@@ -1,9 +1,8 @@
-import { type DeletionJob, type DeletionJobStep, isOpenDeletionJob, needsDeletionReview } from "@mdcz/shared/deletions";
+import { type DeletionJob, type DeletionJobStep, isOpenDeletionJob } from "@mdcz/shared/deletions";
 import { formatBytes } from "@mdcz/shared/format";
 import { strmReferenceErrors } from "@mdcz/shared/moviePilot";
 import { Badge, Button, cn } from "@mdcz/ui";
 import { AlertCircle, CheckCircle2, Circle, Clock3, Loader2, Trash2 } from "lucide-react";
-import { useState } from "react";
 import { type Messages, useT } from "../i18n";
 
 const date = (value: number) => new Date(value).toLocaleString();
@@ -22,61 +21,6 @@ const resultMessage = (value: string, t: Messages): string => {
     : (t.settings.embyDeletion.results[value as keyof typeof t.settings.embyDeletion.results] ?? value);
 };
 
-export function DeletionQueueView({
-  jobs,
-  loading,
-  error,
-  onOpen,
-}: {
-  jobs: DeletionJob[];
-  loading?: boolean;
-  error?: string | null;
-  onOpen: (id: string) => void;
-}) {
-  const t = useT();
-  const open = jobs.filter(needsDeletionReview);
-  return (
-    <section className="h-full overflow-auto bg-surface-canvas p-4">
-      <h1 className="text-lg font-bold">
-        {t.deletions.pendingTitle} · {open.length}
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">{t.deletions.description}</p>
-      {error ? (
-        <p role="alert" className="mt-4 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-      {loading ? (
-        <p role="status" className="mt-6 text-sm">
-          {t.common.loading}
-        </p>
-      ) : null}
-      {!loading && !open.length && !error ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">{t.deletions.emptyPending}</p>
-      ) : null}
-      <ul className="mt-4 grid gap-3 xl:grid-cols-2">
-        {open.map((job) => (
-          <li key={job.id} className="space-y-3 rounded-lg border p-4">
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="break-all font-semibold">{job.name}</h2>
-              <Badge>{statusLabel(job, t.deletions)}</Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {job.libraryName} · {t.deletions.steps[job.step]}
-            </p>
-            {job.error ? (
-              <p className="whitespace-pre-wrap break-all text-sm text-destructive">{resultMessage(job.error, t)}</p>
-            ) : null}
-            <Button variant="outline" size="sm" onClick={() => onOpen(job.id)}>
-              {t.deletions.openWorkbench}
-            </Button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 export function DeletionWorkbenchView({
   jobs,
   selected,
@@ -90,6 +34,8 @@ export function DeletionWorkbenchView({
   onRefresh,
   onClearCompleted,
   onOpenScrape,
+  filter,
+  onFilterChange,
 }: {
   jobs: DeletionJob[];
   selected: DeletionJob | null;
@@ -103,10 +49,11 @@ export function DeletionWorkbenchView({
   onRefresh: () => void;
   onClearCompleted: () => void;
   onOpenScrape: (id: string) => void;
+  filter: "all" | "unfinished" | "completed";
+  onFilterChange: (filter: "all" | "unfinished" | "completed") => void;
 }) {
   const t = useT();
   const text = t.deletions;
-  const [filter, setFilter] = useState<"all" | "unfinished" | "completed">("all");
   const filtered = jobs.filter(
     (job) => filter === "all" || (filter === "unfinished" ? isOpenDeletionJob(job) : !isOpenDeletionJob(job)),
   );
@@ -153,7 +100,7 @@ export function DeletionWorkbenchView({
                 size="sm"
                 variant={filter === value ? "secondary" : "ghost"}
                 key={value}
-                onClick={() => setFilter(value)}
+                onClick={() => onFilterChange(value)}
               >
                 {text[value]}
               </Button>
@@ -183,7 +130,7 @@ export function DeletionWorkbenchView({
                   </span>
                   <span className="mt-2 block text-xs text-muted-foreground">
                     {text.source[job.source]} ·{" "}
-                    {job.status === "ignored" ? statusLabel(job, text) : text.steps[job.step]}
+                    {job.progress ?? (job.status === "ignored" ? statusLabel(job, text) : text.steps[job.step])}
                   </span>
                   {job.error ? <span className="mt-1 block text-xs text-destructive">{text.failure}</span> : null}
                 </button>
@@ -230,7 +177,12 @@ export function DeletionWorkbenchView({
                   {resultMessage(actionError || selected.error || "", t)}
                 </div>
               ) : null}
-              {selected.status === "ignored" ? (
+              {selected.progress !== undefined ? (
+                <p role="status" className="flex items-center gap-2 text-sm">
+                  {selected.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {selected.progress}
+                </p>
+              ) : selected.status === "ignored" ? (
                 <section className="space-y-2 rounded-lg border p-4">
                   <h3 className="font-semibold">{text.result}</h3>
                   <p className="whitespace-pre-wrap break-all text-sm text-muted-foreground">

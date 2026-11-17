@@ -58,7 +58,7 @@ export class PendingDeletionService {
     return hash.digest("hex");
   }
 
-  async delete(id: string, onProgress?: (message: string) => void): Promise<void> {
+  async delete(id: string, onProgress?: (message: string) => void, options?: { allowMissing: boolean }): Promise<void> {
     const started = Date.now();
     const report = (message: string) => {
       this.deps.logger.info(`[待处理删除 ${id}] ${message}（累计 ${((Date.now() - started) / 1000).toFixed(1)} 秒）`);
@@ -97,6 +97,7 @@ export class PendingDeletionService {
       release = mediaPathOwnership.acquireAll([itemPath, filesystemPathKey(sourcePath)]);
       report(`核验 STRM：${itemPath}`);
       let snapshot = item.deletionJson ? (JSON.parse(item.deletionJson) as PendingDeletionSnapshot) : null;
+      const resumedDeletion = Boolean(snapshot);
       const assertActive = async () => {
         const current = (await this.deps.config.get()).embyDeletion;
         const configured = await this.deps.libraries.get(libraryId);
@@ -128,72 +129,100 @@ export class PendingDeletionService {
       if (!snapshot) {
         if (!isPathInside(library.source.realPath, filesystemPathKey(sourcePath)))
           throw new Error("STRM 不在此媒体库已验证的来源目录内");
-        const stat = await lstat(sourcePath);
-        if (
-          path.extname(sourcePath).toLowerCase() !== ".strm" ||
-          !stat.isFile() ||
-          stat.size > 64 * 1024 ||
-          !isPathInside(library.source.realPath, filesystemPathKey(await realpath(sourcePath)))
-        )
-          throw new Error("STRM 文件类型或位置已变化");
-        const content = await readFile(sourcePath);
-        const sha256 = createHash("sha256").update(content).digest("hex");
-        if (recorded && recorded.sha256 !== sha256) throw new Error("已记录的 STRM 来源文件被替换");
-        const playback = parseStrmTarget(content.toString("utf8"));
-        const resourceIdentity = playback ? moviePilotResourceIdentity(playback) : undefined;
-        const expected = new URL("api/v1/plugin/P115StrmHelper/redirect_url", `${connection.baseUrl}/`);
-        if (!resourceIdentity?.startsWith(`${expected.origin}${expected.pathname}?pickcode=`))
-          throw new Error("STRM 未指向已配置的 MoviePilot 115 文件");
-        const pickcode = new URL(resourceIdentity).searchParams.get("pickcode") ?? "";
-        let candidates: { target: StrmCloudBinding["target"]; ancestors: StrmCloudBinding["ancestors"] }[];
-        if (
-          binding?.connectionId === connection.id &&
-          binding.fileUpdatedAt === file?.updatedAt.getTime() &&
-          binding.source.sourcePath === filesystemPathKey(sourcePath) &&
-          binding.source.sha256 === sha256 &&
-          binding.source.resourceIdentity === resourceIdentity
-        ) {
-          report("复用已核验的 115 来源关联");
-          candidates = [binding];
+        const stat = await lstat(sourcePath).catch((error: NodeJS.ErrnoException) => {
+          if (options?.allowMissing && error.code === "ENOENT") return null;
+          throw error;
+        });
+        if (!stat) {
+          if (
+            !file ||
+            !binding ||
+            binding.connectionId !== connection.id ||
+            binding.fileUpdatedAt !== file.updatedAt.getTime() ||
+            binding.source.sourcePath !== filesystemPathKey(sourcePath) ||
+            (recorded &&
+              (binding.source.sourcePath !== recorded.sourcePath ||
+                binding.source.sha256 !== recorded.sha256 ||
+                binding.source.resourceIdentity !== recorded.resourceIdentity))
+          )
+            throw new Error("STRM 文件不存在，且没有可核验的 115 来源关联，请人工检查");
+          snapshot = {
+            library,
+            cloud: binding,
+            fileId: file.id,
+            fileUpdatedAt: file.updatedAt.getTime(),
+            linkPath: sourcePath !== itemPath ? itemPath : null,
+            step: "deleting_cloud",
+          };
         } else {
-          const key = JSON.stringify(connection);
-          const previous = this.indexCache;
-          let cache =
-            previous && previous.key === key && previous.expiresAt > Date.now()
-              ? previous
-              : { key, expiresAt: Number.POSITIVE_INFINITY, promise: client.index(connection) };
-          const reused = cache === previous;
-          if (reused) report("复用 115 来源索引，跳过重复遍历；删除前仍实时核验目标");
-          this.indexCache = cache;
-          try {
-            candidates = (await cache.promise).get(pickcode) ?? [];
-            if (reused && !candidates.length) {
-              report("索引未匹配到此 STRM，重新扫描新加入的 115 文件");
-              cache = { key, expiresAt: Number.POSITIVE_INFINITY, promise: client.index(connection) };
-              this.indexCache = cache;
+          if (
+            path.extname(sourcePath).toLowerCase() !== ".strm" ||
+            !stat.isFile() ||
+            stat.size > 64 * 1024 ||
+            !isPathInside(library.source.realPath, filesystemPathKey(await realpath(sourcePath)))
+          )
+            throw new Error("STRM 文件类型或位置已变化");
+          const content = await readFile(sourcePath);
+          const sha256 = createHash("sha256").update(content).digest("hex");
+          if (recorded && recorded.sha256 !== sha256) throw new Error("已记录的 STRM 来源文件被替换");
+          const playback = parseStrmTarget(content.toString("utf8"));
+          const resourceIdentity = playback ? moviePilotResourceIdentity(playback) : undefined;
+          const expected = new URL("api/v1/plugin/P115StrmHelper/redirect_url", `${connection.baseUrl}/`);
+          if (!resourceIdentity?.startsWith(`${expected.origin}${expected.pathname}?pickcode=`))
+            throw new Error("STRM 未指向已配置的 MoviePilot 115 文件");
+          const pickcode = new URL(resourceIdentity).searchParams.get("pickcode") ?? "";
+          let candidates: { target: StrmCloudBinding["target"]; ancestors: StrmCloudBinding["ancestors"] }[];
+          if (
+            binding?.connectionId === connection.id &&
+            binding.fileUpdatedAt === file?.updatedAt.getTime() &&
+            binding.source.sourcePath === filesystemPathKey(sourcePath) &&
+            binding.source.sha256 === sha256 &&
+            binding.source.resourceIdentity === resourceIdentity
+          ) {
+            report("复用已核验的 115 来源关联");
+            candidates = [binding];
+          } else {
+            const key = JSON.stringify(connection);
+            const previous = this.indexCache;
+            let cache =
+              previous && previous.key === key && previous.expiresAt > Date.now()
+                ? previous
+                : { key, expiresAt: Number.POSITIVE_INFINITY, promise: client.index(connection) };
+            const reused = cache === previous;
+            if (reused) report("复用 115 来源索引，跳过重复遍历；删除前仍实时核验目标");
+            this.indexCache = cache;
+            try {
               candidates = (await cache.promise).get(pickcode) ?? [];
+              if (reused && !candidates.length) {
+                report("索引未匹配到此 STRM，重新扫描新加入的 115 文件");
+                cache = { key, expiresAt: Number.POSITIVE_INFINITY, promise: client.index(connection) };
+                this.indexCache = cache;
+                candidates = (await cache.promise).get(pickcode) ?? [];
+              }
+              if (!Number.isFinite(cache.expiresAt)) cache.expiresAt = Date.now() + 5 * 60_000;
+            } catch (error) {
+              if (this.indexCache === cache) this.indexCache = undefined;
+              throw error;
             }
-            if (!Number.isFinite(cache.expiresAt)) cache.expiresAt = Date.now() + 5 * 60_000;
-          } catch (error) {
-            if (this.indexCache === cache) this.indexCache = undefined;
-            throw error;
           }
+          if (!candidates.length && options?.allowMissing)
+            throw new Error("115 文件未找到，且没有可核验的来源关联，请人工检查");
+          if (candidates.length !== 1 || candidates[0].target.size == null)
+            throw new Error("无法唯一核验 STRM 对应的 115 源文件");
+          snapshot = {
+            library,
+            cloud: {
+              ...candidates[0],
+              connectionId: connection.id,
+              fileUpdatedAt: file?.updatedAt.getTime() ?? 0,
+              source: { sourcePath: filesystemPathKey(sourcePath), sha256, resourceIdentity },
+            },
+            fileId: file?.id ?? null,
+            fileUpdatedAt: file?.updatedAt.getTime() ?? null,
+            linkPath: recorded && sourcePath !== itemPath ? itemPath : null,
+            step: "deleting_cloud",
+          };
         }
-        if (candidates.length !== 1 || candidates[0].target.size == null)
-          throw new Error("无法唯一核验 STRM 对应的 115 源文件");
-        snapshot = {
-          library,
-          cloud: {
-            ...candidates[0],
-            connectionId: connection.id,
-            fileUpdatedAt: file?.updatedAt.getTime() ?? 0,
-            source: { sourcePath: filesystemPathKey(sourcePath), sha256, resourceIdentity },
-          },
-          fileId: file?.id ?? null,
-          fileUpdatedAt: file?.updatedAt.getTime() ?? null,
-          linkPath: recorded && sourcePath !== itemPath ? itemPath : null,
-          step: "deleting_cloud",
-        };
       }
       if (
         snapshot.cloud.connectionId !== connection.id ||
@@ -218,13 +247,28 @@ export class PendingDeletionService {
       };
       if (snapshot.step === "deleting_cloud") {
         report(`实时核验 115 目标：${snapshot.cloud.target.path}`);
-        await strm.assertSource(library, snapshot.cloud, false);
-        if (snapshot.linkPath) await strm.assertSource(linkLibrary, linkSnapshot, false);
+        await strm.assertSource(library, snapshot.cloud, Boolean(options?.allowMissing));
+        if (snapshot.linkPath) await strm.assertSource(linkLibrary, linkSnapshot, Boolean(options?.allowMissing));
         const target = await client.verify(connection, snapshot.cloud);
-        if (!target) throw new Error("115 文件已消失但没有删除成功记录，请人工核查");
+        if (!target && (!options?.allowMissing || resumedDeletion))
+          throw new Error("115 文件已消失但没有删除成功记录，请人工核查");
+        if (!target) {
+          report("检查 115 来源目录，确认文件未移动");
+          const index = await client.index(connection);
+          if (
+            [...index.values()]
+              .flat()
+              .some(
+                ({ target: candidate }) =>
+                  candidate.fileid === snapshot.cloud.target.fileid ||
+                  candidate.pickcode === snapshot.cloud.target.pickcode,
+              )
+          )
+            throw new Error("115 来源文件可能已移动或身份发生变化，请人工检查");
+        }
         await assertActive();
-        await strm.assertSource(library, snapshot.cloud, false);
-        if (snapshot.linkPath) await strm.assertSource(linkLibrary, linkSnapshot, false);
+        await strm.assertSource(library, snapshot.cloud, Boolean(options?.allowMissing));
+        if (snapshot.linkPath) await strm.assertSource(linkLibrary, linkSnapshot, Boolean(options?.allowMissing));
         const tombstoneId = `pending:${id}`;
         state.database.sqlite.transaction(() => {
           pending.saveDeletion(id, item.updatedAt, JSON.stringify(snapshot));
@@ -238,8 +282,10 @@ export class PendingDeletionService {
               blocked: true,
             });
         })();
-        report(`删除 115 源文件：${target.path}`);
-        await client.deleteFile(target);
+        if (target) {
+          report(`删除 115 源文件：${target.path}`);
+          await client.deleteFile(target);
+        } else report("115 来源目录内未找到源文件，继续清理本地记录");
         snapshot.step = "cleaning_source";
         pending.saveDeletion(id, item.updatedAt, JSON.stringify(snapshot));
       }

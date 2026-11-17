@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import type { PersistenceDatabase } from "./database";
 import { pendingActions, pendingItems } from "./schema";
 
@@ -12,12 +12,15 @@ export class PendingActionRepository {
     return this.database.db
       .select()
       .from(pendingActions)
-      .where(sql`
-      ${pendingActions.status} in ('queued', 'running', 'retrying')
-      or exists (select 1 from pending_items p where p.task_id = ${pendingActions.id})
-      or ${pendingActions.id} in (select id from pending_actions order by created_at desc, rowid desc limit 100)
-    `)
-      .orderBy(desc(pendingActions.createdAt), sql`rowid desc`)
+      .orderBy(
+        sql`case
+          when ${pendingActions.status} = 'running' then 0
+          when ${pendingActions.status} in ('queued', 'retrying') then 1
+          else 2
+        end`,
+        asc(pendingActions.createdAt),
+        sql`rowid asc`,
+      )
       .all();
   }
 
@@ -57,8 +60,26 @@ export class PendingActionRepository {
         completedAt: null,
       };
       this.database.db.insert(pendingActions).values(row).run();
+      if (row.action === "delete" && item.taskId)
+        this.database.db
+          .delete(pendingActions)
+          .where(
+            and(
+              eq(pendingActions.id, item.taskId),
+              eq(pendingActions.action, "delete"),
+              eq(pendingActions.status, "failed"),
+            ),
+          )
+          .run();
       return row;
     })();
+  }
+
+  clearCompletedDeletions(): number {
+    return this.database.db
+      .delete(pendingActions)
+      .where(and(eq(pendingActions.action, "delete"), eq(pendingActions.status, "completed")))
+      .run().changes;
   }
 
   recover(): void {

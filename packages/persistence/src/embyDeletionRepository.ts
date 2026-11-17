@@ -150,7 +150,6 @@ export class EmbyDeletionRepository {
         .from(embyDeletionEvents)
         .where(inArray(embyDeletionEvents.status, ["completed", "ignored"]))
         .orderBy(desc(embyDeletionEvents.receivedAt))
-        .limit(50)
         .all(),
     ];
   }

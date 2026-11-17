@@ -15,7 +15,7 @@ export type DeletionJobStatus =
 
 export interface DeletionJob {
   id: string;
-  source: "emby" | "duplicate";
+  source: "emby" | "duplicate" | "library" | "pending";
   status: DeletionJobStatus;
   step: DeletionJobStep;
   name: string;
@@ -38,13 +38,14 @@ export interface DeletionJob {
   canRetry: boolean;
   retryRunId: string | null;
   retryPlanned: boolean;
+  progress?: string;
 }
 export interface DeletionJobList {
   jobs: DeletionJob[];
 }
 export interface DeletionRetryResponse {
   runId: string | null;
+  jobId?: string;
 }
 
 export const isOpenDeletionJob = (job: DeletionJob): boolean => job.status !== "completed" && job.status !== "ignored";
-export const needsDeletionReview = (job: DeletionJob): boolean => job.status === "needs_review";

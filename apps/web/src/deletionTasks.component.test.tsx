@@ -76,6 +76,16 @@ test("deletion actions follow persisted progress, recover stalled requests and r
   );
   try {
     await expect.element(screen.getByRole("heading", { name: completed.name })).toBeVisible();
+    await screen.getByRole("button", { name: "未完成", exact: true }).click();
+    await expect.element(screen.getByRole("heading", { name: pending.name })).toBeVisible();
+    const next = { ...pending, id: "action/next", name: "Next movie", status: "running" as const };
+    jobs = [{ ...pending, status: "completed" }, next, completed];
+    await client.invalidateQueries({ queryKey: queryKeys.deletions.all });
+    await expect.element(screen.getByRole("heading", { name: next.name })).toBeVisible();
+    jobs = [pending, completed];
+    await client.invalidateQueries({ queryKey: queryKeys.deletions.all });
+    await screen.getByRole("button", { name: "全部任务", exact: true }).click();
+    await expect.element(screen.getByRole("heading", { name: completed.name })).toBeVisible();
     await screen.getByRole("button", { name: "清除已结束记录" }).click();
     await expect.poll(() => error.mock.calls).toEqual([["Clear failed"]]);
     await expect.element(screen.getByRole("button", { name: /Finished movie/ })).toBeVisible();
@@ -146,7 +156,7 @@ test("deletion actions follow persisted progress, recover stalled requests and r
     await expect.element(screen.getByRole("list", { name: "查看删除流程" })).toBeVisible();
     await screen.getByRole("button", { name: "清除已结束记录" }).click();
     await expect.element(screen.getByText("暂无删除任务")).toBeVisible();
-    await expect.element(screen.getByText("选择影片，查看联动删除流程")).toBeVisible();
+    await expect.element(screen.getByText("选择任务，查看删除进度")).toBeVisible();
     await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
   } finally {
     finishFirst({ runId: null });

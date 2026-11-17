@@ -37,7 +37,8 @@ export class PendingRepository {
         .where(sql`
       ${pendingItems.kind} != 'new_file' and not exists (
         select 1 from pending_actions a where a.item_id = ${pendingItems.id}
-        and a.status in ('queued', 'running', 'retrying')
+        and (a.status in ('queued', 'running', 'retrying')
+          or (a.action = 'delete' and a.status = 'failed' and a.id = ${pendingItems.taskId}))
       )`)
         .get()?.count ?? 0
     );
@@ -49,7 +50,8 @@ export class PendingRepository {
       .from(pendingItems)
       .where(sql`not exists (
       select 1 from pending_actions a where a.item_id = ${pendingItems.id}
-      and a.status in ('queued', 'running', 'retrying')
+      and (a.status in ('queued', 'running', 'retrying')
+        or (a.action = 'delete' and a.status = 'failed' and a.id = ${pendingItems.taskId}))
     )`)
       .orderBy(desc(pendingItems.updatedAt))
       .all();

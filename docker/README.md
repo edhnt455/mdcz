@@ -24,15 +24,15 @@
    | Dockerfile 文件名 | `Dockerfile` |
    | 镜像版本 | `$version` |
 
-4. 修改根目录 `VERSION`，本次为 `0.22.1`。版本使用不带 `v` 前缀的语义版本号，支持 `0.22.1-rc.1`，不接受 `+` 构建元数据。Docker 打包脚本直接读取并校验该文件，应用展示版本由此生成，无需修改 `package.json` 或配置构建参数。
+4. 修改根目录 `VERSION`。版本使用不带 `v` 前缀的语义版本号，支持预发布版本（例如 `0.22.2-rc.1`），不接受 `+` 构建元数据。Docker 打包脚本直接读取并校验该文件，应用展示版本由此生成，无需修改 `package.json` 或配置构建参数。常规发布只递增补丁号（例如 `0.22.2` → `0.22.3`）；只有用户明确提出时才递增次版本号（例如 `0.22.x` → `0.23.0`）。不要重用或移动已发布版本。
 5. 提交并推送代码后，给该提交创建与 `VERSION` 一致的发布标签并推送：
 
 ```sh
-git tag release-v0.22.1
-git push origin release-v0.22.1
+git tag release-v0.22.2
+git push origin release-v0.22.2
 ```
 
-`release-v0.22.1` 标签匹配内置规则，生成 `registry.cn-hangzhou.aliyuncs.com/skyhook-image/mdcz:0.22.1`。后续发布应同步修改 `VERSION` 和标签版本；只推送 `main` 不会匹配这条标签规则。不要移动已发布标签来重用版本号。这条规则不生成 `latest`，部署时使用具体版本。
+`release-v0.22.2` 标签匹配内置规则，生成 `registry.cn-hangzhou.aliyuncs.com/skyhook-image/mdcz:0.22.2`。后续发布应同步修改 `VERSION` 和标签版本；只推送 `main` 不会匹配这条标签规则。这条规则不生成 `latest`，部署时使用具体版本。
 
 在阿里云「构建日志」查看构建状态，成功后在「镜像版本」确认标签。个人版单次构建限时 30 分钟；海外构建仍需将镜像传回杭州，存在跨境网络慢或超时的风险，以实际构建日志为准。国内构建实测在拉取 `node:24-bookworm-slim` 时发生 Docker Hub 连接超时，尚未进入项目编译。当前 Dockerfile 使用普通多阶段构建，不依赖 BuildKit 缓存挂载。详见[阿里云个人版构建指南](https://help.aliyun.com/zh/acr/user-guide/create-a-repository-and-build-images)。
 
@@ -43,7 +43,7 @@ git push origin release-v0.22.1
 1. 将仓库根目录的 `compose.yaml` 复制到部署目录，并在同级目录下将 `docker/compose.env.example` 复制命名为 `.env`。
 2. 编辑 `.env` 文件：
    - 填写 `ALIYUN_REGISTRY` 和 `ALIYUN_NAMESPACE`，与阿里云镜像仓库地址一致。
-   - 前往阿里云 ACR 的对应命名空间下 `mdcz` 仓库查看已发布标签并填入 `MDCZ_VERSION`（例如 `0.22.1`，不带 `v` 前缀）。
+   - 前往阿里云 ACR 的对应命名空间下 `mdcz` 仓库查看已发布标签并填入 `MDCZ_VERSION`（例如 `0.22.2`，不带 `v` 前缀）。
    - 填写宿主机上真实的影片目录绝对路径 `MDCZ_MEDIA_PATH`。
    - 配置目录所有者的数字用户与组 ID（`PUID`、`PGID`，可在宿主机终端运行 `id` 命令获取）。
    - 若在 NAS 或局域网服务器部署，建议将 `MDCZ_BIND_IP` 改为 `0.0.0.0` 或 NAS 的局域网 IP。

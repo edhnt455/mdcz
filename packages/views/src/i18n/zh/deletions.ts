@@ -1,8 +1,6 @@
 import type { Messages } from "../en";
 export const deletions: Messages["deletions"] = {
-  title: "联动删除",
-  mediaPending: "媒体待处理",
-  pendingTitle: "待处理的删除任务",
+  title: "删除任务",
   description: "每部影片独立处理，一部失败不会阻挡其他影片。",
   openWorkbench: "查看删除流程",
   back: "刮削 / 维护工作台",
@@ -10,8 +8,7 @@ export const deletions: Messages["deletions"] = {
   clearCompleted: "清除已结束记录",
   cleared: "已清除已结束记录",
   empty: "暂无删除任务",
-  emptyPending: "暂无未完成的删除任务",
-  select: "选择影片，查看联动删除流程",
+  select: "选择任务，查看删除进度",
   error: "读取删除任务失败",
   retry: "重试未完成步骤",
   continue: "继续已确认的删除",
@@ -28,7 +25,7 @@ export const deletions: Messages["deletions"] = {
     ignored: "已忽略",
   },
   observed: "观察完成",
-  source: { emby: "Emby 删除", duplicate: "重复版本处理" },
+  source: { emby: "Emby 删除", duplicate: "重复版本处理", library: "媒体库删除", pending: "待处理删除" },
   steps: {
     validating: "核验当前影片",
     deleting_cloud: "删除 115 源视频",
@@ -58,7 +55,7 @@ export const deletions: Messages["deletions"] = {
   settings: "打开联动设置",
   all: "全部任务",
   unfinished: "未完成",
-  completed: "已结束",
+  completed: "已完成",
   failure: "当前影片需要处理",
   unknownLibrary: "未知媒体库",
 };

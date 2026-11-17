@@ -151,7 +151,7 @@ export class LibraryDeletionService {
     if (path.extname(filePath).toLowerCase() === ".strm") {
       if (target.moviePilotConnectionId && target.moviePilotConnectionId !== configuration.embyDeletion.moviePilot?.id)
         throw new Error("任务提交后 MoviePilot 连接已变化，请检查后重新提交");
-      await this.strmDeletion.delete(itemId, progress);
+      await this.strmDeletion.delete(itemId, progress, { allowMissing: true });
       return;
     }
 

@@ -66,7 +66,7 @@ it("clears all finished deletion records while preserving unfinished work and me
   }
   conflicts.preview({ itemId: "preview", taskId: "scrape-task", token: "preview", snapshotJson: "{}" });
   const before = await services.deletions.list();
-  expect(before.jobs.filter((job) => job.status === "completed" || job.status === "ignored")).toHaveLength(50);
+  expect(before.jobs.filter((job) => job.status === "completed" || job.status === "ignored")).toHaveLength(60);
   const fetcher = vi.spyOn(globalThis, "fetch");
   const response = await fastify.inject({ ...request, headers });
   expect(response.statusCode).toBe(200);

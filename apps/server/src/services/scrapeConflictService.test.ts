@@ -190,6 +190,7 @@ async function fixture(shared = false) {
       config: deps.config,
       scrape: { conflicts: service },
       emby: { processing: new Map(), retry: vi.fn() },
+      pending: { retryJob: vi.fn() },
     }),
     restart: () => new ScrapeConflictService(deps),
     retry,

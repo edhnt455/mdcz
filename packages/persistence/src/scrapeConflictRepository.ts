@@ -35,7 +35,6 @@ export class ScrapeConflictRepository {
         .from(scrapeConflictResolutions)
         .where(and(isNotNull(scrapeConflictResolutions.keep), eq(scrapeConflictResolutions.step, "completed")))
         .orderBy(desc(sql`json_extract(${scrapeConflictResolutions.snapshotJson}, '$.previewedAt')`))
-        .limit(50)
         .all(),
     ];
   }

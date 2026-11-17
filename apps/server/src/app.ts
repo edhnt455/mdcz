@@ -298,7 +298,14 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
   const services: ServerServices = {
     deletions:
       options.services?.deletions ??
-      new DeletionService({ persistence, config, emby: embyDeletion, scrape, isRunning: options.isDeletionRunning }),
+      new DeletionService({
+        persistence,
+        config,
+        emby: embyDeletion,
+        scrape,
+        pending,
+        isRunning: options.isDeletionRunning,
+      }),
     activity,
     automation,
     auth: options.services?.auth ?? new AuthService(config.runtimePaths, persistence, undefined, options.readOnly),

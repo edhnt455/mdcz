@@ -307,10 +307,16 @@ export class StrmDeletionService {
     await this.assertMounts(library);
     const sourcePath = snapshot.source.sourcePath;
     const parked = `${sourcePath}.mdcz-delete-${eventId}`;
-    if (
-      !library.source ||
-      !isPathInside(library.source.realPath, filesystemPathKey(await realpath(path.dirname(sourcePath))))
-    )
+    if (!library.source) throw new Error("STRM 来源目录身份已变化");
+    const directory = await realpath(path.dirname(sourcePath)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!directory) {
+      if (!(await this.assertSource(library, snapshot, true))) return;
+      throw new Error("STRM 来源目录身份已变化");
+    }
+    if (!isPathInside(library.source.realPath, filesystemPathKey(directory)))
       throw new Error("STRM 来源目录身份已变化");
     let parkedExists = false;
     try {
@@ -359,7 +365,21 @@ export class StrmDeletionService {
         throw new Error("STRM 来源已被替换，需要人工检查");
       return true;
     } catch (error) {
-      if (allowMissing && (error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      if (allowMissing && (error as NodeJS.ErrnoException).code === "ENOENT") {
+        let directory = path.dirname(snapshot.source.sourcePath);
+        while (true) {
+          try {
+            if (!isPathInside(library.source.realPath, filesystemPathKey(await realpath(directory))))
+              throw new Error("STRM 来源目录身份已变化");
+            return false;
+          } catch (cause) {
+            if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+            const parent = path.dirname(directory);
+            if (parent === directory) throw cause;
+            directory = parent;
+          }
+        }
+      }
       throw error;
     }
   }

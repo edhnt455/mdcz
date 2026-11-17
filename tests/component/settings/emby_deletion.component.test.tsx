@@ -44,7 +44,7 @@ test("configures observation with the exact output library and exposes a one-tim
   const service = createService();
   const screen = await render(<EmbyDeletionPanel service={service} />);
   await expect
-    .element(screen.getByRole("link", { name: "在工作台查看联动删除任务" }))
+    .element(screen.getByRole("link", { name: "在工作台查看删除任务" }))
     .toHaveAttribute("href", "/workbench?intent=deletion");
   await expect.element(screen.getByText("核验身份", { exact: true })).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "生成 Webhook 地址" }).click();
@@ -89,7 +89,7 @@ test("shows configuration failures without discarding edits and recovers after a
   const service = createService();
   service.configure.mockRejectedValueOnce(new Error("Library mount is offline"));
   const screen = await render(<EmbyDeletionPanel service={service} />);
-  await expect.element(screen.getByRole("link", { name: "在工作台查看联动删除任务" })).toBeVisible();
+  await expect.element(screen.getByRole("link", { name: "在工作台查看删除任务" })).toBeVisible();
   await screen.getByRole("textbox", { name: "Emby 服务器 ID" }).fill("emby-server");
   await screen.getByRole("button", { name: "保存联动设置" }).click();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("Library mount is offline");

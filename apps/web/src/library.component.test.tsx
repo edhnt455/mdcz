@@ -1,4 +1,5 @@
-import type { LibraryDeletionResponse, PendingActionJob } from "@mdcz/shared/pending";
+import type { DeletionJob } from "@mdcz/shared/deletions";
+import type { LibraryDeletionResponse } from "@mdcz/shared/pending";
 import type { LibraryEntryDto, LibraryListResponse } from "@mdcz/shared/serverDtos";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -14,7 +15,7 @@ import { toast } from "sonner";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { api } from "./client";
-import { PendingTasksPage } from "./pendingTasks";
+import { DeletionTasksPage } from "./deletionTasks";
 import { LibraryPage, Route } from "./routes/library";
 
 test("library deletion closes after submission while jobs and library refresh continue in the background", async () => {
@@ -76,42 +77,41 @@ test("library deletion closes after submission while jobs and library refresh co
   });
   const remove = vi.spyOn(api.library, "delete").mockReturnValue(submitted);
   const removeFile = vi.spyOn(api.library, "removeFile").mockResolvedValue({ taskIds: ["file-job"] });
-  const job: PendingActionJob = {
-    id: "file-job",
-    itemId: "pending",
-    action: "delete",
-    canRetry: false,
+  const job: DeletionJob = {
+    id: "action/file-job",
+    source: "library",
     status: "running",
-    progress: "正在删除 115 源文件",
+    step: "validating",
+    name: "CD1.strm",
+    libraryName: "Media",
+    linkPath: "/media/CD1.strm",
+    sourcePaths: [],
+    cloudPath: null,
+    cloudFileId: null,
+    cloudSize: null,
+    cloudDeleted: false,
+    cloudPlanned: false,
+    sharedResource: false,
     error: null,
+    result: null,
     attempts: 1,
     nextAttemptAt: null,
     createdAt: 1,
     updatedAt: 1,
     completedAt: null,
-    item: {
-      id: "pending",
-      kind: "failed",
-      ref: { rootId: "root", relativePath: "CD1.strm" },
-      path: "/media/CD1.strm",
-      fileName: "CD1.strm",
-      libraryId: null,
-      libraryName: null,
-      movieId: entry.id,
-      number: entry.number,
-      detail: null,
-      candidates: [],
-      createdAt: entry.createdAt,
-      updatedAt: entry.createdAt,
-    },
+    canRetry: false,
+    retryRunId: null,
+    retryPlanned: false,
+    progress: "正在删除 115 源文件",
   };
-  vi.spyOn(api.pending, "jobs").mockResolvedValue({ jobs: [job] });
+  vi.spyOn(api.deletions, "list").mockResolvedValue({ jobs: [job] });
+  vi.spyOn(api.deletions, "detail").mockResolvedValue(job);
   const root = createRootRoute({ component: Outlet });
   const library = createRoute({ getParentRoute: () => root, path: "/", component: LibraryPage });
   const workbench = createRoute({
     getParentRoute: () => root,
     path: "/workbench",
-    component: () => <PendingTasksPage selectedId="file-job" onSelect={vi.fn()} />,
+    component: () => <DeletionTasksPage selectedId="action/file-job" onSelect={vi.fn()} />,
   });
   const router = createRouter({
     routeTree: root.addChildren([library, workbench]),
@@ -146,7 +146,7 @@ test("library deletion closes after submission while jobs and library refresh co
     if (!action || typeof action !== "object" || !("onClick" in action)) throw new Error("Missing workbench action");
     action.onClick(new MouseEvent("click") as unknown as ReactMouseEvent<HTMLButtonElement>);
     await expect.element(screen.getByText("正在删除 115 源文件", { exact: true })).toBeVisible();
-    expect(router.state.location.search).toMatchObject({ intent: "actions", jobId: "file-job" });
+    expect(router.state.location.search).toMatchObject({ intent: "deletion", jobId: "action/file-job" });
   } finally {
     accept({ taskIds: ["batch-job"] });
     await screen.unmount();

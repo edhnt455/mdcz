@@ -1,7 +1,5 @@
 export const deletions = {
-  title: "Deletion sync",
-  mediaPending: "Media pending",
-  pendingTitle: "Deletion tasks awaiting action",
+  title: "Deletion tasks",
   description: "Each movie is processed independently. A failed task does not block other movies.",
   openWorkbench: "Open deletion workflow",
   back: "Scrape / maintenance",
@@ -9,7 +7,6 @@ export const deletions = {
   clearCompleted: "Clear finished records",
   cleared: "Finished records cleared",
   empty: "No deletion tasks",
-  emptyPending: "No unfinished deletion tasks",
   select: "Select a movie to inspect its deletion workflow",
   error: "Could not load deletion tasks",
   retry: "Retry unfinished steps",
@@ -27,7 +24,12 @@ export const deletions = {
     ignored: "Ignored",
   },
   observed: "Observation complete",
-  source: { emby: "Emby deletion", duplicate: "Duplicate resolution" },
+  source: {
+    emby: "Emby deletion",
+    duplicate: "Duplicate resolution",
+    library: "Library deletion",
+    pending: "Pending file deletion",
+  },
   steps: {
     validating: "Verify this movie",
     deleting_cloud: "Delete 115 source",

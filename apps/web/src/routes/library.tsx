@@ -116,10 +116,12 @@ export function LibraryPage() {
       description: t.library.deletionQueued,
       action: {
         label: t.pending.viewWorkbench,
-        onClick: () => void navigate({ to: "/workbench", search: { intent: "actions", jobId: taskIds[0] } }),
+        onClick: () =>
+          void navigate({ to: "/workbench", search: { intent: "deletion", jobId: `action/${taskIds[0]}` } }),
       },
     });
     void queryClient.invalidateQueries({ queryKey: queryKeys.pending.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.deletions.all });
   };
   const deleteLibraryM = useMutation({
     mutationFn: (entries: LibraryEntryDto[]) => api.library.delete({ ids: entries.map((entry) => entry.id) }),

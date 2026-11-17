@@ -1,5 +1,5 @@
 import type { DeletionJob } from "@mdcz/shared/deletions";
-import { DeletionQueueView, DeletionWorkbenchView } from "@mdcz/views/deletions";
+import { DeletionWorkbenchView } from "@mdcz/views/deletions";
 import { useState } from "react";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -41,14 +41,24 @@ const completed = job({
   canRetry: false,
 });
 
-test("pending shows only unfinished movies and opens their own workflow", async () => {
-  const onOpen = vi.fn();
-  const screen = await render(<DeletionQueueView jobs={[job(), completed]} onOpen={onOpen} />);
-  await expect.element(screen.getByRole("heading", { name: "待处理的删除任务 · 1" })).toBeVisible();
-  await expect.element(screen.getByText("IPZZ-934")).not.toBeInTheDocument();
-  await expect.element(screen.getByText("当前影片的 Normal 来源无法核验")).toBeVisible();
-  await screen.getByRole("button", { name: "查看删除流程" }).click();
-  expect(onOpen).toHaveBeenCalledExactlyOnceWith("emby/blocked");
+test("workbench displays live progress for library deletion", async () => {
+  const running = job({ source: "library", status: "running", progress: "正在删除文件", error: null, canRetry: false });
+  const screen = await render(
+    <DeletionWorkbenchView
+      jobs={[running]}
+      selected={running}
+      filter="all"
+      onFilterChange={vi.fn()}
+      onSelect={vi.fn()}
+      onRetry={vi.fn()}
+      onRefresh={vi.fn()}
+      onClearCompleted={vi.fn()}
+      onOpenScrape={vi.fn()}
+    />,
+  );
+  await expect.element(screen.getByRole("status")).toHaveTextContent("正在删除文件");
+  await expect.element(screen.getByText("媒体库删除", { exact: false }).last()).toBeVisible();
+  await expect.element(screen.getByText("核验当前影片", { exact: true })).not.toBeInTheDocument();
 });
 
 test("workbench isolates movie errors, shows persisted steps and retries only the selected movie", async () => {
@@ -56,10 +66,13 @@ test("workbench isolates movie errors, shows persisted steps and retries only th
   function Workbench() {
     const jobs = [job(), completed];
     const [selected, setSelected] = useState(jobs[0]);
+    const [filter, setFilter] = useState<"all" | "unfinished" | "completed">("all");
     return (
       <DeletionWorkbenchView
         jobs={jobs}
         selected={selected}
+        filter={filter}
+        onFilterChange={setFilter}
         onSelect={(id) => setSelected(jobs.find((item) => item.id === id) ?? jobs[0])}
         onRetry={onRetry}
         onRefresh={vi.fn()}
@@ -87,6 +100,8 @@ test("workbench isolates movie errors, shows persisted steps and retries only th
     <DeletionWorkbenchView
       jobs={[local]}
       selected={local}
+      filter="all"
+      onFilterChange={vi.fn()}
       onSelect={vi.fn()}
       onRetry={onRetry}
       onRefresh={vi.fn()}
@@ -104,6 +119,8 @@ test("workbench clears finished records regardless of the filter and disables cl
   const props = {
     jobs: [job(), completed, job({ id: "emby/ignored", status: "ignored", name: "Observed" })],
     selected: null,
+    filter: "all" as const,
+    onFilterChange: vi.fn(),
     onSelect: vi.fn(),
     onRetry: vi.fn(),
     onRefresh: vi.fn(),

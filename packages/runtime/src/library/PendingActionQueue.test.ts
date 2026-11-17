@@ -46,6 +46,10 @@ it("recovers durable jobs, preserves checkpoints and serializes file actions wit
   const jobs = inputs.map((input) => actions.enqueue(input));
   pending.saveDeletion(items[0].id, items[0].updatedAt, '{"step":"cleaning_source"}');
   expect(actions.claim()?.id).toBe(jobs[0].id);
+  expect(actions.list().map((job) => [job.id, job.status])).toEqual([
+    [jobs[0].id, "running"],
+    [jobs[1].id, "queued"],
+  ]);
   expect(actions.enqueue(inputs[0]).id).toBe(jobs[0].id);
   expect(() => actions.enqueue({ ...inputs[0], action: "confirm" })).toThrow("已有正在执行");
   const runs = new ScrapeRunRepository(database);
@@ -89,7 +93,7 @@ it("recovers durable jobs, preserves checkpoints and serializes file actions wit
   expect(pending.list()).toEqual([]);
 });
 
-it("keeps transient retries in the workbench and returns only exhausted failures to pending", async () => {
+it("keeps transient retries and exhausted deletion failures out of the pending list", async () => {
   vi.useFakeTimers();
   pending.upsert({ kind: "new_file", rootId: "root", relativePath: "new.strm" });
   const item = pending.list()[0];
@@ -122,11 +126,12 @@ it("keeps transient retries in the workbench and returns only exhausted failures
   await queue.waitForIdle();
   expect(execute).toHaveBeenCalledTimes(3);
   expect(actions.list()[0]).toMatchObject({ status: "failed", attempts: 3 });
-  expect(pending.listAvailable()[0]).toMatchObject({
+  expect(pending.listAvailable()).toEqual([]);
+  expect(pending.list()[0]).toMatchObject({
     kind: "failed",
     taskId: job.id,
     taskKind: "action",
     detail: expect.stringContaining("HTTP 503"),
   });
-  expect(pending.count()).toBe(1);
+  expect(pending.count()).toBe(0);
 });

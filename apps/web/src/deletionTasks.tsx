@@ -1,3 +1,4 @@
+import { isOpenDeletionJob } from "@mdcz/shared/deletions";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { DeletionWorkbenchView } from "@mdcz/views/deletions";
 import { useT } from "@mdcz/views/i18n";
@@ -17,7 +18,11 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
   const client = useQueryClient();
   const list = useDeletionJobs();
   const jobs = list.data?.jobs ?? [];
-  const currentId = selectedId ?? jobs[0]?.id;
+  const [filter, setFilter] = useState<"all" | "unfinished" | "completed">("all");
+  const filtered = jobs.filter(
+    (job) => filter === "all" || (filter === "unfinished" ? isOpenDeletionJob(job) : !isOpenDeletionJob(job)),
+  );
+  const currentId = filtered.some((job) => job.id === selectedId) ? selectedId : filtered[0]?.id;
   const detail = useQuery({
     queryKey: queryKeys.deletions.detail(currentId ?? ""),
     queryFn: () => api.deletions.detail({ id: currentId ?? "" }),
@@ -27,7 +32,8 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
   });
   const [busy, setBusy] = useState<Map<string, number>>(new Map());
   const [errors, setErrors] = useState<Record<string, { version: number; message: string }>>({});
-  const selected = detail.data ?? jobs.find((job) => job.id === currentId) ?? null;
+  const selected =
+    (detail.data?.id === currentId ? detail.data : undefined) ?? filtered.find((job) => job.id === currentId) ?? null;
   const refresh = async () => client.invalidateQueries({ queryKey: queryKeys.deletions.all });
   const clearCompleted = useMutation({
     mutationFn: () => api.deletions.clearCompleted(),
@@ -50,7 +56,8 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
     setBusy((current) => new Map(current).set(id, version));
     setErrors((current) => ({ ...current, [id]: { version, message: "" } }));
     try {
-      await api.deletions.retry({ id });
+      const result = await api.deletions.retry({ id });
+      if (result.jobId) onSelect(result.jobId);
       toast.success(t.deletions.retryQueued);
     } catch (error) {
       setErrors((current) =>
@@ -94,6 +101,8 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
       onRefresh={() => void refresh()}
       onClearCompleted={() => clearCompleted.mutate()}
       onOpenScrape={(id) => void openScrape(id)}
+      filter={filter}
+      onFilterChange={setFilter}
     />
   );
 }

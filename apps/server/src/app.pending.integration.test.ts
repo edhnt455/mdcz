@@ -9,7 +9,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-it("submits durable deletion jobs, reports live progress, protects queued file identity and returns failures for repair", async () => {
+it("unifies queued deletions, preserves failure recovery and clears completed tasks", async () => {
   const root = await createTempRoot("pending-workflow");
   for (const name of ["first.strm", "second.strm"]) await writeFile(join(root, name), "original STRM");
   const { fastify, services } = await createTestServer();
@@ -57,6 +57,14 @@ it("submits durable deletion jobs, reports live progress, protects queued file i
     expect((await request("pending.ignore", { id: first.id })).statusCode).not.toBe(200);
     const next = await request("pending.delete", { id: second.id });
     expect(next.statusCode).toBe(200);
+    expect((await services.pending.jobs()).jobs.map((job) => [job.id, job.status])).toEqual([
+      [jobId, "running"],
+      [next.json().result.data.taskId, "queued"],
+    ]);
+    expect((await services.deletions.list()).jobs.map((job) => [job.id, job.status, job.source])).toEqual([
+      [`action/${jobId}`, "running", "pending"],
+      [`action/${next.json().result.data.taskId}`, "pending", "pending"],
+    ]);
     expect((await services.pending.list()).items).toEqual([]);
     await writeFile(join(root, "second.strm"), "replaced STRM");
     release();
@@ -65,20 +73,23 @@ it("submits durable deletion jobs, reports live progress, protects queued file i
     const failed = (await services.pending.jobs()).jobs;
     expect(failed.every((job) => job.status === "failed")).toBe(true);
     expect(failed.find((job) => job.itemId === second.id)?.error).toContain("STRM 文件已变化");
-    const remaining = (await services.pending.list()).items;
-    expect(remaining).toHaveLength(2);
-    expect(remaining.find((item) => item.id === first.id)).toMatchObject({
-      taskId: jobId,
-      deletionPending: true,
-      detail: expect.stringContaining("Source cleanup denied"),
+    expect((await services.pending.list()).items).toEqual([]);
+    expect(await services.deletions.detail(`action/${jobId}`)).toMatchObject({
+      status: "needs_review",
+      error: "Source cleanup denied",
+      canRetry: true,
     });
-    const retry = await request("pending.retryJob", { id: next.json().result.data.taskId });
+    const retry = await request("deletions.retry", { id: `action/${next.json().result.data.taskId}` });
     expect(retry.statusCode).toBe(200);
     await services.pending.waitForIdle();
-    expect((await services.pending.list()).items.map((item) => item.id)).toEqual([first.id]);
-    expect((await services.pending.jobs()).jobs.find((job) => job.id === retry.json().result.data.taskId)?.status).toBe(
-      "completed",
-    );
+    expect((await services.pending.list()).items).toEqual([]);
+    const retriedId = retry.json().result.data.jobId as string;
+    expect((await services.deletions.list()).jobs.map((job) => [job.id, job.status])).toEqual([
+      [`action/${jobId}`, "needs_review"],
+      [retriedId, "completed"],
+    ]);
+    expect(await services.deletions.clearCompleted()).toEqual({ cleared: 1 });
+    expect((await services.deletions.list()).jobs.map((job) => job.id)).toEqual([`action/${jobId}`]);
   } finally {
     release();
   }

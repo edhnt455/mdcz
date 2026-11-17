@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -412,4 +412,88 @@ test.each([
   expect(await readFile(f.sourcePath, "utf8")).toBe(
     scenario === "wrong server" ? f.content.replace("mp.test", "other.test") : f.content,
   );
+});
+
+test.each([
+  "missing source and remote",
+  "missing source with remote present",
+  "missing link and remote",
+  "missing binding",
+  "changed mount",
+  "remote unavailable",
+  "remote moved",
+  "missing directory",
+  "escaped directory",
+] as const)("handles missing library STRM safely: %s", async (scenario) => {
+  const f = await fixture();
+  const linkPath = path.join(f.link, "ABC-123.strm");
+  await writeFile(linkPath, f.content);
+  const root = await f.mediaRoots.ensurePath(f.link);
+  const sourcePath = ["missing directory", "escaped directory"].includes(scenario)
+    ? path.join(path.dirname(f.sourcePath), "nested", "ABC-123.strm")
+    : f.sourcePath;
+  if (scenario === "escaped directory") await symlink(f.link, path.dirname(sourcePath));
+  const source = {
+    sourcePath,
+    sha256: createHash("sha256").update(f.content).digest("hex"),
+    resourceIdentity: moviePilotResourceIdentity(f.content.trim()),
+  };
+  await f.library.upsertEntry({
+    movie: { number: "ABC-123" },
+    files: [
+      {
+        fileId: "published",
+        rootId: root.id,
+        rootRelativePath: "ABC-123.strm",
+        strmSourceJson: JSON.stringify(source),
+      },
+    ],
+  });
+  const file = f.repository.findFile(linkPath);
+  if (!file) throw new Error("Expected a published STRM");
+  if (scenario !== "missing binding")
+    f.repository.bind({
+      fileId: file.id,
+      libraryId: "library",
+      linkPath,
+      sourcePath,
+      blocked: false,
+      snapshotJson: JSON.stringify({
+        connectionId: "connection",
+        fileUpdatedAt: file.updatedAt.getTime(),
+        source,
+        target: f.remote.files[0],
+        ancestors: [f.configuration.embyDeletion.moviePilot?.root],
+      }),
+    });
+  if (scenario !== "missing link and remote") await rm(f.sourcePath);
+  await rm(linkPath);
+  if (scenario !== "missing source with remote present") f.remote.files = [];
+  if (scenario === "remote moved")
+    f.remote.files = [
+      {
+        ...JSON.parse(f.repository.binding("published")?.snapshotJson ?? "{}").target,
+        fileid: "moved",
+        path: "/AV/moved.mp4",
+      },
+    ];
+  if (scenario === "changed mount") await writeFile(path.join(f.link, ".mdcz-library-id"), "changed");
+  if (scenario === "remote unavailable") f.fetcher.mockRejectedValue(new Error("offline"));
+  const deletion = f.libraryDeletion();
+  await deletion.submit({ fileId: "published" });
+  const job = f.pendingActions.claim();
+  if (!job) throw new Error("Missing deletion job");
+  const execute = () => deletion.execute(job.itemId, JSON.parse(job.inputJson).libraryFile, vi.fn());
+  if (
+    ["missing binding", "changed mount", "remote unavailable", "remote moved", "escaped directory"].includes(scenario)
+  ) {
+    await expect(execute()).rejects.toThrow();
+    expect((await f.library.getEntryByFileId("published")).files).toHaveLength(1);
+    expect(f.remote.deleted).toEqual([]);
+  } else {
+    await execute();
+    await expect(f.library.getEntryByFileId("published")).rejects.toThrow("未找到");
+    expect(f.remote.deleted).toEqual(scenario === "missing source with remote present" ? ["115-file"] : []);
+    await expect(readFile(sourcePath)).rejects.toMatchObject({ code: "ENOENT" });
+  }
 });
