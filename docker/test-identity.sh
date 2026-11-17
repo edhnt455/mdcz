@@ -9,7 +9,7 @@ mkdir "$TEST_ROOT/data" "$TEST_ROOT/media"
 media_owner_before="$(stat -c '%u:%g' "$TEST_ROOT/media")"
 
 if [ "${MDCZ_DOCKER_SKIP_BUILD:-0}" != 1 ]; then
-  docker build -f apps/server/Dockerfile -t "$IMAGE" .
+  docker build -t "$IMAGE" .
 fi
 
 assert_output() {

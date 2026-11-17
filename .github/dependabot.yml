@@ -3,7 +3,6 @@ updates:
   - package-ecosystem: github-actions
     directories:
       - /
-      - /.github/actions/setup
     schedule:
       interval: monthly
     commit-message:

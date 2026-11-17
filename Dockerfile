@@ -1,17 +1,13 @@
-# syntax=docker/dockerfile:1.7
-
 # stage 1: build webui artifacts + staging dir via package script
-FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 ENV SKIP_INSTALL_SIMPLE_GIT_HOOKS=1
 WORKDIR /repo
-RUN --mount=type=cache,target=/root/.cache/node/corepack,sharing=locked \
-    corepack enable && corepack prepare pnpm@10.28.2 --activate
+RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 
 # Fetch from the lockfile before copying source. This layer is reusable across
-# source-only changes and is exported by the release workflow's BuildKit cache.
+# source-only changes through the builder's Docker layer cache.
 COPY pnpm-lock.yaml ./
-RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
-    corepack pnpm@10.28.2 fetch --store-dir=/pnpm/store
+RUN corepack pnpm@10.28.2 fetch --store-dir=/pnpm/store
 
 COPY package.json pnpm-workspace.yaml ./
 COPY apps/server apps/server
@@ -19,28 +15,22 @@ COPY apps/web apps/web
 COPY packages packages
 COPY scripts scripts
 COPY tsconfig.json tsconfig.node.json tsconfig.web.json tsconfig.test.json ./
-RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
-    CI=true pnpm install --offline --frozen-lockfile --store-dir=/pnpm/store
+RUN CI=true pnpm install --offline --frozen-lockfile --store-dir=/pnpm/store
 RUN pnpm --filter @mdcz/server build:webui
-ARG MDCZ_RELEASE_VERSION=docker
-RUN MDCZ_RELEASE_VERSION="${MDCZ_RELEASE_VERSION}" node scripts/stage-docker.mjs
+COPY VERSION ./
+RUN node scripts/stage-docker.mjs
 
 # stage 2: install runtime deps inside the staging tree
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 COPY --from=builder /repo/release/staging/mdcz-* /app/
-RUN --mount=type=cache,target=/pnpm/store,sharing=locked \
-    CI=true pnpm install --prod --frozen-lockfile --store-dir=/pnpm/store
+RUN CI=true pnpm install --prod --frozen-lockfile --store-dir=/pnpm/store
 
 # stage 3: minimal runtime
 FROM node:24-bookworm-slim
 LABEL org.opencontainers.image.source="https://github.com/edhnt455/mdcz"
 LABEL org.opencontainers.image.licenses="GPL-3.0-only"
-ARG MDCZ_RELEASE_VERSION=docker
-ARG MDCZ_REVISION=unknown
-LABEL org.opencontainers.image.version=$MDCZ_RELEASE_VERSION \
-      org.opencontainers.image.revision=$MDCZ_REVISION
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends fonts-wqy-zenhei gosu tini \

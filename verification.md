@@ -1,5 +1,12 @@
 # Emby 演员头像同步调度验证
 
+### 发布迁移到阿里云个人版自动构建（2026-11-17）
+
+- 按用户要求删除 GitHub CI、镜像发布工作流及无调用方的 workspace setup action，清理 Dependabot 目录引用。保留与检查、构建无关的仓库维护工作流。Dockerfile 移到根目录，与 ACR 现有内置规则 `tags:release-v$version`、上下文 `/`、文件名 `Dockerfile` 对齐；推送 `release-v0.22.1` 发布对应版本，不自动生成 `latest`。
+- 去掉构建参数与 BuildKit 缓存挂载依赖，改用普通多阶段构建和 Docker 层缓存。打包脚本直接读取、校验根目录 `VERSION`，保留锁文件和运行时依赖校验；应用打包版本为 `0.22.1`，不使用根 package.json 的 `0.24.1`。镜像不再附带由 GitHub 构建参数注入的 version/revision 标签，应用版本由发布目录 package.json 提供。
+- `pnpm build:webui`、`pnpm typecheck`、修改脚本 Biome、Shell 语法和 `git diff --check` 通过。实际运行 staging，确认版本、服务端进程包、WebUI、数据库迁移、映射表、水印及独立锁文件；隔离临时目录验证预发布版本和空值、路径穿越、非法前缀、数字前导零、构建元数据及超长版本拒绝。未增加测试文件或测试数量；构建保留既有第三方注解及 chunk 体积提示。
+- 本机 Docker daemon 未运行，未本地构建或启动容器；完整镜像构建以 ACR 构建记录为准。阿里云国内构建仍需拉取 GitHub、Node 基础镜像与依赖，不能保证网络速度。无数据库、应用业务逻辑、依赖或启动命令变化，Compose 地址变量不变。回滚构建方式可恢复旧提交中的工作流与 Dockerfile；已发布标签不应移动或复用。
+
 ### 镜像发布切换阿里云 ACR 个人版（2026-11-17）
 
 - GitHub Actions 使用仓库变量 `ALIYUN_REGISTRY`、`ALIYUN_NAMESPACE` 和 Secrets `ALIYUN_USERNAME`、`ALIYUN_PASSWORD` 登录并推送 `mdcz:<VERSION>`、`mdcz:latest`；配置缺失时在构建前报错。保留 VERSION 触发、手动运行、Linux amd64 与现有构建缓存。

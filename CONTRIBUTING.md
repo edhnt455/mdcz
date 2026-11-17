@@ -64,11 +64,11 @@ packages/
 ```bash
 pnpm build:webui
 # 从源码验证 Docker 镜像（不发布）
-docker build -f apps/server/Dockerfile -t mdcz:identity-test .
-# Linux 主机或 CI：验证容器权限、健康检查和停机
+docker build -t mdcz:identity-test .
+# Linux 主机：验证容器权限、健康检查和停机
 MDCZ_DOCKER_SKIP_BUILD=1 sh docker/test-identity.sh
 ```
 
 生产交付仅支持 Docker。`pnpm dev:webui` 和本地构建用于开发验证；不生成原生安装包或独立 WebUI 压缩包。
 
-修改 `VERSION` 并合并至 `main` 后，`docker-publish.yml` 发布 Linux amd64 镜像；也可手动触发。镜像命名、仓库 secrets、部署和回滚见 [Docker 指南](docker/README.md)。
+GitHub 不运行检查或镜像发布工作流，本地修改后按需运行上述验证。修改 `VERSION` 并提交推送后，为该提交创建并推送 `release-v<VERSION>` 标签，由阿里云 ACR 个人版自动构建发布。镜像构建规则、部署和回滚见 [Docker 指南](docker/README.md)。

@@ -20,7 +20,15 @@ const rootPackage = await readJson("package.json");
 const serverPackage = await readJson("apps/server/package.json");
 const lockfile = parse(await readFile(resolve(repoRoot, "pnpm-lock.yaml"), "utf8"));
 
-const releaseVersion = process.env.MDCZ_RELEASE_VERSION?.trim() || rootPackage.version;
+const releaseVersion = (await readFile(resolve(repoRoot, "VERSION"), "utf8")).trim();
+if (
+  !/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*)(\.([0-9]*[A-Za-z-][0-9A-Za-z-]*|0|[1-9][0-9]*))*)?$/.test(
+    releaseVersion,
+  ) ||
+  releaseVersion.length > 128
+) {
+  throw new Error(`VERSION must contain a Docker-tag-compatible semantic version, got: ${releaseVersion}`);
+}
 
 const stagingDirName = `mdcz-${releaseVersion}`;
 const stagingDir = resolve(stagingRoot, stagingDirName);

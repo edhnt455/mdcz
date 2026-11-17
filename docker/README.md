@@ -4,30 +4,45 @@
 
 ## 镜像发布
 
-仓库使用 `.github/workflows/docker-publish.yml` 发布镜像。PR 的 CI 检查覆盖服务端、WebUI 和 Docker 构建。
+镜像由阿里云 ACR 个人版直接从 GitHub 代码源构建并发布，GitHub 不运行检查或镜像发布工作流。本地修改后仍应按改动风险执行验证。
 
-1. 在阿里云 ACR 个人版控制台创建命名空间和名为 `mdcz` 的镜像仓库，从「访问凭证」复制公网 Registry 域名、登录名，并设置 Registry 固定密码。域名只填写主机名，不带 `https://` 或路径。新个人版示例：`crpi-xxxxxxxx.cn-hangzhou.personal.cr.aliyuncs.com`；请以控制台实际显示为准，参见[阿里云官方推送与拉取指南](https://help.aliyun.com/zh/acr/user-guide/use-a-container-registry-personal-edition-instance-to-push-and-pull-images)。
-2. 在本 fork 的 GitHub **Settings → Secrets and variables → Actions** 中配置：
+1. 在阿里云 ACR 控制台打开 `skyhook-image/mdcz` 仓库，确认代码源关联 `edhnt455/mdcz`。
+2. 在「构建」页面保留以下设置：
 
-   | 类型 | 名称 | 内容 |
-   | --- | --- | --- |
-   | Repository variable | `ALIYUN_REGISTRY` | 上述公网 Registry 域名 |
-   | Repository variable | `ALIYUN_NAMESPACE` | 已创建的命名空间，不一定等于登录名 |
-   | Repository secret | `ALIYUN_USERNAME` | ACR「访问凭证」显示的登录名 |
-   | Repository secret | `ALIYUN_PASSWORD` | ACR Registry 固定密码，不是阿里云账号登录密码或 AccessKey |
+   | 设置 | 值 |
+   | --- | --- |
+   | 代码变更自动构建镜像 | 开启 |
+   | 海外机器构建 | 关闭，使用国内构建，避免海外向杭州上传镜像 |
+   | 不使用缓存 | 关闭，复用 Docker 层缓存 |
 
-3. 修改根目录 `VERSION`，随代码一起提交并推送至本 fork 的 `main` 分支，即可触发构建。版本使用不带 `v` 前缀的语义版本号；支持 `0.22.1-rc.1` 形式的预发布版本，不接受 `+` 构建元数据。
-4. 首次发布或需要重新构建时，也可以在 **Actions → Build and publish Docker image → Run workflow** 手动运行，使用所选分支的源码和 `VERSION`。
+3. 使用控制台已有的内置规则：
 
-构建使用 `apps/server/Dockerfile`，推送 `<ALIYUN_REGISTRY>/<ALIYUN_NAMESPACE>/mdcz:<VERSION>` 和 `<ALIYUN_REGISTRY>/<ALIYUN_NAMESPACE>/mdcz:latest`。每次成功发布都会更新 `latest`（包括手动运行及预发布版本）。仅修改代码而未修改 `VERSION` 不会自动发布。
+   | 设置 | 值 |
+   | --- | --- |
+   | Branch/Tag | `tags:release-v$version` |
+   | 构建上下文目录 | `/`（仓库根目录） |
+   | Dockerfile 文件名 | `Dockerfile` |
+   | 镜像版本 | `$version` |
 
-发布流程只读取 GitHub 仓库，不会提交版本变更、推送 Git 标签或创建 Release。镜像版本由 `VERSION` 通过构建参数传入，无需同步修改 `package.json` 的版本号。
+4. 修改根目录 `VERSION`，本次为 `0.22.1`。版本使用不带 `v` 前缀的语义版本号，支持 `0.22.1-rc.1`，不接受 `+` 构建元数据。Docker 打包脚本直接读取并校验该文件，应用展示版本由此生成，无需修改 `package.json` 或配置构建参数。
+5. 提交并推送代码后，给该提交创建与 `VERSION` 一致的发布标签并推送：
+
+```sh
+git tag release-v0.22.1
+git push origin release-v0.22.1
+```
+
+`release-v0.22.1` 标签匹配内置规则，生成 `registry.cn-hangzhou.aliyuncs.com/skyhook-image/mdcz:0.22.1`。后续发布应同步修改 `VERSION` 和标签版本；只推送 `main` 不会匹配这条标签规则。不要移动已发布标签来重用版本号。这条规则不生成 `latest`，部署时使用具体版本。
+
+在阿里云「构建日志」查看构建状态，成功后在「镜像版本」确认标签。个人版单次构建限时 30 分钟；国内构建仍需从 GitHub、Docker Hub 和依赖源下载内容，速度与成功率需要以实际构建日志为准。当前 Dockerfile 使用普通多阶段构建，不依赖 BuildKit 缓存挂载。详见[阿里云个人版构建指南](https://help.aliyun.com/zh/acr/user-guide/create-a-repository-and-build-images)。
+
+原 GitHub 发布流程使用的 `ALIYUN_USERNAME`、`ALIYUN_PASSWORD` Secrets 和 `ALIYUN_REGISTRY`、`ALIYUN_NAMESPACE` Variables 已不被工作流使用，无需继续维护；部署机器 `.env` 中的镜像地址变量仍需保留。ACR 拉取私有代码源所需的 GitHub 授权由阿里云控制台单独管理。
 
 ## 首次部署
 
 1. 将仓库根目录的 `compose.yaml` 复制到部署目录，并在同级目录下将 `docker/compose.env.example` 复制命名为 `.env`。
 2. 编辑 `.env` 文件：
-   - 填写 `ALIYUN_REGISTRY` 和 `ALIYUN_NAMESPACE`，与 GitHub 发布配置一致。
+   - 填写 `ALIYUN_REGISTRY` 和 `ALIYUN_NAMESPACE`，与阿里云镜像仓库地址一致。
    - 前往阿里云 ACR 的对应命名空间下 `mdcz` 仓库查看已发布标签并填入 `MDCZ_VERSION`（例如 `0.22.1`，不带 `v` 前缀）。
    - 填写宿主机上真实的影片目录绝对路径 `MDCZ_MEDIA_PATH`。
    - 配置目录所有者的数字用户与组 ID（`PUID`、`PGID`，可在宿主机终端运行 `id` 命令获取）。
