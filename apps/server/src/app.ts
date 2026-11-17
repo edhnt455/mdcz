@@ -57,6 +57,7 @@ import { RuntimeLogService } from "./services/runtimeLogService";
 import { ScanQueueService } from "./services/scanQueueService";
 import { ScrapeService, type ScrapeServiceResources } from "./services/scrapeService";
 import { ServerPathService } from "./services/serverPathService";
+import { SubtitleUpdateService, subtitleUpdateInputSchema } from "./services/subtitleUpdateService";
 import { SystemService } from "./services/systemService";
 import { ToolsService } from "./services/toolsService";
 import { createTaskEventBus } from "./taskEvents";
@@ -146,6 +147,15 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     options.services?.personSync ?? new PersonSyncService(config, taskEvents, { networkClient, actorSourceProvider });
   const unsubscribePersonConfig = config.onChange((event) => personSync.configurationChanged(event.configuration));
   const taskGate = new LibraryTaskGate();
+  const subtitleUpdates = new SubtitleUpdateService({
+    config,
+    persistence,
+    roots: mediaRoots,
+    gate: taskGate,
+    network: networkClient,
+    events: taskEvents,
+    logger: runtimeLogs.getLogger("SubtitleUpdate"),
+  });
   const scrape =
     options.services?.scrape ??
     new ScrapeService(persistence, mediaRoots, config, taskEvents, {
@@ -372,6 +382,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       await services.config.save(await services.config.get());
     }
     await services.scans.recoverInterrupted();
+    await subtitleUpdates.start();
     await services.auth.status();
     await services.pending.start();
     await services.libraryWatch.start();
@@ -398,6 +409,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       return;
     }
     services.automation.close();
+    await subtitleUpdates.close();
     await services.pending.close();
     unsubscribeJavdbConfig();
     unsubscribePersonConfig();
@@ -469,6 +481,20 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       ...(request.body && typeof request.body === "object" ? request.body : {}),
     });
     return await services.automation.scrapeStart(input);
+  });
+
+  fastify.post("/api/automation/subtitles/updated", async (request, reply) => {
+    await services.auth.assertAutomation(getBearerToken(request));
+    const input = subtitleUpdateInputSchema.safeParse(request.body);
+    if (!input.success) return reply.code(400).send({ error: "字幕更新通知无效", details: input.error.issues });
+    const job = await subtitleUpdates.enqueue(input.data);
+    return reply.code(202).send(job);
+  });
+
+  fastify.get<{ Params: { taskId: string } }>("/api/automation/subtitles/jobs/:taskId", async (request, reply) => {
+    await services.auth.assertAutomation(getBearerToken(request));
+    const job = await subtitleUpdates.get(request.params.taskId);
+    return job ?? reply.code(404).send({ error: "未找到字幕更新任务" });
   });
 
   // CloudDrive2's file system watcher. Answered at once, so scanning a FUSE subtree never stalls CloudDrive.

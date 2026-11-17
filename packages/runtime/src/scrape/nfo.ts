@@ -194,6 +194,17 @@ const buildMdczNode = (
 };
 
 export class NfoGenerator {
+  mergeSubtitleTag(existingXml: string, tag: string): string {
+    const validation = XMLValidator.validate(existingXml);
+    if (validation !== true) throw new Error(`NFO XML 无效：${validation.err.msg}`);
+    const root = requireXmlRecord(parser.parse(existingXml), "NFO 根节点无效");
+    const movie = requireXmlRecord(root.movie, "NFO 影片节点无效");
+    const tags = toArray(movie.tag);
+    if (tags.includes(tag)) return existingXml;
+    movie.tag = [...tags, tag];
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(root)}`;
+  }
+
   buildXml(data: CrawlerData, options?: NfoOptions): string {
     if (!data.website) {
       throw new Error("NFO 缺少来源站点");

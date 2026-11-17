@@ -12,8 +12,8 @@ export const notifyMediaServersOfPublish = async (
   configuration: Configuration,
   directories: readonly string[],
   logger: { warn(message: string): void },
-): Promise<void> => {
-  if (!directories.length) return;
+): Promise<{ notified: boolean; warnings: string[] }> => {
+  if (!directories.length) return { notified: false, warnings: [] };
   const servers: MediaServerKey[] = (["emby", "jellyfin"] as const).filter((key) => {
     const server = configuration[key];
     return (
@@ -23,6 +23,8 @@ export const notifyMediaServersOfPublish = async (
     );
   });
   const body = JSON.stringify({ Updates: directories.map((path) => ({ Path: path, UpdateType: "Created" })) });
+  const warnings: string[] = [];
+  let notified = 0;
   await Promise.all(
     servers.map(async (key) => {
       try {
@@ -30,9 +32,13 @@ export const notifyMediaServersOfPublish = async (
           useProxy: false,
           headers: buildMediaServerHeaders(configuration, key, { "content-type": "application/json" }),
         });
+        notified += 1;
       } catch (error) {
-        logger.warn(`无法通知 ${key} 扫描 ${directories.join(", ")}：${toErrorMessage(error)}`);
+        const warning = `无法通知 ${key} 扫描 ${directories.join(", ")}：${toErrorMessage(error)}`;
+        warnings.push(warning);
+        logger.warn(warning);
       }
     }),
   );
+  return { notified: servers.length > 0 && notified === servers.length, warnings };
 };

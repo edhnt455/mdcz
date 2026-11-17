@@ -1,6 +1,17 @@
 import { sql } from "drizzle-orm";
 import { check, foreignKey, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export const subtitleUpdateJobs = sqliteTable("subtitle_update_jobs", {
+  taskId: text("task_id").primaryKey(),
+  eventId: text("event_id").notNull().unique(),
+  inputJson: text("input_json").notNull(),
+  status: text("status").notNull(),
+  resultJson: text("result_json"),
+  warningsJson: text("warnings_json").notNull().default("[]"),
+  error: text("error"),
+  createdAt: integer("created_at").notNull(),
+});
+
 export const mediaRoots = sqliteTable(
   "media_roots",
   {

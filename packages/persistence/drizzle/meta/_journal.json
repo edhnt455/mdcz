@@ -155,6 +155,13 @@
       "when": 1794787200001,
       "tag": "0021_webhook_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794787200002,
+      "tag": "0022_subtitle_jobs",
+      "breakpoints": true
     }
   ]
 }

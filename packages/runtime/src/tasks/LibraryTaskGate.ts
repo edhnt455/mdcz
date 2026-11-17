@@ -1,10 +1,11 @@
-export type LibraryTaskKind = "scrape" | "maintenance" | "pending" | "edit";
+export type LibraryTaskKind = "scrape" | "maintenance" | "pending" | "edit" | "subtitle";
 
 const CONFLICT_MESSAGES: Record<LibraryTaskKind, string> = {
   edit: "媒体库批量编辑正在运行，请等待完成后再开始媒体任务",
   pending: "文件处理任务正在运行，请等待完成后再开始媒体任务",
   maintenance: "维护任务正在运行，请停止后再开始刮削",
   scrape: "刮削任务正在运行，请停止后再开始维护",
+  subtitle: "字幕更新任务正在运行，请等待完成后再开始媒体任务",
 };
 
 export class LibraryTaskConflictError extends Error {
