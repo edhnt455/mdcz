@@ -55,7 +55,7 @@ MDCz supports Docker deployment with a browser-based WebUI. Published images tar
 
 We recommend deploying with the maintained [compose.yaml](compose.yaml). See the [deployment and maintenance guide](docker/README.md) for detailed configuration, permissions, backups, and upgrades.
 
-- **Quick Start**: Copy `docker/compose.env.example` as `.env`, configure the publisher's Docker Hub username, a published image version, and your media path, then run `docker compose up -d`.
+- **Quick Start**: Copy `docker/compose.env.example` as `.env`, configure the Aliyun ACR Personal Edition registry host, namespace, a published image version, and your media path, then run `docker compose up -d`. For private repositories, run `docker login` first as described in the deployment guide.
 - **First Visit**: Open `http://<server-ip>:3838` in your browser (defaults to `127.0.0.1`; set `MDCZ_BIND_IP` in `.env` for LAN access). There is no default password; set the administrator password directly in the WebUI on first visit, then add your media directory under `/media` in settings.
 
 ### Local Development

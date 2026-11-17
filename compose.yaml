@@ -1,6 +1,6 @@
 services:
   mdcz:
-    image: docker.io/${DOCKERHUB_USERNAME:?Set DOCKERHUB_USERNAME in .env to the image publisher}/mdcz:${MDCZ_VERSION:?Set MDCZ_VERSION in .env to a published image version}
+    image: ${ALIYUN_REGISTRY:?Set ALIYUN_REGISTRY in .env to the registry host}/${ALIYUN_NAMESPACE:?Set ALIYUN_NAMESPACE in .env to the image namespace}/mdcz:${MDCZ_VERSION:?Set MDCZ_VERSION in .env to a published image version}
     restart: unless-stopped
     stop_grace_period: 30s
     ports:

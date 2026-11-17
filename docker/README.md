@@ -1,16 +1,25 @@
 # Docker 部署与维护
 
-推荐使用仓库根目录提供的 `compose.yaml` 进行部署。本 fork 仅通过 Docker Hub 发布 Linux amd64（x86_64）镜像；服务内置 SQLite 数据库，无需额外部署 MySQL / PostgreSQL 等数据库容器。
+推荐使用仓库根目录提供的 `compose.yaml` 进行部署。本 fork 通过阿里云容器镜像服务（ACR）个人版发布 Linux amd64（x86_64）镜像；服务内置 SQLite 数据库，无需额外部署 MySQL / PostgreSQL 等数据库容器。
 
 ## 镜像发布
 
 仓库使用 `.github/workflows/docker-publish.yml` 发布镜像。PR 的 CI 检查覆盖服务端、WebUI 和 Docker 构建。
 
-1. 在本 fork 的 GitHub **Settings → Secrets and variables → Actions** 中配置两个 Repository secrets：`DOCKERHUB_USERNAME`（Docker Hub 用户名）和 `DOCKERHUB_TOKEN`（有镜像推送权限的访问令牌）。
-2. 修改根目录 `VERSION`（初始为 `0.19.1`），随代码一起提交并推送至本 fork 的 `main` 分支，即可触发构建。版本使用不带 `v` 前缀的语义版本号；支持 `0.20.0-rc.1` 形式的预发布版本，不接受 `+` 构建元数据。
-3. 首次发布或需要重新构建时，也可以在 **Actions → Build and publish Docker image → Run workflow** 手动运行，使用所选分支的源码和 `VERSION`。
+1. 在阿里云 ACR 个人版控制台创建命名空间和名为 `mdcz` 的镜像仓库，从「访问凭证」复制公网 Registry 域名、登录名，并设置 Registry 固定密码。域名只填写主机名，不带 `https://` 或路径。新个人版示例：`crpi-xxxxxxxx.cn-hangzhou.personal.cr.aliyuncs.com`；请以控制台实际显示为准，参见[阿里云官方推送与拉取指南](https://help.aliyun.com/zh/acr/user-guide/use-a-container-registry-personal-edition-instance-to-push-and-pull-images)。
+2. 在本 fork 的 GitHub **Settings → Secrets and variables → Actions** 中配置：
 
-构建使用 `apps/server/Dockerfile`，推送 `docker.io/<DOCKERHUB_USERNAME>/mdcz:<VERSION>` 和 `docker.io/<DOCKERHUB_USERNAME>/mdcz:latest`。每次成功发布都会更新 `latest`（包括手动运行及预发布版本）。仅修改代码而未修改 `VERSION` 不会自动发布。
+   | 类型 | 名称 | 内容 |
+   | --- | --- | --- |
+   | Repository variable | `ALIYUN_REGISTRY` | 上述公网 Registry 域名 |
+   | Repository variable | `ALIYUN_NAMESPACE` | 已创建的命名空间，不一定等于登录名 |
+   | Repository secret | `ALIYUN_USERNAME` | ACR「访问凭证」显示的登录名 |
+   | Repository secret | `ALIYUN_PASSWORD` | ACR Registry 固定密码，不是阿里云账号登录密码或 AccessKey |
+
+3. 修改根目录 `VERSION`，随代码一起提交并推送至本 fork 的 `main` 分支，即可触发构建。版本使用不带 `v` 前缀的语义版本号；支持 `0.22.1-rc.1` 形式的预发布版本，不接受 `+` 构建元数据。
+4. 首次发布或需要重新构建时，也可以在 **Actions → Build and publish Docker image → Run workflow** 手动运行，使用所选分支的源码和 `VERSION`。
+
+构建使用 `apps/server/Dockerfile`，推送 `<ALIYUN_REGISTRY>/<ALIYUN_NAMESPACE>/mdcz:<VERSION>` 和 `<ALIYUN_REGISTRY>/<ALIYUN_NAMESPACE>/mdcz:latest`。每次成功发布都会更新 `latest`（包括手动运行及预发布版本）。仅修改代码而未修改 `VERSION` 不会自动发布。
 
 发布流程只读取 GitHub 仓库，不会提交版本变更、推送 Git 标签或创建 Release。镜像版本由 `VERSION` 通过构建参数传入，无需同步修改 `package.json` 的版本号。
 
@@ -18,21 +27,29 @@
 
 1. 将仓库根目录的 `compose.yaml` 复制到部署目录，并在同级目录下将 `docker/compose.env.example` 复制命名为 `.env`。
 2. 编辑 `.env` 文件：
-   - 填写 `DOCKERHUB_USERNAME`，与发布镜像所用的 Docker Hub 用户名一致。
-   - 前往 Docker Hub 的 `<DOCKERHUB_USERNAME>/mdcz` 仓库查看已发布标签并填入 `MDCZ_VERSION`（例如 `0.19.1`，不带 `v` 前缀）。
+   - 填写 `ALIYUN_REGISTRY` 和 `ALIYUN_NAMESPACE`，与 GitHub 发布配置一致。
+   - 前往阿里云 ACR 的对应命名空间下 `mdcz` 仓库查看已发布标签并填入 `MDCZ_VERSION`（例如 `0.22.1`，不带 `v` 前缀）。
    - 填写宿主机上真实的影片目录绝对路径 `MDCZ_MEDIA_PATH`。
    - 配置目录所有者的数字用户与组 ID（`PUID`、`PGID`，可在宿主机终端运行 `id` 命令获取）。
    - 若在 NAS 或局域网服务器部署，建议将 `MDCZ_BIND_IP` 改为 `0.0.0.0` 或 NAS 的局域网 IP。
 3. 创建数据存放目录（默认命令 `mkdir -p ./data`）。为防止因路径手误拼错而挂载出空目录，Compose 默认不会自动创建不存在的宿主机挂载目录。
-4. 启动服务并查看日志：
+4. 若仓库为私有，在部署机器上先登录 Registry（将示例替换为控制台提供的登录名和域名，按提示输入 Registry 固定密码）；公开仓库可跳过：
+
+```sh
+docker login --username='<ACR登录名>' '<ALIYUN_REGISTRY>'
+```
+
+5. 启动服务并查看日志：
 
 ```sh
 docker compose up -d
 docker compose logs -f mdcz
 ```
 
-5. 在浏览器中打开 `http://<服务器IP>:3838`。首次访问时，直接设置管理员密码即可完成初始化。密码无特殊字符或长度限制，系统没有默认 `admin` 密码。
-6. 登录后进入系统设置添加媒体库。
+6. 在浏览器中打开 `http://<服务器IP>:3838`。首次访问时，直接设置管理员密码即可完成初始化。密码无特殊字符或长度限制，系统没有默认 `admin` 密码。
+7. 登录后进入系统设置添加媒体库。
+
+已有 Docker Hub 部署切换到阿里云时，先确认所需版本已推送到 ACR，替换 `compose.yaml`，在 `.env` 删除 `DOCKERHUB_USERNAME` 并填写 `ALIYUN_REGISTRY`、`ALIYUN_NAMESPACE`，必要时登录后执行 `docker compose pull && docker compose up -d`。这次切换无需迁移数据；若需恢复旧仓库，恢复原 Compose 和 `.env` 即可，跨应用版本回滚仍须遵守下方数据库回滚要求。
 
 > [!IMPORTANT]
 > **媒体库路径填写提示**：在 WebUI 设置中添加媒体库时，**必须填写容器内映射的路径**（例如 `/media` 或 `/media/movies`），切勿填写宿主机的物理路径（如群晖的 `/volume1/...` 或 Unraid 的 `/mnt/user/...`）。

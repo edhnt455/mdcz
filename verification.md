@@ -1,5 +1,13 @@
 # Emby 演员头像同步调度验证
 
+### 镜像发布切换阿里云 ACR 个人版（2026-11-17）
+
+- GitHub Actions 使用仓库变量 `ALIYUN_REGISTRY`、`ALIYUN_NAMESPACE` 和 Secrets `ALIYUN_USERNAME`、`ALIYUN_PASSWORD` 登录并推送 `mdcz:<VERSION>`、`mdcz:latest`；配置缺失时在构建前报错。保留 VERSION 触发、手动运行、Linux amd64 与现有构建缓存。
+- 按用户指定将发布版本从 `0.24.1` 设为 `0.22.1`，仅调整发布版本，不回退应用代码；实际展示版本由 Docker 构建参数注入。
+- 同步 Compose、环境变量模板及中英文部署入口；Docker 指南记录个人版公网域名、Registry 固定密码、私有仓库登录、旧部署切换及回滚步骤。认证和地址格式核对阿里云官方个人版推送拉取文档。
+- `actionlint`（关闭未安装的 ShellCheck/Pyflakes 集成）、YAML 解析、`git diff --check` 通过；临时脚本验证四项 Actions 配置缺失分别报错且不泄露示例密码、登录目标与双标签正确、Compose 展开为预期 ACR 镜像及必填地址/命名空间/版本缺失时报错。未增加测试文件或测试数量。Biome 对本次 YAML/Markdown/env 文件不提供检查（0 文件），不作为有效验证依据。
+- 发布前已核对 GitHub 仓库变量与 Secret 名称齐全，目标为 `registry.cn-hangzhou.aliyuncs.com/skyhook-image/mdcz`；真实推送由本次 VERSION 变更触发的工作流执行，未部署。无应用代码、数据库、依赖或启动命令变化；现有部署需更新 Compose 和 `.env` 的镜像地址变量。
+
 ### 媒体库单个及批量深度删除入队（2026-11-16）
 
 - 媒体库影片、批量选择及单个分盘删除共用深度删除服务。STRM 复用 MoviePilot 115 来源核验、删除检查点和本地 STRM 清理；普通媒体删除磁盘文件及已记录的保留源文件，成功后清理记录。界面中英文文案明确实际文件删除与不可撤销性。
