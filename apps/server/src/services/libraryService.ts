@@ -11,7 +11,6 @@ import {
 } from "@mdcz/runtime/library";
 import type { Configuration } from "@mdcz/shared/config";
 import { libraryAvailability } from "@mdcz/shared/libraryAvailability";
-import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "@mdcz/shared/libraryPagination";
 import type { LibraryDeletionResponse } from "@mdcz/shared/pending";
 import type {
   LibraryAvailabilityInput,
@@ -21,6 +20,8 @@ import type {
   LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
+  LibraryMatchesInput,
+  LibraryMatchesResponse,
   LibraryRestoreIgnoredInput,
   LibrarySummaryInput,
   LibrarySummaryResponse,
@@ -47,8 +48,14 @@ export class LibraryService {
     private readonly deletion: LibraryDeletionService,
   ) {}
 
-  async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
-    return await this.listDtos(input);
+  async matches(input: LibraryMatchesInput): Promise<LibraryMatchesResponse> {
+    const state = await this.persistence.getState();
+    const [rootMap, filter] = await Promise.all([
+      this.loadRootMap(),
+      toLibraryEntryFilter(input, this.libraries, await this.getConfiguration()),
+    ]);
+    const entries = await state.repositories.library.listEntries(filter);
+    return { entries: await Promise.all(entries.map((entry) => this.toDto(entry, rootMap, false))) };
   }
 
   async summary(input: LibrarySummaryInput): Promise<LibrarySummaryResponse> {
@@ -177,7 +184,7 @@ export class LibraryService {
     };
   }
 
-  private async listDtos(input: LibraryListInput = {}): Promise<LibraryListResponse> {
+  async list(input: LibraryListInput = {}): Promise<LibraryListResponse> {
     const state = await this.persistence.getState();
     const [rootMap, filter] = await Promise.all([
       this.loadRootMap(),
@@ -185,8 +192,8 @@ export class LibraryService {
     ]);
     const page = await state.repositories.library.listEntriesPage({
       ...filter,
-      cursor: decodeLibraryPageCursor(input?.cursor),
-      limit: input?.limit ?? 100,
+      page: input?.page ?? 1,
+      limit: input?.pageSize ?? 10,
     });
 
     return {
@@ -195,8 +202,8 @@ export class LibraryService {
           .filter((entry) => entry.files.some((file) => file.id === entry.displayFileId && rootMap.has(file.rootId)))
           .map((entry) => this.toDto(entry, rootMap, false)),
       ),
-      hasMore: page.hasMore,
-      nextCursor: page.nextCursor ? encodeLibraryPageCursor(page.nextCursor) : null,
+      page: page.page,
+      pageSize: input?.pageSize ?? 10,
       total: page.total,
       fileCount: page.fileCount,
       totalBytes: page.totalBytes,

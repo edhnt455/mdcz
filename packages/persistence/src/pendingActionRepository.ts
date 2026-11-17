@@ -82,6 +82,23 @@ export class PendingActionRepository {
       .run().changes;
   }
 
+  completeManually(ids: readonly string[]): void {
+    if (!ids.length) return;
+    const now = Date.now();
+    this.database.db
+      .update(pendingActions)
+      .set({
+        status: "completed",
+        progress: "manual_cleanup",
+        error: null,
+        nextAttemptAt: null,
+        updatedAt: now,
+        completedAt: now,
+      })
+      .where(and(inArray(pendingActions.id, [...ids]), eq(pendingActions.status, "failed")))
+      .run();
+  }
+
   recover(): void {
     this.database.db
       .update(pendingActions)

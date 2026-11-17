@@ -28,12 +28,15 @@ export const library: Messages["library"] = {
     newEdit: "开始新的编辑",
     close: "关闭",
   },
-  filter: {
-    all: "全部",
-    available: "可用",
-    unavailable: "不可用",
-    partial: "部分可用",
-    unchecked: "未检查",
+  all: "全部",
+  pagination: {
+    label: "媒体库分页",
+    pageSize: "每页条数",
+    previous: "上一页",
+    next: "下一页",
+    jump: "跳转",
+    goTo: (page: number) => `第 ${page} 页`,
+    summary: (total: number, page: number, pages: number) => `共 ${total} 部 · 第 ${page} / ${pages} 页`,
   },
   metrics: {
     movies: "影片数",
@@ -72,11 +75,8 @@ export const library: Messages["library"] = {
   searchPlaceholder: "搜索标题、番号、演员或相对路径...",
   refresh: "刷新",
   listAriaLabel: "媒体库影片列表",
-  checkingAvailability: "正在检查可用性",
-  noConfirmedEntries: (unknownCount: number) => `暂无已确认条目，另有 ${unknownCount} 条尚未检查`,
   noMatchingEntries: "暂无匹配条目",
   nothingIndexed: "还没有收录影片。刮削或导入的影片会显示在这里。",
-  loadMore: "加载更多",
 
   // Entry card
   parts: (count: number) => `${count} 个分盘`,
@@ -87,7 +87,8 @@ export const library: Messages["library"] = {
   removeFromLibrary: "深度删除",
   multiSelect: "多选",
   selectEntry: (id: string) => `选择 ${id}`,
-  selectAllLoaded: "全选已加载",
+  selectAllMatches: "全选筛选结果",
+  selectingAll: "正在选择全部筛选结果…",
   selectedCount: (count: number) => `已选 ${count} 部影片`,
   availabilityNotChecked: "可用性尚未检查",
 

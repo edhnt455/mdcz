@@ -12,6 +12,14 @@ export const deletions = {
   retry: "Retry unfinished steps",
   continue: "Continue confirmed deletion",
   retryQueued: "Deletion task resubmitted",
+  manualCleanup: "Remove library record",
+  manualTitle: "Remove this library record?",
+  manualDescription:
+    "This removes the library record and marks related failed tasks as manually handled. It does not delete local or 115 files. Check them before continuing.",
+  manualConfirm: "Remove record",
+  manualDone: "Manually handled",
+  manualResult: "The library record was removed manually. Local and 115 files were not deleted by this action.",
+  manualSuccess: "Library record removed and tasks marked as manually handled",
   openScrape: "View scrape retry",
   retrySubmitted: "Scrape retry submitted; see its task for the result.",
   status: {

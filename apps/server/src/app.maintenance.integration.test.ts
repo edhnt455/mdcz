@@ -571,7 +571,7 @@ describe("buildServer maintenance integration", () => {
       method: "POST",
       url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
-      payload: { query: "ABC-125", limit: 20 },
+      payload: { query: "ABC-125", pageSize: 20 },
     });
     expect(session.previews[0]).toMatchObject({
       presetId: "local_organize",

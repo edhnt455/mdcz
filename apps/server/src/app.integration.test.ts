@@ -859,46 +859,51 @@ describe("buildServer composition integration", () => {
       });
     }
 
+    for (let index = 0; index < 9; index += 1) {
+      await state.repositories.library.upsertEntry({
+        movie: { id: `filler-${index}`, createdAt: new Date("2026-04-01T00:00:00.000Z") },
+        files: [{ rootId, rootRelativePath: `filler-${index}.mp4`, size: 1, fileId: `filler-${index}` }],
+      });
+    }
+
     const firstResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
-      payload: { limit: 2 },
+      payload: {},
     });
     const firstPage = firstResponse.json().result.data;
     const secondResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
-      payload: { cursor: firstPage.nextCursor, limit: 2 },
+      payload: { page: 2, pageSize: 10 },
     });
     const secondPage = secondResponse.json().result.data;
     const availabilityResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/library.availability",
       headers: { authorization: `Bearer ${token}` },
-      payload: { ids: firstPage.entries.map((entry: { id: string }) => entry.id) },
+      payload: { ids: firstPage.entries.slice(0, 2).map((entry: { id: string }) => entry.id) },
     });
 
     expect(firstPage).toMatchObject({
-      entries: [
-        expect.objectContaining({
-          id: "entry-c",
-          available: "unchecked",
-        }),
-        expect.objectContaining({ id: "entry-b", available: "unchecked" }),
-      ],
-      hasMore: true,
-      total: 3,
-      fileCount: partial ? 4 : 3,
-      totalBytes: partial ? 10 : 3,
+      page: 1,
+      pageSize: 10,
+      total: 12,
+      fileCount: partial ? 13 : 12,
+      totalBytes: partial ? 19 : 12,
     });
-    expect(firstPage.nextCursor).toEqual(expect.any(String));
+    expect(firstPage.entries).toHaveLength(10);
+    expect(firstPage.entries.slice(0, 2)).toEqual([
+      expect.objectContaining({ id: "entry-c", available: "unchecked" }),
+      expect.objectContaining({ id: "entry-b", available: "unchecked" }),
+    ]);
     expect(secondPage).toMatchObject({
-      entries: [expect.objectContaining({ id: "entry-a", available: "unchecked" })],
-      hasMore: false,
-      nextCursor: null,
-      total: 3,
+      entries: [expect.objectContaining({ id: "filler-1" }), expect.objectContaining({ id: "filler-0" })],
+      page: 2,
+      pageSize: 10,
+      total: 12,
     });
     expect(availabilityResponse.json().result.data.entries).toEqual([
       expect.objectContaining({ id: "entry-c", available: partial ? "partial" : "unavailable" }),

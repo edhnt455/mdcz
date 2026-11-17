@@ -728,7 +728,7 @@ describe("buildServer scrape integration", () => {
       method: "POST",
       url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
-      payload: { query: "ABC-123", limit: 20 },
+      payload: { query: "ABC-123", pageSize: 20 },
     });
     const entry = libraryResponse.json().result.data.entries[0];
     const availabilityResponse = await fastify.inject({

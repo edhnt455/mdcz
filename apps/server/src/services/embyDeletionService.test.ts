@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -21,7 +21,7 @@ import { type MoviePilotFile, moviePilotResourceIdentity } from "@mdcz/shared/mo
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTaskEventBus } from "../taskEvents";
 import { EmbyDeletionService } from "./embyDeletionService";
-import { readStrmBinding } from "./strmDeletionService";
+import { readStrmBinding, StrmDeletionService } from "./strmDeletionService";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -740,7 +740,12 @@ describe("copy STRM deep deletion", () => {
   });
 
   it("completes after cloud acknowledgement without cloud queries or source regeneration checks", async () => {
-    const f = await strmFixture();
+    const files = [`${"界".repeat(83)}a.strm`, `${"界".repeat(82)}ab.strm`];
+    const f = await strmFixture("delete", files);
+    await f.service.accept(f.event);
+    await f.advance();
+    await f.advance();
+    await rm(path.join(f.output, files[1]));
     const fetcher = f.fetcher.getMockImplementation();
     if (!fetcher) throw new Error("Missing fixture fetcher");
     f.fetcher.mockImplementation(async (url, init) => {
@@ -749,7 +754,7 @@ describe("copy STRM deep deletion", () => {
       if (new URL(String(url)).pathname.endsWith("/storage/delete")) f.maintenance.isBusy = true;
       return response;
     });
-    const accepted = await f.service.accept(f.event);
+    const accepted = await f.service.accept(f.notification(files[1], { Event: "deep.delete" }));
     await f.advance();
     await f.advance();
     expect(f.repository().event(accepted.id)).toMatchObject({
@@ -758,14 +763,43 @@ describe("copy STRM deep deletion", () => {
       attempts: 0,
     });
     expect(f.count("library_item_files")).toBe(1);
+    f.maintenance.isBusy = false;
+    const removeSource = StrmDeletionService.prototype.removeSource;
+    let parkedSources = 0;
+    const parkSources = vi.spyOn(StrmDeletionService.prototype, "removeSource").mockImplementation(async function (
+      this: StrmDeletionService,
+      eventId,
+      library,
+      snapshot,
+      active,
+    ) {
+      let checks = 0;
+      await removeSource.call(this, eventId, library, snapshot, () => checks++ === 0 && active());
+      if (++parkedSources === files.length) f.maintenance.isBusy = true;
+    });
+    try {
+      await f.advance();
+      const parked = (await readdir(f.source)).filter((name) => name.includes(".mdcz-delete-"));
+      expect(parked).toHaveLength(files.length);
+      expect(parked.every((name) => Buffer.byteLength(name) <= 255)).toBe(true);
+      for (const name of files)
+        await expect(readFile(path.join(f.source, name))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(f.repository().event(accepted.id)).toMatchObject({ status: "pending", step: "cleaning_source" });
+    } finally {
+      parkSources.mockRestore();
+    }
+    await writeFile(path.join(f.source, files[0]), "replacement");
     f.reopen();
     f.maintenance.isBusy = false;
     await f.advance(f.createService());
     expect(f.repository().event(accepted.id)).toMatchObject({ status: "completed", attempts: 0 });
     expect(f.count("library_item_files")).toBe(0);
-    await writeFile(path.join(f.source, "ABC-123.strm"), f.content);
+    expect(await readFile(path.join(f.source, files[0]), "utf8")).toBe("replacement");
+    await expect(readFile(path.join(f.source, files[1]))).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readdir(f.source)).filter((name) => name.includes(".mdcz-delete-"))).toEqual([]);
+    await writeFile(path.join(f.source, files[0]), f.content);
     await f.advance();
-    expect(await readFile(path.join(f.source, "ABC-123.strm"), "utf8")).toBe(f.content);
+    expect(await readFile(path.join(f.source, files[0]), "utf8")).toBe(f.content);
     expect(f.repository().event(accepted.id)).toMatchObject({ status: "completed", attempts: 0 });
     expect(f.remote.deleteCalls).toBe(1);
   });

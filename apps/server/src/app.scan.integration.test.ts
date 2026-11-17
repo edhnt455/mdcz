@@ -59,7 +59,7 @@ describe("buildServer scan integration", () => {
       method: "POST",
       url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
-      payload: { query: "movie", limit: 20 },
+      payload: { query: "movie", pageSize: 20 },
     });
     const logsResponse = await fastify.inject({
       method: "GET",
@@ -91,8 +91,8 @@ describe("buildServer scan integration", () => {
       entries: [],
       fileCount: 0,
       totalBytes: 0,
-      hasMore: false,
-      nextCursor: null,
+      page: 1,
+      pageSize: 20,
       total: 0,
     });
     expect(overviewResponse.statusCode).toBe(200);
@@ -142,7 +142,7 @@ describe("buildServer scan integration", () => {
       method: "POST",
       url: "/trpc/library.list",
       headers: { authorization: `Bearer ${token}` },
-      payload: { query: "movie", limit: 20 },
+      payload: { query: "movie", pageSize: 20 },
     });
     expect(retriedLibraryResponse.json().result.data.total).toBe(0);
   });

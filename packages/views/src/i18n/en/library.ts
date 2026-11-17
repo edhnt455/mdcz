@@ -28,12 +28,15 @@ export const library = {
     newEdit: "New edit",
     close: "Close",
   },
-  filter: {
-    all: "All",
-    available: "Available",
-    unavailable: "Unavailable",
-    partial: "Partially Available",
-    unchecked: "Unchecked",
+  all: "All",
+  pagination: {
+    label: "Media library pagination",
+    pageSize: "Per page",
+    previous: "Previous",
+    next: "Next",
+    jump: "Go to page",
+    goTo: (page: number) => `Page ${page}`,
+    summary: (total: number, page: number, pages: number) => `${total} movies · Page ${page} of ${pages}`,
   },
   metrics: {
     movies: "Movies",
@@ -72,11 +75,8 @@ export const library = {
   searchPlaceholder: "Search title, number, actor, or relative path…",
   refresh: "Refresh",
   listAriaLabel: "Media library movie list",
-  checkingAvailability: "Checking availability…",
-  noConfirmedEntries: (unknownCount: number) => `No confirmed entries yet; ${unknownCount} not yet checked`,
   noMatchingEntries: "No matching entries",
   nothingIndexed: "Nothing indexed yet. Scraped and imported movies appear here.",
-  loadMore: "Load more",
 
   // Entry card
   parts: (count: number) => `${count} parts`,
@@ -87,7 +87,8 @@ export const library = {
   removeFromLibrary: "Deep delete",
   multiSelect: "Multi-select",
   selectEntry: (id: string) => `Select ${id}`,
-  selectAllLoaded: "Select all loaded",
+  selectAllMatches: "Select all matching movies",
+  selectingAll: "Selecting all matching movies…",
   selectedCount: (count: number) => `${count} movie(s) selected`,
   availabilityNotChecked: "Availability not yet checked",
 

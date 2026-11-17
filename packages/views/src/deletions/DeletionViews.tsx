@@ -1,16 +1,29 @@
 import { type DeletionJob, type DeletionJobStep, isOpenDeletionJob } from "@mdcz/shared/deletions";
 import { formatBytes } from "@mdcz/shared/format";
 import { strmReferenceErrors } from "@mdcz/shared/moviePilot";
-import { Badge, Button, cn } from "@mdcz/ui";
+import {
+  Badge,
+  Button,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@mdcz/ui";
 import { AlertCircle, CheckCircle2, Circle, Clock3, Loader2, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { type Messages, useT } from "../i18n";
 
 const date = (value: number) => new Date(value).toLocaleString();
 const statusLabel = (job: DeletionJob, text: Messages["deletions"]): string =>
-  job.status === "ignored" &&
-  ["would_remove_records", "would_delete_strm_resource", "would_keep_shared_resource"].includes(job.result ?? "")
-    ? text.observed
-    : text.status[job.status];
+  job.result === "manual_cleanup"
+    ? text.manualDone
+    : job.status === "ignored" &&
+        ["would_remove_records", "would_delete_strm_resource", "would_keep_shared_resource"].includes(job.result ?? "")
+      ? text.observed
+      : text.status[job.status];
 
 const resultMessage = (value: string, t: Messages): string => {
   const reference = (Object.keys(strmReferenceErrors) as (keyof typeof strmReferenceErrors)[]).find((key) =>
@@ -28,9 +41,11 @@ export function DeletionWorkbenchView({
   error,
   retrying,
   clearing,
+  manualBusy,
   actionError,
   onSelect,
   onRetry,
+  onManual,
   onRefresh,
   onClearCompleted,
   onOpenScrape,
@@ -43,9 +58,11 @@ export function DeletionWorkbenchView({
   error?: string | null;
   retrying?: boolean;
   clearing?: boolean;
+  manualBusy?: boolean;
   actionError?: string | null;
   onSelect: (id: string) => void;
   onRetry: (id: string) => void;
+  onManual?: (id: string) => Promise<boolean>;
   onRefresh: () => void;
   onClearCompleted: () => void;
   onOpenScrape: (id: string) => void;
@@ -54,6 +71,7 @@ export function DeletionWorkbenchView({
 }) {
   const t = useT();
   const text = t.deletions;
+  const [manualId, setManualId] = useState<string | null>(null);
   const filtered = jobs.filter(
     (job) => filter === "all" || (filter === "unfinished" ? isOpenDeletionJob(job) : !isOpenDeletionJob(job)),
   );
@@ -177,7 +195,12 @@ export function DeletionWorkbenchView({
                   {resultMessage(actionError || selected.error || "", t)}
                 </div>
               ) : null}
-              {selected.progress !== undefined ? (
+              {selected.result === "manual_cleanup" ? (
+                <section className="space-y-2 rounded-lg border p-4">
+                  <h3 className="font-semibold">{text.manualDone}</h3>
+                  <p className="text-sm text-muted-foreground">{text.manualResult}</p>
+                </section>
+              ) : selected.progress !== undefined ? (
                 <p role="status" className="flex items-center gap-2 text-sm">
                   {selected.status === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {selected.progress}
@@ -240,6 +263,11 @@ export function DeletionWorkbenchView({
                   {retrying ? t.common.loading : selected.source === "duplicate" ? text.continue : text.retry}
                 </Button>
               ) : null}
+              {selected.source === "library" && selected.status === "needs_review" && onManual ? (
+                <Button variant="outline" disabled={manualBusy} onClick={() => setManualId(selected.id)}>
+                  {text.manualCleanup}
+                </Button>
+              ) : null}
               {selected.retryRunId ? (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">{text.retrySubmitted}</p>
@@ -293,7 +321,10 @@ export function DeletionWorkbenchView({
                   </div>
                 ) : null}
               </dl>
-              {selected.status !== "ignored" && selected.result && !selected.error ? (
+              {selected.status !== "ignored" &&
+              selected.result &&
+              selected.result !== "manual_cleanup" &&
+              !selected.error ? (
                 <p className="whitespace-pre-wrap break-all text-sm text-muted-foreground">
                   {resultMessage(selected.result, t)}
                 </p>
@@ -302,6 +333,34 @@ export function DeletionWorkbenchView({
           )}
         </section>
       </div>
+      <Dialog
+        open={Boolean(manualId && selected?.id === manualId)}
+        onOpenChange={(open) => {
+          if (!open && !manualBusy) setManualId(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{text.manualTitle}</DialogTitle>
+            <DialogDescription>{text.manualDescription}</DialogDescription>
+          </DialogHeader>
+          <p className="break-all text-sm">{selected?.linkPath}</p>
+          <DialogFooter>
+            <Button variant="outline" disabled={manualBusy} onClick={() => setManualId(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={manualBusy}
+              onClick={async () => {
+                if (manualId && onManual && (await onManual(manualId))) setManualId(null);
+              }}
+            >
+              {manualBusy ? t.common.loading : text.manualConfirm}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

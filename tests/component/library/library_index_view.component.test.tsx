@@ -28,7 +28,12 @@ const baseProps = {
     createEntry("UNKNOWN", "unchecked"),
     createEntry("UNAVAILABLE", "unavailable"),
   ],
-  onAvailabilityFilterChange: vi.fn(),
+  page: 1,
+  pageSize: 10 as const,
+  selectionKey: "all",
+  onPageChange: vi.fn(),
+  onPageSizeChange: vi.fn(),
+  onSelectAll: vi.fn(async () => baseProps.entries),
   onDeleteEntries: vi.fn(),
   onQueryChange: vi.fn(),
   onRefresh: vi.fn(),
@@ -36,58 +41,101 @@ const baseProps = {
   total: 3,
 };
 
-test("available filtering excludes entries whose availability has not loaded", async () => {
-  const screen = await render(<LibraryIndexView {...baseProps} availabilityFilter="available" />);
-
-  await expect.element(screen.getByText("AVAILABLE title")).toBeVisible();
-  await expect.element(screen.getByText("UNKNOWN title")).not.toBeInTheDocument();
-  await expect.element(screen.getByText("UNAVAILABLE title")).not.toBeInTheDocument();
+test("numbered pagination shows matching totals, supported sizes, boundaries, and page jumps", async () => {
+  const onPageChange = vi.fn();
+  const onPageSizeChange = vi.fn();
+  const props = { ...baseProps, total: 630, onPageChange, onPageSizeChange };
+  const screen = await render(<LibraryIndexView {...props} />);
+  await expect.element(screen.getByText("共 630 部 · 第 1 / 63 页")).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: /^可用/u })).not.toBeInTheDocument();
+  await expect.element(screen.getByText("UNKNOWN title")).toBeVisible();
+  await expect.element(screen.getByText("UNAVAILABLE title")).toBeVisible();
+  await screen.getByRole("button", { name: "下一页" }).click();
+  expect(onPageChange).toHaveBeenLastCalledWith(2);
+  await screen.getByRole("button", { name: "第 63 页", exact: true }).click();
+  expect(onPageChange).toHaveBeenLastCalledWith(63);
+  for (const size of [20, 30, 50, 100, 10]) {
+    await screen.getByRole("combobox", { name: "每页条数" }).selectOptions(String(size));
+    expect(onPageSizeChange).toHaveBeenLastCalledWith(size);
+  }
+  await screen.getByRole("spinbutton", { name: "跳转" }).fill("12");
+  await screen.getByRole("button", { name: "跳转", exact: true }).click();
+  expect(onPageChange).toHaveBeenLastCalledWith(12);
+  await screen.rerender(<LibraryIndexView {...props} page={63} />);
+  await expect.element(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
+  await screen.rerender(<LibraryIndexView {...props} page={1} total={0} entries={[]} query="no match" />);
+  await expect.element(screen.getByText("共 0 部 · 第 1 / 1 页")).toBeVisible();
+  await expect.element(screen.getByText("暂无匹配条目")).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
 });
 
-test("load more remains an explicit bounded action", async () => {
-  const onLoadMore = vi.fn();
-  const screen = await render(
-    <LibraryIndexView {...baseProps} availabilityFilter="all" hasMore onLoadMore={onLoadMore} />,
-  );
-
-  await screen.getByRole("button", { name: "加载更多" }).click();
-  expect(onLoadMore).toHaveBeenCalledOnce();
-});
-
-test("batch removal acts on the selected movies the list still shows", async () => {
+test("selection spans every matching page, excludes unchecked movies, and resets only when its scope changes", async () => {
+  const matches = Array.from({ length: 120 }, (_, index) => createEntry(`MOVIE-${index + 1}`, "available"));
+  const onSelectAll = vi.fn(async () => matches);
   const onDeleteEntries = vi.fn();
-  const props = { ...baseProps, onDeleteEntries };
-  const screen = await render(<LibraryIndexView {...props} availabilityFilter="all" />);
+  const onEditEntries = vi.fn();
+  const props = {
+    ...baseProps,
+    total: 120,
+    entries: matches.slice(0, 10),
+    onSelectAll,
+    onDeleteEntries,
+    onEditEntries,
+  };
+  const screen = await render(<LibraryIndexView {...props} />);
   const multiSelect = screen.getByRole("button", { name: "多选" });
-  const selectAll = screen.getByRole("checkbox", { name: "全选已加载" });
-  const selectAvailable = screen.getByRole("checkbox", { name: "选择 AVAILABLE" });
-  const removeSelected = screen.getByRole("button", { name: "深度删除", exact: true }).last();
-
-  await expect.element(selectAvailable).not.toBeInTheDocument();
+  const selectAll = screen.getByRole("checkbox", { name: "全选筛选结果" });
   await expect.element(selectAll).not.toBeInTheDocument();
   await multiSelect.click();
-  await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
-  await selectAvailable.click();
-  await screen.getByRole("checkbox", { name: "选择 UNKNOWN" }).click();
-  await expect.element(selectAll).toHaveAttribute("data-state", "indeterminate");
-  await expect.element(screen.getByText("已选 2 部影片")).toBeVisible();
-
-  await screen.rerender(<LibraryIndexView {...props} availabilityFilter="available" />);
-  await expect.element(screen.getByText("已选 1 部影片")).toBeVisible();
-  await removeSelected.click();
-  expect(onDeleteEntries).toHaveBeenLastCalledWith([expect.objectContaining({ id: "AVAILABLE" })]);
-
-  await screen.rerender(<LibraryIndexView {...props} availabilityFilter="all" />);
   await selectAll.click();
-  await expect.element(screen.getByText("已选 3 部影片")).toBeVisible();
-  await removeSelected.click();
-  expect(onDeleteEntries.mock.lastCall?.[0]).toHaveLength(3);
-
-  await multiSelect.click();
-  await expect.element(selectAvailable).not.toBeInTheDocument();
+  await expect.element(screen.getByText("已选 120 部影片")).toBeVisible();
+  await expect.element(selectAll).toBeChecked();
+  await screen.rerender(<LibraryIndexView {...props} page={2} entries={matches.slice(10, 20)} />);
+  await expect.element(screen.getByRole("checkbox", { name: "选择 MOVIE-11", exact: true })).toBeChecked();
+  await screen.getByRole("checkbox", { name: "选择 MOVIE-11", exact: true }).click();
+  await expect.element(screen.getByText("已选 119 部影片")).toBeVisible();
+  await expect.element(selectAll).toHaveAttribute("data-state", "indeterminate");
+  await screen.getByRole("button", { name: "深度删除", exact: true }).last().click();
+  expect(onDeleteEntries.mock.lastCall?.[0].map((entry: LibraryEntryDto) => entry.id)).toEqual(
+    matches.filter((entry) => entry.id !== "MOVIE-11").map((entry) => entry.id),
+  );
+  await screen.getByRole("button", { name: "编辑", exact: true }).click();
+  expect(onEditEntries).toHaveBeenLastCalledWith(onDeleteEntries.mock.lastCall?.[0]);
+  const added = createEntry("NEW", "available");
+  await screen.rerender(
+    <LibraryIndexView {...props} pageSize={20} entries={[added, ...matches.slice(0, 19)]} total={121} />,
+  );
+  await expect.element(screen.getByText("已选 119 部影片")).toBeVisible();
+  await expect.element(screen.getByRole("checkbox", { name: "选择 NEW", exact: true })).not.toBeChecked();
+  expect(onSelectAll).toHaveBeenCalledOnce();
+  await screen.rerender(<LibraryIndexView {...props} selectionKey="missingSynopsis" />);
   await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
   await multiSelect.click();
-  await expect.element(selectAvailable).not.toBeChecked();
+  await expect.element(screen.getByRole("checkbox", { name: "选择 MOVIE-1", exact: true })).not.toBeChecked();
+  await selectAll.click();
+  await expect.element(screen.getByText("已选 120 部影片")).toBeVisible();
+  await selectAll.click();
+  await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+});
+
+test("an unfinished select-all cannot select movies in a different filter", async () => {
+  let resolve!: (entries: LibraryEntryDto[]) => void;
+  const onSelectAll = vi.fn(
+    () =>
+      new Promise<LibraryEntryDto[]>((done) => {
+        resolve = done;
+      }),
+  );
+  const props = { ...baseProps, onSelectAll };
+  const screen = await render(<LibraryIndexView {...props} />);
+  await screen.getByRole("button", { name: "多选" }).click();
+  await screen.getByRole("checkbox", { name: "全选筛选结果" }).click();
+  await expect.element(screen.getByRole("checkbox", { name: "全选筛选结果" })).toBeDisabled();
+  await screen.rerender(<LibraryIndexView {...props} selectionKey="new-filter" />);
+  resolve(baseProps.entries);
+  await screen.getByRole("button", { name: "多选" }).click();
+  await expect.element(screen.getByRole("checkbox", { name: "选择 AVAILABLE" })).not.toBeChecked();
   await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
 });
 
@@ -113,7 +161,7 @@ test("a health filter offers to ignore its movies, and the ignored view only res
     onRestore: vi.fn(async () => undefined),
   } satisfies LibraryBrowseControls;
   const view = (controls: Partial<LibraryBrowseControls>) => (
-    <LibraryIndexView {...baseProps} availabilityFilter="all" browse={{ ...browse, ...controls }} />
+    <LibraryIndexView {...baseProps} browse={{ ...browse, ...controls }} />
   );
   const screen = await render(view({ health: "missingSynopsis" }));
   const refresh = screen.getByRole("button", { name: "从站点刷新 3 部" });

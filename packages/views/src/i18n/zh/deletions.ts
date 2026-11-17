@@ -13,6 +13,14 @@ export const deletions: Messages["deletions"] = {
   retry: "重试未完成步骤",
   continue: "继续已确认的删除",
   retryQueued: "删除任务已重新提交",
+  manualCleanup: "人工清理记录",
+  manualTitle: "人工清理媒体库记录？",
+  manualDescription:
+    "将移除此媒体库文件记录，并将相关失败任务标记为已人工处理。此操作不会删除本地或 115 文件，请先确认已在外部处理。",
+  manualConfirm: "确认清理记录",
+  manualDone: "已人工处理",
+  manualResult: "媒体库记录已人工清理；本次操作未删除本地或 115 文件。",
+  manualSuccess: "已清理媒体库记录并结束相关任务",
   openScrape: "查看刮削重试",
   retrySubmitted: "已提交刮削重试，结果请查看对应刮削任务。",
   status: {

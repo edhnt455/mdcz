@@ -304,6 +304,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
         emby: embyDeletion,
         scrape,
         pending,
+        invalidate: invalidateLibrary,
         isRunning: options.isDeletionRunning,
       }),
     activity,

@@ -49,6 +49,18 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
     },
     onError: (error) => toast.error(toErrorMessage(error)),
   });
+  const manual = useMutation({
+    mutationFn: (id: string) => api.deletions.resolveManually({ id }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.pending.all }),
+        client.invalidateQueries({ queryKey: queryKeys.library.all }),
+        client.invalidateQueries({ queryKey: queryKeys.overview.all }),
+      ]);
+      toast.success(t.deletions.manualSuccess);
+    },
+    onError: (error) => toast.error(toErrorMessage(error)),
+  });
   const retry = async (id: string) => {
     const job = selected?.id === id ? selected : jobs.find((job) => job.id === id);
     if (!job?.canRetry || busy.get(id) === job.updatedAt) return;
@@ -96,8 +108,17 @@ export function DeletionTasksPage({ selectedId, onSelect }: { selectedId?: strin
       }
       retrying={Boolean(selected && busy.get(selected.id) === selected.updatedAt)}
       clearing={clearCompleted.isPending}
+      manualBusy={manual.isPending}
       onSelect={onSelect}
       onRetry={(id) => void retry(id)}
+      onManual={async (id) => {
+        try {
+          await manual.mutateAsync(id);
+          return true;
+        } catch {
+          return false;
+        }
+      }}
       onRefresh={() => void refresh()}
       onClearCompleted={() => clearCompleted.mutate()}
       onOpenScrape={(id) => void openScrape(id)}

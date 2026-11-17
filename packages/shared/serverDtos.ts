@@ -2,6 +2,7 @@ import { BAIDU_SERVICE_OPTIONS, type Configuration, type DeepPartial, type notif
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import { libraryEditJobSchema } from "./libraryEdit";
+import { LIBRARY_PAGE_SIZES } from "./libraryPagination";
 import {
   LLM_API_FORMAT_OPTIONS,
   LLM_OUTPUT_FORMAT_OPTIONS,
@@ -766,17 +767,21 @@ const libraryScopeFields = {
   tag: z.string().trim().min(1).optional(),
 };
 
-export const libraryListInputSchema = z
-  .object({
-    cursor: z.string().trim().min(1).max(2048).optional(),
-    query: z.string().optional(),
-    rootId: z.string().optional(),
-    limit: z.number().int().min(1).max(500).optional(),
-    ...libraryScopeFields,
+export const libraryMatchesInputSchema = z.object({
+  query: z.string().optional(),
+  rootId: z.string().optional(),
+  ...libraryScopeFields,
+});
+export type LibraryMatchesInput = z.infer<typeof libraryMatchesInputSchema>;
+
+export const libraryListInputSchema = libraryMatchesInputSchema
+  .extend({
+    page: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).default(1),
+    pageSize: z.literal(LIBRARY_PAGE_SIZES).default(10),
   })
   .optional();
 
-export type LibraryListInput = z.infer<typeof libraryListInputSchema>;
+export type LibraryListInput = z.input<typeof libraryListInputSchema>;
 
 export const librarySummaryInputSchema = z.object({ libraryId: libraryScopeFields.libraryId }).optional();
 export type LibrarySummaryInput = z.infer<typeof librarySummaryInputSchema>;
@@ -829,12 +834,15 @@ export const libraryListResponseSchema = z.object({
   fileCount: z.number(),
   totalBytes: z.number(),
   entries: z.array(libraryEntrySchema),
-  hasMore: z.boolean(),
-  nextCursor: z.string().nullable(),
+  page: z.number().int().min(1),
+  pageSize: z.literal(LIBRARY_PAGE_SIZES),
   total: z.number(),
 });
 
 export type LibraryListResponse = z.infer<typeof libraryListResponseSchema>;
+
+export const libraryMatchesResponseSchema = z.object({ entries: z.array(libraryEntrySchema) });
+export type LibraryMatchesResponse = z.infer<typeof libraryMatchesResponseSchema>;
 
 export const libraryAvailabilityInputSchema = z.object({
   ids: z.array(z.string().trim().min(1)).min(1).max(200),

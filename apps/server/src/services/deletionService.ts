@@ -1,14 +1,16 @@
 import path from "node:path";
+import { filesystemPathKey } from "@mdcz/media-store";
 import {
   EmbyDeletionRepository,
   PendingActionRepository,
   PendingRepository,
   ScrapeConflictRepository,
 } from "@mdcz/persistence";
+import { mediaPathOwnership } from "@mdcz/runtime/library";
 import type { PendingService } from "@mdcz/runtime/library/pendingService";
 import type { DeletionJob, DeletionJobList, DeletionRetryResponse } from "@mdcz/shared/deletions";
 import type { StrmCloudBinding } from "@mdcz/shared/moviePilot";
-import { pendingItemSchema } from "@mdcz/shared/pending";
+import { type LibraryDeletionTarget, pendingItemSchema } from "@mdcz/shared/pending";
 import type { ServerConfigService } from "./configService";
 import type { EmbyDeletionService } from "./embyDeletionService";
 import type { ServerPersistenceService } from "./persistenceService";
@@ -23,6 +25,7 @@ export class DeletionService {
       emby: Pick<EmbyDeletionService, "processing" | "retry">;
       scrape: Pick<ScrapeService, "conflicts">;
       pending: Pick<PendingService, "retryJob">;
+      invalidate?: () => void;
       isRunning?: (source: "emby" | "duplicate", id: string) => boolean;
     },
   ) {}
@@ -183,7 +186,7 @@ export class DeletionService {
         cloudPlanned: false,
         sharedResource: false,
         error: row.error,
-        result: null,
+        result: row.progress === "manual_cleanup" ? "manual_cleanup" : null,
         attempts: row.attempts,
         nextAttemptAt: row.nextAttemptAt,
         createdAt: row.createdAt,
@@ -192,7 +195,7 @@ export class DeletionService {
         canRetry: row.status === "failed" && !active.has(row.itemId) && available.get(row.itemId) === row.id,
         retryRunId: null,
         retryPlanned: false,
-        progress: row.progress,
+        progress: row.progress === "manual_cleanup" ? undefined : row.progress,
       });
     }
     jobs.sort((a, b) => {
@@ -220,6 +223,79 @@ export class DeletionService {
         new ScrapeConflictRepository(database).clearCompleted() +
         new PendingActionRepository(database).clearCompletedDeletions(),
     }))();
+  }
+
+  async resolveManually(id: string): Promise<{ success: true }> {
+    if (!id.startsWith("action/")) throw new Error("此任务不支持人工清理");
+    const state = await this.deps.persistence.getState();
+    const { pendingActions, pending, library } = state.repositories;
+    const actionId = id.slice(7);
+    const action = pendingActions.list().find((row) => row.id === actionId);
+    if (!action || action.action !== "delete" || action.status !== "failed")
+      throw new Error("此任务当前无法人工清理，请刷新后重试");
+    const input = JSON.parse(action.inputJson) as { libraryFile?: LibraryDeletionTarget };
+    const target = input.libraryFile;
+    if (!target?.fileId || !target.rootId || typeof target.relativePath !== "string")
+      throw new Error("此任务没有可核验的媒体文件身份");
+    const release = mediaPathOwnership.acquireAll([
+      filesystemPathKey(path.resolve(target.rootPath, target.relativePath)),
+    ]);
+    try {
+      state.database.sqlite.transaction(() => {
+        const rows = pendingActions.list();
+        const current = rows.find((row) => row.id === actionId);
+        if (!current || current.status !== "failed" || current.inputJson !== action.inputJson)
+          throw new Error("任务已变化，请刷新后重试");
+        const related = rows.filter((row) => {
+          if (row.action !== "delete") return false;
+          const other = (JSON.parse(row.inputJson) as { libraryFile?: LibraryDeletionTarget }).libraryFile;
+          return other?.fileId === target.fileId;
+        });
+        const itemIds = new Set(related.map((row) => row.itemId));
+        const item = pending.findByFile({ rootId: target.rootId, relativePath: target.relativePath });
+        if (item) itemIds.add(item.id);
+        if (rows.some((row) => itemIds.has(row.itemId) && ["queued", "running", "retrying"].includes(row.status)))
+          throw new Error("此文件已有正在执行的操作，请等待完成后重试");
+        const root = state.database.sqlite
+          .prepare<[string], { hostPath: string; realPath: string | null }>(
+            "SELECT host_path AS hostPath, real_path AS realPath FROM media_roots WHERE id = ?",
+          )
+          .get(target.rootId);
+        if (root && (root.hostPath !== target.rootPath || root.realPath !== target.rootRealPath))
+          throw new Error("媒体根目录已变化，请重新检查");
+        const files = state.database.sqlite
+          .prepare<[string, string, string], { id: string; rootId: string; relativePath: string; updatedAt: number }>(
+            "SELECT id, root_id AS rootId, root_relative_path AS relativePath, updated_at AS updatedAt FROM library_item_files WHERE id = ? OR (root_id = ? AND root_relative_path = ?)",
+          )
+          .all(target.fileId, target.rootId, target.relativePath);
+        if (
+          files.some(
+            (file) =>
+              file.id !== target.fileId ||
+              file.rootId !== target.rootId ||
+              file.relativePath !== target.relativePath ||
+              file.updatedAt !== target.fileUpdatedAt,
+          )
+        )
+          throw new Error("媒体文件记录已变化或重新入库，请重新检查");
+        const failed = related.filter((row) => row.status === "failed");
+        if (
+          item &&
+          (!related.some((row) => row.itemId === item.id) ||
+            (item.taskId
+              ? !failed.some((row) => row.id === item.taskId && row.itemId === item.id)
+              : !failed.some((row) => row.itemId === item.id && row.itemUpdatedAt === item.updatedAt.getTime())))
+        )
+          throw new Error("待处理记录已变化，请重新检查");
+        if (files.length) library.removeFile(target.fileId);
+        if (item) pending.delete([item.id]);
+        pendingActions.completeManually(failed.map((row) => row.id));
+      })();
+      this.deps.invalidate?.();
+      return { success: true };
+    } finally {
+      release();
+    }
   }
 
   async retry(id: string): Promise<DeletionRetryResponse> {

@@ -1,22 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { decodeLibraryPageCursor, encodeLibraryPageCursor } from "./libraryPagination";
+import { LIBRARY_PAGE_SIZES } from "./libraryPagination";
+import { libraryListInputSchema } from "./serverDtos";
 
-describe("library page cursors", () => {
-  it("round-trips timestamps and ids containing encoded delimiters", () => {
-    const cursor = {
-      createdAt: new Date("2026-08-17T10:20:30.456Z"),
-      id: "root:影片%ABC-001",
-    };
-
-    expect(decodeLibraryPageCursor(encodeLibraryPageCursor(cursor))).toEqual(cursor);
+describe("library page requests", () => {
+  it("defaults to the first page of ten movies and accepts each supported page size", () => {
+    expect(libraryListInputSchema.parse({})).toEqual({ page: 1, pageSize: 10 });
+    for (const pageSize of LIBRARY_PAGE_SIZES) {
+      expect(libraryListInputSchema.parse({ page: 12, pageSize, health: "missingSynopsis" })).toEqual({
+        page: 12,
+        pageSize,
+        health: "missingSynopsis",
+      });
+    }
   });
 
-  it.each(["invalid", "1:%E0%A4%A"])("rejects malformed cursor %s", (cursor) => {
-    expect(() => decodeLibraryPageCursor(cursor)).toThrow("媒体库分页游标无效");
-  });
-
-  it("treats an absent cursor as the first page", () => {
-    expect(decodeLibraryPageCursor(undefined)).toBeUndefined();
-    expect(decodeLibraryPageCursor("  ")).toBeUndefined();
+  it("rejects invalid page numbers and unsupported page sizes", () => {
+    for (const page of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Infinity, "2"]) {
+      expect(libraryListInputSchema.safeParse({ page }).success).toBe(false);
+    }
+    for (const pageSize of [0, 1, 15, 500, "10"]) {
+      expect(libraryListInputSchema.safeParse({ pageSize }).success).toBe(false);
+    }
   });
 });

@@ -38,6 +38,7 @@ import {
   libraryFileRemoveInputSchema,
   libraryIgnoreHealthInputSchema,
   libraryListInputSchema,
+  libraryMatchesInputSchema,
   libraryRelinkInputSchema,
   libraryRestoreIgnoredInputSchema,
   librarySummaryInputSchema,
@@ -208,6 +209,9 @@ export const appRouter = t.router({
   }),
   deletions: t.router({
     clearCompleted: protectedProcedure.mutation(({ ctx }) => ctx.services.deletions.clearCompleted()),
+    resolveManually: protectedProcedure
+      .input(deletionJobInputSchema)
+      .mutation(({ ctx, input }) => ctx.services.deletions.resolveManually(input.id)),
     list: protectedProcedure.query(({ ctx }) => ctx.services.deletions.list()),
     detail: protectedProcedure
       .input(deletionJobInputSchema)
@@ -232,6 +236,9 @@ export const appRouter = t.router({
     list: protectedProcedure
       .input(libraryListInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.list(input)),
+    matches: protectedProcedure
+      .input(libraryMatchesInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.library.matches(input)),
     summary: protectedProcedure
       .input(librarySummaryInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.summary(input)),

@@ -41,6 +41,40 @@ const completed = job({
   canRetry: false,
 });
 
+test("manual cleanup confirms the selected library record and shows its result", async () => {
+  const manual = vi.fn().mockResolvedValue(true);
+  const failed = job({ id: "action/failed", source: "library", cloudPlanned: false, progress: "需要人工处理" });
+  const props = {
+    jobs: [failed],
+    selected: failed,
+    filter: "all" as const,
+    onFilterChange: vi.fn(),
+    onSelect: vi.fn(),
+    onRetry: vi.fn(),
+    onRefresh: vi.fn(),
+    onClearCompleted: vi.fn(),
+    onOpenScrape: vi.fn(),
+    onManual: manual,
+  };
+  const screen = await render(<DeletionWorkbenchView {...props} />);
+  await screen.getByRole("button", { name: "人工清理记录" }).click();
+  await expect.element(screen.getByRole("dialog")).toHaveTextContent("不会删除本地或 115 文件");
+  await expect.element(screen.getByRole("dialog")).toHaveTextContent(failed.linkPath ?? "");
+  await screen.getByRole("button", { name: "确认清理记录" }).click();
+  await expect.poll(() => manual.mock.calls).toEqual([["action/failed"]]);
+  const handled = {
+    ...failed,
+    status: "completed" as const,
+    step: "completed" as const,
+    error: null,
+    result: "manual_cleanup",
+    progress: undefined,
+  };
+  await screen.rerender(<DeletionWorkbenchView {...props} jobs={[handled]} selected={handled} />);
+  await expect.element(screen.getByRole("button", { name: /DPMI-080/ })).toHaveTextContent("已人工处理");
+  await expect.element(screen.getByRole("button", { name: "人工清理记录" })).not.toBeInTheDocument();
+});
+
 test("workbench displays live progress for library deletion", async () => {
   const running = job({ source: "library", status: "running", progress: "正在删除文件", error: null, canRetry: false });
   const screen = await render(

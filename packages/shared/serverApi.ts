@@ -59,6 +59,8 @@ import type {
   LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
+  LibraryMatchesInput,
+  LibraryMatchesResponse,
   LibraryRelinkInput,
   LibraryRestoreIgnoredInput,
   LibrarySummaryInput,
@@ -123,6 +125,7 @@ import type { NamingPreviewItem } from "./types";
 export interface ServerApiContract {
   deletions: {
     list(): Promise<DeletionJobList>;
+    resolveManually(input: DeletionJobInput): Promise<{ success: true }>;
     clearCompleted(): Promise<{ cleared: number }>;
     detail(input: DeletionJobInput): Promise<DeletionJob>;
     retry(input: DeletionJobInput): Promise<DeletionRetryResponse>;
@@ -201,6 +204,7 @@ export interface ServerApiContract {
     removeFile(input: import("./serverDtos").LibraryFileRemoveInput): Promise<LibraryDeletionResponse>;
     availability(input: LibraryAvailabilityInput): Promise<LibraryAvailabilityResponse>;
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
+    matches(input: LibraryMatchesInput): Promise<LibraryMatchesResponse>;
     summary(input?: LibrarySummaryInput): Promise<LibrarySummaryResponse>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;

@@ -555,7 +555,7 @@ describe("LibraryRepository", () => {
     expect(pending.list().map((item) => item.relativePath)).toEqual(["B.mp4"]);
   });
 
-  it("paginates library entries with a stable created-at and id cursor", async () => {
+  it("paginates library entries in stable order and clamps missing pages", async () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1", "root-2");
     const repository = new LibraryRepository(database);
@@ -592,12 +592,20 @@ describe("LibraryRepository", () => {
     });
 
     const first = await repository.listEntriesPage({ limit: 2 });
-    const second = await repository.listEntriesPage({ cursor: first.nextCursor ?? undefined, limit: 2 });
+    const second = await repository.listEntriesPage({ page: 2, limit: 2 });
 
     expect(first.entries.map((entry) => entry.id)).toEqual(["entry-c", "entry-b"]);
-    expect(first).toMatchObject({ hasMore: true, total: 3 });
+    expect(first).toMatchObject({ page: 1, total: 3 });
     expect(second.entries.map((entry) => entry.id)).toEqual(["entry-a"]);
-    expect(second).toMatchObject({ hasMore: false, nextCursor: null, total: 3 });
+    expect(second).toMatchObject({ page: 2, total: 3 });
+    expect(await repository.listEntriesPage({ page: 999, limit: 2 })).toEqual(second);
+    expect(await repository.listEntriesPage({ page: 999, limit: 2, query: "nothing-matches" })).toMatchObject({
+      entries: [],
+      total: 0,
+      page: 1,
+      fileCount: 0,
+      totalBytes: 0,
+    });
   });
 
   it("filters paged library entries by file/root and metadata in SQL", async () => {
@@ -782,7 +790,7 @@ describe("LibraryRepository", () => {
     await expect(repository.listEntriesPage({ limit: 1 })).resolves.toMatchObject({
       entries: [expect.objectContaining({ id: "active-entry" })],
       total: 2,
-      hasMore: true,
+      page: 1,
     });
     await expect(repository.listEntriesPage({ limit: 10, query: "%" })).resolves.toMatchObject({
       entries: [expect.objectContaining({ id: "active-entry" })],

@@ -16,7 +16,7 @@ import {
 } from "@mdcz/shared/moviePilot";
 import { MoviePilotClient } from "./moviePilotClient";
 
-const hash = (value: Uint8Array) => createHash("sha256").update(value).digest("hex");
+const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 type StoredMoviePilot = NonNullable<EmbyDeletionConfig["moviePilot"]>;
 
@@ -306,7 +306,7 @@ export class StrmDeletionService {
   ): Promise<void> {
     await this.assertMounts(library);
     const sourcePath = snapshot.source.sourcePath;
-    const parked = `${sourcePath}.mdcz-delete-${eventId}`;
+    const parked = path.join(path.dirname(sourcePath), `.mdcz-delete-${hash(JSON.stringify([eventId, sourcePath]))}`);
     if (!library.source) throw new Error("STRM 来源目录身份已变化");
     const directory = await realpath(path.dirname(sourcePath)).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;

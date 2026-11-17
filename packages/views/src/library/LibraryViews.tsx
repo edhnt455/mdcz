@@ -1,5 +1,7 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
+import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
+import { LIBRARY_PAGE_SIZES, type LibraryPageSize } from "@mdcz/shared/libraryPagination";
 import type { LibraryFileRemoveInput, LibraryRelinkInput } from "@mdcz/shared/serverDtos";
 import {
   Badge,
@@ -27,7 +29,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@mdcz/ui";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertCircle,
   ChevronDown,
@@ -45,7 +46,7 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { type ComponentType, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, type ReactNode, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "../i18n";
 import { type LibraryBrowseControls, LibraryBrowsePanel } from "./LibraryBrowsePanel";
@@ -53,31 +54,29 @@ import { LibraryPosterWall } from "./LibraryPosterWall";
 
 const ALL_LIBRARIES = "__all__";
 
-export type LibraryAvailabilityFilter = "all" | LibraryEntryDto["available"];
-
 export interface LibraryIndexViewProps {
   className?: string;
   entries: LibraryEntryDto[];
   errorMessage?: string | null;
   getImageSrc?: (path: string, entry: LibraryEntryDto) => string;
   isLoading?: boolean;
-  isAvailabilityLoading?: boolean;
-  isLoadingMore?: boolean;
-  hasMore?: boolean;
+  page: number;
+  pageSize: LibraryPageSize;
+  selectionKey: string;
   query: string;
   total: number;
   fileCount?: number;
   totalBytes?: number;
-  availabilityFilter: LibraryAvailabilityFilter;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   browse?: LibraryBrowseControls;
-  onAvailabilityFilterChange: (value: LibraryAvailabilityFilter) => void;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: LibraryPageSize) => void;
+  onSelectAll: () => Promise<LibraryEntryDto[]>;
   onEditEntries?: (entries: LibraryEntryDto[]) => void;
   onEditAll?: () => Promise<void>;
   onDeleteEntries: (entries: LibraryEntryDto[]) => void;
   onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
   onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
-  onLoadMore?: () => void;
   onQueryChange: (value: string) => void;
   onRefresh: () => void;
 }
@@ -95,110 +94,77 @@ export function LibraryIndexView({
   errorMessage,
   getImageSrc = (path) => path,
   isLoading = false,
-  isAvailabilityLoading = false,
-  isLoadingMore = false,
-  hasMore = false,
+  page,
+  pageSize,
+  selectionKey,
   query,
   total,
   fileCount,
   totalBytes,
-  availabilityFilter,
   linkComponent: LinkComponent,
   browse,
-  onAvailabilityFilterChange,
+  onPageChange,
+  onPageSizeChange,
+  onSelectAll,
   onDeleteEntries,
   onEditEntries,
   onEditAll,
   onRemoveFile,
   onRelinkFile,
-  onLoadMore,
   onQueryChange,
   onRefresh,
 }: LibraryIndexViewProps) {
   const t = useT();
   const mainRef = useRef<HTMLElement>(null);
-  const listRef = useRef<HTMLElement>(null);
-  const [listOffset, setListOffset] = useState(0);
-  const [selecting, setSelecting] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-
-  const { availableCount, filteredEntries, partialCount, totalSize, unknownCount, unavailableCount } = useMemo(() => {
-    let availableCount = 0;
-    let unavailableCount = 0;
-    let partialCount = 0;
-    let unknownCount = 0;
-    let totalSize = 0;
-    const filteredEntries: LibraryEntryDto[] = [];
-    for (const entry of entries) {
-      if (entry.available === "available") availableCount += 1;
-      else if (entry.available === "unavailable") unavailableCount += 1;
-      else if (entry.available === "partial") partialCount += 1;
-      else if (entry.available === "unchecked") unknownCount += 1;
-      const matchesAvailability = availabilityFilter === "all" || availabilityFilter === entry.available;
-      if (matchesAvailability) {
-        filteredEntries.push(entry);
-        totalSize += Number.isFinite(entry.size) ? entry.size : 0;
-      }
-    }
-    return { availableCount, filteredEntries, partialCount, totalSize, unknownCount, unavailableCount };
-  }, [availabilityFilter, entries]);
-
-  const availabilityFilters = useMemo<Array<{ count: number; label: string; value: LibraryAvailabilityFilter }>>(
-    () =>
-      (
-        [
-          { label: t.library.filter.all, value: "all", count: entries.length },
-          { label: t.library.filter.available, value: "available", count: availableCount },
-          { label: t.library.filter.unavailable, value: "unavailable", count: unavailableCount },
-          { label: t.library.filter.partial, value: "partial", count: partialCount },
-          { label: t.library.filter.unchecked, value: "unchecked", count: unknownCount },
-        ] as const
-      ).filter(
-        (filter) =>
-          filter.value === "all" ||
-          filter.value === "available" ||
-          filter.count > 0 ||
-          availabilityFilter === filter.value,
-      ),
-    [
-      availabilityFilter,
-      availableCount,
-      entries.length,
-      partialCount,
-      t.library.filter,
-      unavailableCount,
-      unknownCount,
-    ],
-  );
-
+  const [selection, setSelection] = useState({
+    key: selectionKey,
+    selecting: false,
+    entries: new Map<string, LibraryEntryDto>(),
+  });
+  const [selectingAll, setSelectingAll] = useState(false);
+  const selectionRequest = useRef(0);
+  if (selection.key !== selectionKey) {
+    selectionRequest.current += 1;
+    setSelection({ key: selectionKey, selecting: false, entries: new Map() });
+    setSelectingAll(false);
+  }
+  const totalSize = entries.reduce((size, entry) => size + (Number.isFinite(entry.size) ? entry.size : 0), 0);
   const resolvedFileCount = fileCount ?? entries.reduce((count, entry) => count + entry.fileRefs.length, 0);
   const summaryText = `${t.library.metrics.movies} ${total} · ${t.library.metrics.files} ${resolvedFileCount} · ${formatBytes(totalBytes ?? totalSize)}`;
   const listView = browse?.view !== "wall";
-  const selectionMode = selecting && listView;
-  // Entries that left the list or the filter drop out of the selection on their own.
-  const selected = filteredEntries.filter((entry) => selectedIds.has(entry.id));
-  const toggleSelected = (id: string) =>
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (!next.delete(id)) next.add(id);
-      return next;
+  const selectionMode = selection.selecting && listView;
+  const selected = [...selection.entries.values()];
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pageNumbers = [...new Set([1, pageCount, page - 2, page - 1, page, page + 1, page + 2])]
+    .filter((value) => value >= 1 && value <= pageCount)
+    .sort((a, b) => a - b);
+  const toggleSelected = (entry: LibraryEntryDto) =>
+    setSelection((current) => {
+      const next = new Map(current.entries);
+      if (!next.delete(entry.id)) next.set(entry.id, entry);
+      return { ...current, entries: next };
     });
-
-  useLayoutEffect(() => {
-    const updateOffset = () => setListOffset(listRef.current?.offsetTop ?? 0);
-    updateOffset();
-    const observer = new ResizeObserver(updateOffset);
-    if (mainRef.current) observer.observe(mainRef.current);
-    return () => observer.disconnect();
-  }, []);
-  const rowVirtualizer = useVirtualizer({
-    count: filteredEntries.length,
-    estimateSize: () => 104,
-    getItemKey: (index) => filteredEntries[index]?.id ?? index,
-    getScrollElement: () => mainRef.current,
-    overscan: 6,
-    scrollMargin: listOffset,
-  });
+  const toggleAll = async () => {
+    if (selected.length > 0 && selected.length === total) {
+      setSelection({ ...selection, entries: new Map() });
+      return;
+    }
+    const request = ++selectionRequest.current;
+    setSelectingAll(true);
+    try {
+      const matches = await onSelectAll();
+      if (request === selectionRequest.current) {
+        setSelection((current) => ({ ...current, entries: new Map(matches.map((entry) => [entry.id, entry])) }));
+      }
+    } catch (error) {
+      if (request === selectionRequest.current) toast.error(toErrorMessage(error));
+    } finally {
+      if (request === selectionRequest.current) setSelectingAll(false);
+    }
+  };
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [page, pageSize, selectionKey]);
 
   return (
     <TooltipProvider>
@@ -233,36 +199,23 @@ export function LibraryIndexView({
               ) : null}
 
               <div className="inline-flex shrink-0 flex-wrap rounded-quiet bg-surface-low p-1 shadow-inner">
-                {availabilityFilters.map((filter) => (
-                  <Button
-                    aria-pressed={availabilityFilter === filter.value}
-                    className={cn(
-                      "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground transition-all",
-                      availabilityFilter === filter.value && "bg-surface text-foreground shadow-sm",
-                    )}
-                    key={filter.value}
-                    onClick={() => onAvailabilityFilterChange(filter.value)}
-                    size="sm"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <span>{filter.label}</span>
-                    <span className="font-numeric text-[11px] opacity-60">{filter.count}</span>
-                  </Button>
-                ))}
+                <span className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-quiet-sm)] bg-surface px-3 text-xs font-bold shadow-sm">
+                  {t.library.all}
+                  <span className="font-numeric text-[11px] opacity-60">{total}</span>
+                </span>
               </div>
 
               {listView ? (
                 <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
                   <Button
-                    aria-pressed={selecting}
+                    aria-pressed={selection.selecting}
+                    disabled={selectingAll}
                     className={cn(
                       "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
-                      selecting && "bg-surface text-foreground shadow-sm",
+                      selection.selecting && "bg-surface text-foreground shadow-sm",
                     )}
                     onClick={() => {
-                      setSelecting(!selecting);
-                      setSelectedIds(new Set());
+                      setSelection({ key: selectionKey, selecting: !selection.selecting, entries: new Map() });
                     }}
                     size="sm"
                     type="button"
@@ -279,24 +232,21 @@ export function LibraryIndexView({
                   <Checkbox
                     id="library-select-all"
                     checked={
-                      selected.length > 0 && selected.length === filteredEntries.length
+                      selected.length > 0 && selected.length === total
                         ? true
                         : selected.length > 0
                           ? "indeterminate"
                           : false
                     }
-                    disabled={filteredEntries.length === 0}
-                    onCheckedChange={() =>
-                      setSelectedIds(
-                        new Set(
-                          selected.length === filteredEntries.length ? [] : filteredEntries.map((entry) => entry.id),
-                        ),
-                      )
-                    }
+                    disabled={total === 0 || isLoading || selectingAll}
+                    onCheckedChange={() => void toggleAll()}
                   />
                   <label htmlFor="library-select-all" className="cursor-pointer select-none">
-                    {t.library.selectAllLoaded}
+                    {t.library.selectAllMatches}
                   </label>
+                  {selectingAll ? (
+                    <LoaderCircle aria-label={t.library.selectingAll} className="h-4 w-4 animate-spin" />
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -341,78 +291,130 @@ export function LibraryIndexView({
           </section>
 
           {browse ? (
-            <LibraryBrowsePanel
-              onEditAll={availabilityFilter === "all" ? onEditAll : undefined}
-              browse={browse}
-              matchCount={availabilityFilter === "all" ? total : 0}
-              summaryText={summaryText}
-            />
+            <LibraryBrowsePanel onEditAll={onEditAll} browse={browse} matchCount={total} summaryText={summaryText} />
           ) : (
             <div className="flex items-center justify-end font-numeric text-xs text-muted-foreground">
               {summaryText}
             </div>
           )}
 
-          <section aria-label={t.library.listAriaLabel} className="flex flex-col gap-3" ref={listRef}>
-            {filteredEntries.length > 0 && browse?.view === "wall" && (
-              <LibraryPosterWall entries={filteredEntries} getImageSrc={getImageSrc} linkComponent={LinkComponent} />
+          <section aria-busy={isLoading} aria-label={t.library.listAriaLabel} className="flex flex-col gap-3">
+            {entries.length > 0 && browse?.view === "wall" && (
+              <LibraryPosterWall entries={entries} getImageSrc={getImageSrc} linkComponent={LinkComponent} />
             )}
-            {filteredEntries.length > 0 && listView && (
-              <div className="relative w-full" style={{ height: rowVirtualizer.getTotalSize() }}>
-                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                  const entry = filteredEntries[virtualRow.index];
-                  return (
-                    <div
-                      className="absolute top-0 left-0 w-full pb-2.5"
-                      data-index={virtualRow.index}
-                      key={entry.id}
-                      ref={rowVirtualizer.measureElement}
-                      style={{ transform: `translateY(${virtualRow.start - listOffset}px)` }}
-                    >
-                      <LibraryEntryRow
-                        entry={entry}
-                        getImageSrc={getImageSrc}
-                        linkComponent={LinkComponent}
-                        selectable={selectionMode}
-                        selected={selectedIds.has(entry.id)}
-                        onDeleteEntries={onDeleteEntries}
-                        onToggleSelected={() => toggleSelected(entry.id)}
-                        onRemoveFile={onRemoveFile}
-                        onRelinkFile={onRelinkFile}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {filteredEntries.length === 0 && (
+            {listView &&
+              entries.map((entry) => (
+                <LibraryEntryRow
+                  key={entry.id}
+                  entry={entry}
+                  getImageSrc={getImageSrc}
+                  linkComponent={LinkComponent}
+                  selectable={selectionMode}
+                  selectionDisabled={selectingAll}
+                  selected={selection.entries.has(entry.id)}
+                  onDeleteEntries={onDeleteEntries}
+                  onToggleSelected={() => toggleSelected(entry)}
+                  onRemoveFile={onRemoveFile}
+                  onRelinkFile={onRelinkFile}
+                />
+              ))}
+            {entries.length === 0 && !errorMessage && (
               <div className="flex min-h-[300px] flex-col items-center justify-center rounded-quiet-xl border border-dashed border-border/60 bg-surface-low/30 text-center text-muted-foreground">
                 <Database className="mb-3 h-10 w-10 text-muted-foreground/40" />
-                {isAvailabilityLoading && availabilityFilter !== "all" && unknownCount > 0 ? (
+                {isLoading ? (
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <LoaderCircle className="h-4 w-4 animate-spin" />
-                    {t.library.checkingAvailability}
+                    {t.common.loading}
                   </div>
                 ) : (
                   <p className="text-sm">
-                    {availabilityFilter !== "all" && unknownCount > 0
-                      ? t.library.noConfirmedEntries(unknownCount)
-                      : total === 0 && !query.trim() && !browse?.health && !browse?.facet
-                        ? t.library.nothingIndexed
-                        : t.library.noMatchingEntries}
+                    {total === 0 && !query.trim() && !browse?.health && !browse?.facet && !browse?.ignored
+                      ? t.library.nothingIndexed
+                      : t.library.noMatchingEntries}
                   </p>
                 )}
               </div>
             )}
-            {hasMore && (
-              <div className="flex justify-center py-2">
-                <Button disabled={isLoadingMore} onClick={onLoadMore} type="button" variant="secondary">
-                  <LoaderCircle className={cn("h-4 w-4", isLoadingMore && "animate-spin")} />
-                  {t.library.loadMore}
-                </Button>
-              </div>
-            )}
           </section>
+
+          <nav
+            aria-label={t.library.pagination.label}
+            className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"
+          >
+            <span className="font-numeric">{t.library.pagination.summary(total, page, pageCount)}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2">
+                {t.library.pagination.pageSize}
+                <select
+                  aria-label={t.library.pagination.pageSize}
+                  className="h-8 rounded-quiet border border-border bg-surface px-2 text-foreground"
+                  disabled={isLoading}
+                  value={pageSize}
+                  onChange={(event) => onPageSizeChange(Number(event.target.value) as LibraryPageSize)}
+                >
+                  {LIBRARY_PAGE_SIZES.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                disabled={isLoading || page <= 1}
+                size="sm"
+                variant="outline"
+                onClick={() => onPageChange(page - 1)}
+              >
+                {t.library.pagination.previous}
+              </Button>
+              {pageNumbers.map((number, index) => (
+                <span key={number} className="inline-flex items-center gap-2">
+                  {index > 0 && number > pageNumbers[index - 1] + 1 ? <span aria-hidden="true">…</span> : null}
+                  <Button
+                    aria-label={t.library.pagination.goTo(number)}
+                    aria-current={number === page ? "page" : undefined}
+                    disabled={isLoading}
+                    size="sm"
+                    variant={number === page ? "default" : "outline"}
+                    onClick={() => onPageChange(number)}
+                  >
+                    {number}
+                  </Button>
+                </span>
+              ))}
+              <Button
+                disabled={isLoading || page >= pageCount}
+                size="sm"
+                variant="outline"
+                onClick={() => onPageChange(page + 1)}
+              >
+                {t.library.pagination.next}
+              </Button>
+              <form
+                key={`${page}:${pageCount}`}
+                className="flex items-center gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const value = Number(new FormData(event.currentTarget).get("page"));
+                  if (Number.isInteger(value) && value >= 1 && value <= pageCount) onPageChange(value);
+                }}
+              >
+                <Input
+                  aria-label={t.library.pagination.jump}
+                  name="page"
+                  type="number"
+                  min={1}
+                  max={pageCount}
+                  defaultValue={page}
+                  disabled={isLoading}
+                  className="h-8 w-16"
+                />
+                <Button type="submit" disabled={isLoading} size="sm" variant="outline">
+                  {t.library.pagination.jump}
+                </Button>
+              </form>
+            </div>
+          </nav>
 
           {selectionMode && selected.length > 0 ? (
             // Pinned below the list: the action stays in reach while scrolling, and showing it moves no row.
@@ -424,12 +426,24 @@ export function LibraryIndexView({
             >
               <span className="text-sm font-semibold">{t.library.selectedCount(selected.length)}</span>
               {onEditEntries && (
-                <Button onClick={() => onEditEntries(selected)} size="sm" type="button" variant="outline">
+                <Button
+                  disabled={selectingAll}
+                  onClick={() => onEditEntries(selected)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
                   <Pencil className="h-3.5 w-3.5" />
                   {t.library.edit.action}
                 </Button>
               )}
-              <Button onClick={() => onDeleteEntries(selected)} size="sm" type="button" variant="destructive">
+              <Button
+                disabled={selectingAll}
+                onClick={() => onDeleteEntries(selected)}
+                size="sm"
+                type="button"
+                variant="destructive"
+              >
                 <Trash2 className="h-3.5 w-3.5" />
                 {t.library.removeFromLibrary}
               </Button>
@@ -483,6 +497,7 @@ function LibraryEntryRow({
   getImageSrc,
   linkComponent: LinkComponent,
   selectable,
+  selectionDisabled,
   selected,
   onDeleteEntries,
   onToggleSelected,
@@ -493,6 +508,7 @@ function LibraryEntryRow({
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   selectable: boolean;
+  selectionDisabled: boolean;
   selected: boolean;
   onDeleteEntries: LibraryIndexViewProps["onDeleteEntries"];
   onToggleSelected: () => void;
@@ -516,7 +532,12 @@ function LibraryEntryRow({
     <div className="group rounded-quiet-lg border border-border/40 bg-surface p-3 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)]">
       <div className="relative flex flex-wrap items-center gap-x-5 gap-y-3 lg:flex-nowrap lg:gap-6">
         {selectable ? (
-          <Checkbox aria-label={t.library.selectEntry(id)} checked={selected} onCheckedChange={onToggleSelected} />
+          <Checkbox
+            aria-label={t.library.selectEntry(id)}
+            disabled={selectionDisabled}
+            checked={selected}
+            onCheckedChange={onToggleSelected}
+          />
         ) : null}
         <div className="relative h-[68px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
           {imageSrc ? (

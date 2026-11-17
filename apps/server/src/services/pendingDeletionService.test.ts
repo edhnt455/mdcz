@@ -24,7 +24,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
-async function fixture() {
+async function fixture(filename = "ABC-123.strm") {
   const directory = await realpath(await mkdtemp(path.join(tmpdir(), "mdcz-pending-delete-")));
   const normal = path.join(directory, "Normal");
   const link = path.join(directory, "Link");
@@ -32,7 +32,7 @@ async function fixture() {
     await mkdir(root);
     await writeFile(path.join(root, ".mdcz-library-id"), root);
   }
-  const sourcePath = path.join(normal, "ABC-123.strm");
+  const sourcePath = path.join(normal, filename);
   const content = "https://mp.test/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=code\n";
   await writeFile(sourcePath, content);
   const database = createPersistenceDatabase({ path: path.join(directory, "db.sqlite") });
@@ -46,7 +46,7 @@ async function fixture() {
   const library = new LibraryRepository(database);
   const pending = new PendingRepository(database);
   const pendingActions = new PendingActionRepository(database);
-  pending.upsert({ rootId: root.id, relativePath: "ABC-123.strm", libraryId: "library", kind: "failed" });
+  pending.upsert({ rootId: root.id, relativePath: filename, libraryId: "library", kind: "failed" });
   const id = pending.list()[0].id;
   const configuration = structuredClone(defaultConfiguration);
   const cloudRoot: MoviePilotFile = {
@@ -165,7 +165,9 @@ test.each([
   "entries",
 ] as const)("deep deletes verified 115, local STRM and records via %s", async (mode) => {
   const published = mode !== "pending";
-  const f = await fixture();
+  const filename = `${"界".repeat(83)}a.strm`;
+  expect(Buffer.byteLength(filename)).toBe(255);
+  const f = await fixture(filename);
   const service = f.restart();
   const linkPath = path.join(f.link, "ABC-123.strm");
   if (published) {

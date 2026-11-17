@@ -75,11 +75,6 @@ export interface UpsertLibraryEntryInput {
   files: LibraryFileInput[];
 }
 
-export interface LibraryEntriesCursor {
-  createdAt: Date;
-  id: string;
-}
-
 export const LIBRARY_HEALTH_ISSUES = [
   "missingPoster",
   "missingBackdrop",
@@ -105,7 +100,7 @@ export interface LibraryEntryFilter {
 }
 
 export interface ListLibraryEntriesInput extends LibraryEntryFilter {
-  cursor?: LibraryEntriesCursor;
+  page?: number;
   limit: number;
 }
 
@@ -125,8 +120,7 @@ export interface LibraryEntriesPage {
   fileCount: number;
   totalBytes: number;
   entries: LibraryEntryRecord[];
-  hasMore: boolean;
-  nextCursor: LibraryEntriesCursor | null;
+  page: number;
   total: number;
 }
 
@@ -624,8 +618,13 @@ export class LibraryRepository {
     });
   }
 
-  async listEntries(): Promise<LibraryEntryRecord[]> {
-    const items = this.database.db.select().from(libraryItems).orderBy(desc(libraryItems.createdAt)).all();
+  async listEntries(filter: LibraryEntryFilter = {}): Promise<LibraryEntryRecord[]> {
+    const items = this.database.db
+      .select()
+      .from(libraryItems)
+      .where(buildLibraryListWhere(filter))
+      .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
+      .all();
     const ids = items.map((item) => item.id);
     const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
     return items.map((item) =>
@@ -650,26 +649,21 @@ export class LibraryRepository {
   async listEntriesPage(input: ListLibraryEntriesInput): Promise<LibraryEntriesPage> {
     const limit = Math.max(1, Math.trunc(input.limit));
     const baseWhere = buildLibraryListWhere(input);
-    const cursorTimestamp = input.cursor?.createdAt.getTime();
-    const cursorWhere = input.cursor
-      ? sql`(${libraryItems.createdAt} < ${cursorTimestamp} OR (${libraryItems.createdAt} = ${cursorTimestamp} AND ${libraryItems.id} < ${input.cursor.id}))`
-      : undefined;
-    const where = and(baseWhere, cursorWhere);
+    const total = this.getListCount(baseWhere);
+    const page = Math.min(Math.max(1, Math.trunc(input.page ?? 1)), Math.max(1, Math.ceil(total / limit)));
     const items = this.database.db
       .select()
       .from(libraryItems)
-      .where(where)
+      .where(baseWhere)
       .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
-      .limit(limit + 1)
+      .limit(limit)
+      .offset((page - 1) * limit)
       .all();
-    const hasMore = items.length > limit;
-    const pageItems = hasMore ? items.slice(0, limit) : items;
-    const ids = pageItems.map((item) => item.id);
+    const ids = items.map((item) => item.id);
     const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
-    const entries = pageItems.map((item) =>
+    const entries = items.map((item) =>
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
-    const lastItem = pageItems.at(-1);
     const totals = this.database.db
       .select({
         fileCount: sql<number>`count(${libraryItemFiles.id})`,
@@ -683,16 +677,9 @@ export class LibraryRepository {
 
     return {
       entries,
-      hasMore,
-      nextCursor:
-        hasMore && lastItem
-          ? {
-              createdAt: lastItem.createdAt,
-              id: lastItem.id,
-            }
-          : null,
+      page,
       ...totals,
-      total: this.getListCount(baseWhere),
+      total,
     };
   }
 

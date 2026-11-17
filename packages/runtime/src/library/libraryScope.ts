@@ -1,11 +1,11 @@
 import type { LibraryEntryFilter } from "@mdcz/persistence";
 import type { Configuration } from "@mdcz/shared/config";
-import type { LibraryListInput } from "@mdcz/shared/serverDtos";
+import type { LibraryMatchesInput } from "@mdcz/shared/serverDtos";
 import type { MediaLibraryService } from "./mediaLibraryService";
 
 /** A library owns the movies that live under its source or output directory. */
 export const toLibraryEntryFilter = async (
-  input: NonNullable<LibraryListInput> | undefined,
+  input: LibraryMatchesInput | undefined,
   libraries: Pick<MediaLibraryService, "get">,
   configuration: Pick<Configuration, "download">,
 ): Promise<LibraryEntryFilter> => {

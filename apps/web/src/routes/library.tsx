@@ -1,9 +1,9 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEditJobDto, LibraryEditStartInput } from "@mdcz/shared/libraryEdit";
+import type { LibraryPageSize } from "@mdcz/shared/libraryPagination";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import { startHealthFix } from "@mdcz/views/adapters";
 import { useT } from "@mdcz/views/i18n";
-import type { LibraryAvailabilityFilter } from "@mdcz/views/library";
 import {
   chunkLibraryEntryIds,
   createLibraryBrowseControls,
@@ -17,7 +17,7 @@ import {
 } from "@mdcz/views/library";
 import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
 import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore";
-import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
@@ -39,7 +39,11 @@ export function LibraryPage() {
   const isScraping = useScrapeStore(selectIsScraping);
   const ports = useMemo(() => createWebWorkbenchPorts(), []);
   const [query, setQuery] = useState("");
-  const [availabilityFilter, setAvailabilityFilter] = useState<LibraryAvailabilityFilter>("all");
+  const filterKey = JSON.stringify({ query, ...scope });
+  const [pagination, setPagination] = useState({ filterKey, page: 1, pageSize: 10 as LibraryPageSize });
+  const [selectionVersion, setSelectionVersion] = useState(0);
+  if (pagination.filterKey !== filterKey) setPagination({ ...pagination, filterKey, page: 1 });
+  const page = pagination.filterKey === filterKey ? pagination.page : 1;
   const [deleteTargets, setDeleteTargets] = useState<LibraryEntryDto[]>([]);
   const [editOpen, setEditOpen] = useState(false);
   const [editTargets, setEditTargets] = useState<LibraryEntryDto[]>([]);
@@ -63,17 +67,7 @@ export function LibraryPage() {
   const collectEditTargets = async () => {
     const source = editSource.current;
     if (!source) return;
-    const matches: LibraryEntryDto[] = [];
-    if (source.selected) matches.push(...source.selected);
-    else {
-      let cursor: string | undefined;
-      do {
-        const page = await api.library.list({ cursor, query: source.query, limit: 500, ...source.scope });
-        matches.push(...page.entries);
-        cursor = page.nextCursor ?? undefined;
-      } while (cursor);
-    }
-    setEditTargets(matches);
+    setEditTargets(source.selected ?? (await api.library.matches({ query: source.query, ...source.scope })).entries);
   };
   const openEdit = async (selected?: LibraryEntryDto[]) => {
     editSource.current = { selected, scope, query };
@@ -104,11 +98,11 @@ export function LibraryPage() {
     },
     onError: (error) => setEditError(toErrorMessage(error)),
   });
-  const libraryQ = useInfiniteQuery({
-    queryKey: queryKeys.library.list({ query, ...scope }),
-    queryFn: ({ pageParam }) => api.library.list({ cursor: pageParam, query, limit: 100, ...scope }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  const libraryQ = useQuery({
+    queryKey: [...queryKeys.library.list({ query, ...scope }), { page, pageSize: pagination.pageSize }],
+    queryFn: () => api.library.list({ query, ...scope, page, pageSize: pagination.pageSize }),
+    placeholderData: (previous, previousQuery) =>
+      JSON.stringify(previousQuery?.queryKey[2]) === filterKey ? previous : undefined,
     retry: false,
   });
   const notifyDeletionQueued = (taskIds: string[]) => {
@@ -127,6 +121,7 @@ export function LibraryPage() {
     mutationFn: (entries: LibraryEntryDto[]) => api.library.delete({ ids: entries.map((entry) => entry.id) }),
     onSuccess: (result) => {
       setDeleteTargets([]);
+      setSelectionVersion((version) => version + 1);
       notifyDeletionQueued(result.taskIds);
     },
     onError: (error) => {
@@ -136,16 +131,14 @@ export function LibraryPage() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
     },
   });
-  const pageEntries = libraryQ.data?.pages.flatMap((page) => page.entries) ?? [];
+  const pageEntries = libraryQ.isPlaceholderData ? [] : (libraryQ.data?.entries ?? []);
   const availabilityQs = useQueries({
-    queries: (libraryQ.data?.pages ?? []).flatMap((page) =>
-      chunkLibraryEntryIds(page.entries.map((entry) => entry.id)).map((ids) => ({
-        queryKey: [...queryKeys.library.list({ query, ...scope }), "availability", ids],
-        queryFn: async () => await api.library.availability({ ids }),
-        retry: false,
-        staleTime: 30_000,
-      })),
-    ),
+    queries: chunkLibraryEntryIds(pageEntries.map((entry) => entry.id)).map((ids) => ({
+      queryKey: ["library", "availability", ids],
+      queryFn: async () => await api.library.availability({ ids }),
+      retry: false,
+      staleTime: 30_000,
+    })),
   });
   const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
   const summaryQ = useQuery({
@@ -161,7 +154,7 @@ export function LibraryPage() {
   return (
     <>
       <LibraryIndexView
-        availabilityFilter={availabilityFilter}
+        selectionKey={`${filterKey}:${selectionVersion}`}
         browse={createLibraryBrowseControls({
           search,
           libraries: librariesQ.data?.libraries ?? [],
@@ -170,17 +163,11 @@ export function LibraryPage() {
           ...libraryView,
           fixBlockedReason: isScraping ? t.workbench.taskConflict.scrape : undefined,
           onFix: async (issue) => {
-            const matches: LibraryEntryDto[] = [];
-            let cursor: string | undefined;
-            do {
-              const page = await api.library.list({ cursor, query, limit: 500, ...scope, health: issue });
-              matches.push(...page.entries);
-              cursor = page.nextCursor ?? undefined;
-            } while (cursor);
+            const matches = await api.library.matches({ query, ...scope, health: issue });
             await startHealthFix({
               issue,
               libraryId: search.libraryId,
-              entries: matches,
+              entries: matches.entries,
               port: ports.maintenance,
               isScraping,
               toast,
@@ -208,12 +195,13 @@ export function LibraryPage() {
             width: 160,
           })
         }
-        hasMore={libraryQ.hasNextPage}
-        isAvailabilityLoading={availabilityQs.some((availabilityQ) => availabilityQ.isLoading)}
-        isLoading={libraryQ.isLoading}
-        isLoadingMore={libraryQ.isFetchingNextPage}
+        isLoading={libraryQ.isFetching}
         linkComponent={LibraryEntryLink}
-        onAvailabilityFilterChange={setAvailabilityFilter}
+        page={libraryQ.isPlaceholderData ? page : (libraryQ.data?.page ?? page)}
+        pageSize={pagination.pageSize}
+        onPageChange={(page) => setPagination({ ...pagination, page })}
+        onPageSizeChange={(pageSize) => setPagination({ ...pagination, page: 1, pageSize })}
+        onSelectAll={async () => (await api.library.matches({ query, ...scope })).entries}
         onDeleteEntries={setDeleteTargets}
         onEditEntries={(entries) => void openEdit(entries)}
         onEditAll={() => openEdit()}
@@ -226,17 +214,14 @@ export function LibraryPage() {
           await api.library.relink(input);
           await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
         }}
-        onLoadMore={() => {
-          void libraryQ.fetchNextPage();
-        }}
         onQueryChange={setQuery}
         onRefresh={() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
         }}
         query={query}
-        total={libraryQ.data?.pages[0]?.total ?? 0}
-        fileCount={libraryQ.data?.pages[0]?.fileCount ?? 0}
-        totalBytes={libraryQ.data?.pages[0]?.totalBytes ?? 0}
+        total={libraryQ.data?.total ?? 0}
+        fileCount={libraryQ.data?.fileCount ?? 0}
+        totalBytes={libraryQ.data?.totalBytes ?? 0}
       />
       <LibraryEditDialog
         open={editOpen}

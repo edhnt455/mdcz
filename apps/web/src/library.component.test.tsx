@@ -1,6 +1,7 @@
 import type { DeletionJob } from "@mdcz/shared/deletions";
 import type { LibraryDeletionResponse } from "@mdcz/shared/pending";
 import type { LibraryEntryDto, LibraryListResponse } from "@mdcz/shared/serverDtos";
+import { parseLibraryBrowseSearch } from "@mdcz/views/library";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -60,7 +61,8 @@ test("library deletion closes after submission while jobs and library refresh co
   vi.spyOn(Route, "useSearch").mockReturnValue({});
   const list = vi
     .spyOn(api.library, "list")
-    .mockResolvedValue({ entries: [entry], hasMore: false, nextCursor: null, total: 1, fileCount: 2, totalBytes: 20 });
+    .mockResolvedValue({ entries: [entry], page: 1, pageSize: 10, total: 1, fileCount: 2, totalBytes: 20 });
+  vi.spyOn(api.library, "matches").mockResolvedValue({ entries: [entry] });
   vi.spyOn(api.library, "availability").mockResolvedValue({
     entries: [{ id: entry.id, available: "available", fileRefs: entry.fileRefs }],
   });
@@ -126,7 +128,7 @@ test("library deletion closes after submission while jobs and library refresh co
   );
   try {
     await screen.getByRole("button", { name: "多选" }).click();
-    await screen.getByRole("checkbox", { name: "全选已加载" }).click();
+    await screen.getByRole("checkbox", { name: "全选筛选结果" }).click();
     await screen.getByRole("button", { name: "深度删除", exact: true }).last().click();
     await expect.element(screen.getByText(/将提交 1 部影片的 2 个媒体文件的深度删除任务/u)).toBeVisible();
     await screen.getByRole("button", { name: "提交深度删除" }).click();
@@ -154,5 +156,117 @@ test("library deletion closes after submission while jobs and library refresh co
     if (previousView === null) localStorage.removeItem("mdcz.library.view");
     else localStorage.setItem("mdcz.library.view", previousView);
     vi.restoreAllMocks();
+  }
+});
+
+test("library browsing pages on the server and selects a fixed snapshot of every filtered movie", async () => {
+  const movies: LibraryEntryDto[] = Array.from({ length: 630 }, (_, index) => ({
+    id: `movie-${index + 1}`,
+    mediaIdentity: `movie-${index + 1}`,
+    displayFileId: `file-${index + 1}`,
+    number: `MOVIE-${index + 1}`,
+    title: `Movie ${index + 1}`,
+    actors: [],
+    size: 1,
+    fileRefs: [],
+    assets: [],
+    available: "unchecked",
+    crawlerData: null,
+    thumbnailPath: null,
+    createdAt: "2026-11-17T00:00:00Z",
+    lastRefreshedAt: null,
+    hiddenFromRecentAt: null,
+  }));
+  const matches = movies.slice(0, 120);
+  const list = vi.spyOn(api.library, "list").mockImplementation(async (input) => {
+    const source = input?.query
+      ? movies.filter((entry) => entry.number === input.query)
+      : input?.health
+        ? matches
+        : movies;
+    const page = input?.page ?? 1;
+    const pageSize = input?.pageSize ?? 10;
+    return {
+      entries: source.slice((page - 1) * pageSize, page * pageSize),
+      page,
+      pageSize,
+      total: source.length,
+      fileCount: source.length,
+      totalBytes: source.length,
+    };
+  });
+  const selectAll = vi.spyOn(api.library, "matches").mockResolvedValue({ entries: [...matches] });
+  vi.spyOn(api.library, "availability").mockResolvedValue({ entries: [] });
+  vi.spyOn(api.libraries, "list").mockResolvedValue({ libraries: [] });
+  vi.spyOn(api.library, "summary").mockResolvedValue({
+    total: 630,
+    issues: { missingSynopsis: 120, missingPoster: 0, missingBackdrop: 0, noNfo: 0, duplicate: 0 },
+    ignored: 0,
+    facets: { actors: [], studios: [], tags: [] },
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
+  const root = createRootRoute({ component: Outlet });
+  const library = createRoute({
+    getParentRoute: () => root,
+    path: "/library",
+    validateSearch: parseLibraryBrowseSearch,
+    component: LibraryPage,
+  });
+  vi.spyOn(Route, "useSearch").mockImplementation(() => library.useSearch());
+  const router = createRouter({
+    routeTree: root.addChildren([library]),
+    history: createMemoryHistory({ initialEntries: ["/library"] }),
+  });
+  const previousView = localStorage.getItem("mdcz.library.view");
+  localStorage.setItem("mdcz.library.view", "list");
+  const screen = await render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  try {
+    await expect.element(screen.getByText("共 630 部 · 第 1 / 63 页")).toBeVisible();
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 10 }));
+    expect(selectAll).not.toHaveBeenCalled();
+    await screen.getByRole("button", { name: "第 63 页", exact: true }).click();
+    await expect.element(screen.getByText("共 630 部 · 第 63 / 63 页")).toBeVisible();
+    await screen.getByRole("button", { name: /^缺少简介\s*120$/u }).click();
+    await expect.element(screen.getByText("共 120 部 · 第 1 / 12 页")).toBeVisible();
+    expect(list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, pageSize: 10, health: "missingSynopsis" }),
+    );
+    await screen.getByRole("button", { name: "多选" }).click();
+    await screen.getByRole("checkbox", { name: "全选筛选结果" }).click();
+    await expect.element(screen.getByText("已选 120 部影片")).toBeVisible();
+    expect(selectAll).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ query: "", health: "missingSynopsis" }),
+    );
+    matches.unshift({ ...movies[120], id: "new-match", number: "NEW-MATCH" });
+    await screen.getByRole("button", { name: "下一页" }).click();
+    await expect.element(screen.getByText("共 121 部 · 第 2 / 13 页")).toBeVisible();
+    await expect.element(screen.getByText("已选 120 部影片")).toBeVisible();
+    await screen.getByRole("checkbox", { name: "选择 MOVIE-11", exact: true }).click();
+    await expect.element(screen.getByText("已选 119 部影片")).toBeVisible();
+    await screen.getByRole("combobox", { name: "每页条数" }).selectOptions("20");
+    await expect.element(screen.getByText("共 121 部 · 第 1 / 7 页")).toBeVisible();
+    await expect.element(screen.getByRole("checkbox", { name: "选择 NEW-MATCH", exact: true })).not.toBeChecked();
+    await expect.element(screen.getByRole("checkbox", { name: "选择 MOVIE-11", exact: true })).not.toBeChecked();
+    await screen.getByRole("button", { name: "深度删除", exact: true }).last().click();
+    await expect.element(screen.getByText(/将提交 119 部影片/u)).toBeVisible();
+    await screen.getByRole("button", { name: "取消", exact: true }).click();
+    const search = screen.getByRole("textbox", { name: "搜索媒体库" });
+    await search.fill("MOVIE-50");
+    await expect.element(screen.getByText("共 1 部 · 第 1 / 1 页")).toBeVisible();
+    await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+    await search.fill("MOVIE-51");
+    await expect.element(search).toHaveFocus();
+    await expect.element(screen.getByText("Movie 51", { exact: true })).toBeVisible();
+    expect(selectAll).toHaveBeenCalledOnce();
+  } finally {
+    await screen.unmount();
+    client.clear();
+    vi.restoreAllMocks();
+    if (previousView === null) localStorage.removeItem("mdcz.library.view");
+    else localStorage.setItem("mdcz.library.view", previousView);
   }
 });

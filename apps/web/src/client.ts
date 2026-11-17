@@ -138,6 +138,7 @@ const trpcMutation = async <TOutput>(path: string, input?: unknown): Promise<TOu
 export const api: ServerApiContract = {
   deletions: {
     clearCompleted: () => trpcMutation("deletions.clearCompleted"),
+    resolveManually: (input) => trpcMutation("deletions.resolveManually", input),
     list: () => trpcQuery("deletions.list"),
     detail: (input) => trpcQuery("deletions.detail", input),
     retry: (input) => trpcMutation("deletions.retry", input),
@@ -224,6 +225,7 @@ export const api: ServerApiContract = {
     removeFile: (input) => trpcMutation("library.removeFile", input),
     availability: (input) => trpcQuery("library.availability", input),
     list: (input) => trpcQuery("library.list", input),
+    matches: (input) => trpcQuery("library.matches", input),
     summary: (input) => trpcQuery("library.summary", input),
     detail: (input) => trpcQuery("library.detail", input),
     refresh: (input) => trpcMutation("library.refresh", input),
