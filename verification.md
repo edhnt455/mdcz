@@ -7,6 +7,7 @@
 - `pnpm build:webui`、`pnpm typecheck`、修改脚本 Biome、Shell 语法和 `git diff --check` 通过。实际运行 staging，确认版本、服务端进程包、WebUI、数据库迁移、映射表、水印及独立锁文件；隔离临时目录验证预发布版本和空值、路径穿越、非法前缀、数字前导零、构建元数据及超长版本拒绝。未增加测试文件或测试数量；构建保留既有第三方注解及 chunk 体积提示。
 - 本机 Docker daemon 未运行，未本地构建或启动容器；完整镜像构建以 ACR 构建记录为准。阿里云国内构建仍需拉取 GitHub、Node 基础镜像与依赖，不能保证网络速度。无数据库、应用业务逻辑、依赖或启动命令变化，Compose 地址变量不变。回滚构建方式可恢复旧提交中的工作流与 Dockerfile；已发布标签不应移动或复用。
 - 已推送提交 `95b69462` 与 `release-v0.22.1`；ACR 自动接收标签，首次构建 `d883a902-4003-4a14-b739-36817fdf742d` 两次成功拉取 GitHub 源码，但均在 Docker Hub 的 Node 基础镜像请求上超时，未进入项目编译。随后按用户选择开启海外构建，通过重投递原标签 Webhook 重试，不移动发布标签。准备同步基础镜像时新建的私有仓库 `skyhook-image/mdcz-node` 尚为空且未被项目使用，基础镜像同步方案已暂停。
+- 海外重试构建 `553dd379-71aa-469b-a5cf-bac8c60a4856` 成功：日志报告 `build successfully, takes 102s`，完成源码获取、Node 基础镜像下载、前后端编译、`mdcz-0.22.1` 打包、生产依赖安装、镜像推送及内部构建缓存导出。首次缓存不存在提示未阻断构建。独立执行 `docker manifest inspect --verbose registry.cn-hangzhou.aliyuncs.com/skyhook-image/mdcz:0.22.1`，确认 `linux/amd64` 与摘要 `sha256:7002c77dd30bab2be075bb9ca0ae13c356c0e94cbfc3ce7900d59240a112affe`，与 ACR 推送日志一致。本次未部署应用容器。
 
 ### 镜像发布切换阿里云 ACR 个人版（2026-11-17）
 
