@@ -293,12 +293,14 @@ export class ScrapeRunner {
     if (this.closed) throw new Error("刮削队列正在关闭");
     const configuration = structuredClone(await this.deps.getConfiguration());
     const normalized = await this.normalizeStartInput(input, configuration);
+    await this.deps.taskGate.waitForSubtitle();
     const snapshot = await this.claimCoordinator().start({ normalized, configuration });
     return await this.accepted(snapshot.runId, "start", snapshot.progress.totalItems);
   }
 
   async retry(runId: string, itemIds?: readonly string[]): Promise<StartScrapeResult> {
     await this.bindExistingRun(runId);
+    await this.deps.taskGate.waitForSubtitle();
     const snapshot = await this.claimCoordinator().retry(runId, itemIds);
     return await this.accepted(
       snapshot.runId,
@@ -311,6 +313,7 @@ export class ScrapeRunner {
 
   async rerunDirectory(runId: string): Promise<StartScrapeResult> {
     await this.bindExistingRun(runId);
+    await this.deps.taskGate.waitForSubtitle();
     const snapshot = await this.claimCoordinator().rerunDirectory(runId);
     return await this.accepted(snapshot.runId, "rerun", null);
   }

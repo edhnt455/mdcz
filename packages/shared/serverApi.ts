@@ -120,6 +120,7 @@ import type {
   TranslateTestInputDto,
   TranslateTestResponse,
 } from "./serverDtos";
+import type { SubtitleJob, SubtitleJobList, SubtitleJobListInput } from "./subtitleJobs";
 import type { NamingPreviewItem } from "./types";
 
 export interface ServerApiContract {
@@ -238,6 +239,11 @@ export interface ServerApiContract {
     confirmUncensored(input: PendingConfirmUncensoredInput): Promise<PendingActionResponse>;
     ignore(input: PendingIdInput): Promise<{ success: true }>;
     delete(input: PendingIdInput): Promise<PendingActionResponse>;
+  };
+  subtitleUpdates: {
+    list(input: SubtitleJobListInput): Promise<SubtitleJobList>;
+    get(input: { id: string }): Promise<SubtitleJob | null>;
+    retry(input: { id: string }): Promise<{ taskId: string }>;
   };
   apiKeys: {
     list(): Promise<ApiKeyListResponse>;

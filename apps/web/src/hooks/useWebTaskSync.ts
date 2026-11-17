@@ -119,6 +119,8 @@ export const useWebTaskSync = (): void => {
         recordDispatch();
         if (payload.kind === "library-edit") queryClient.setQueryData(queryKeys.libraryEdit, payload.job);
         if (payload.kind !== "invalidate") return;
+        if (payload.resources.some((resource) => resource === "subtitle-jobs" || resource === "ready"))
+          void queryClient.invalidateQueries({ queryKey: queryKeys.subtitleJobs });
         if (payload.resources.includes("ready"))
           void queryClient.invalidateQueries({ queryKey: queryKeys.libraryEdit });
         if (

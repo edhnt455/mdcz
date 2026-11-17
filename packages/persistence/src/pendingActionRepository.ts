@@ -24,6 +24,16 @@ export class PendingActionRepository {
       .all();
   }
 
+  hasReady(): boolean {
+    return Boolean(
+      this.database.sqlite
+        .prepare(
+          "SELECT id FROM pending_actions WHERE status IN ('queued', 'retrying') AND (next_attempt_at IS NULL OR next_attempt_at <= ?) LIMIT 1",
+        )
+        .get(Date.now()),
+    );
+  }
+
   enqueue(
     input: Pick<PendingActionRecord, "itemId" | "itemUpdatedAt" | "action" | "inputJson" | "itemJson">,
   ): PendingActionRecord {

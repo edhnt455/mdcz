@@ -6,8 +6,41 @@ import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "./client";
 import { queryKeys } from "./lib/queryKeys";
+import { SubtitleTasksPage } from "./subtitleTasks";
 
 export function PendingTasksPage({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
+  const labels = useT().pending;
+  const subtitle = selectedId?.startsWith("subtitle-") ?? false;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <nav className="flex shrink-0 gap-2 border-b px-4 py-3" aria-label={labels.tasks}>
+        <Button
+          variant={subtitle ? "ghost" : "secondary"}
+          aria-pressed={!subtitle}
+          onClick={() => onSelect("file-tasks")}
+        >
+          {labels.fileTasks}
+        </Button>
+        <Button
+          variant={subtitle ? "secondary" : "ghost"}
+          aria-pressed={subtitle}
+          onClick={() => onSelect("subtitle-queue")}
+        >
+          {labels.subtitleTasks}
+        </Button>
+      </nav>
+      <div className="min-h-0 flex-1">
+        {subtitle ? (
+          <SubtitleTasksPage selectedId={selectedId} onSelect={onSelect} />
+        ) : (
+          <FileTasksPage selectedId={selectedId} onSelect={onSelect} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FileTasksPage({ selectedId, onSelect }: { selectedId?: string; onSelect: (id: string) => void }) {
   const t = useT();
   const labels = t.pending;
   const client = useQueryClient();

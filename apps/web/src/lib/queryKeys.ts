@@ -1,4 +1,5 @@
 export const queryKeys = {
+  subtitleJobs: ["subtitle-jobs"] as const,
   libraryEdit: ["library-edit"] as const,
   deletions: {
     all: ["pending", "deletions"] as const,

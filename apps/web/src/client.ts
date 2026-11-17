@@ -247,6 +247,11 @@ export const api: ServerApiContract = {
     previewNaming: (input) => trpcMutation("libraries.previewNaming", input),
     probeStubs: (input) => trpcQuery("libraries.probeStubs", input),
   },
+  subtitleUpdates: {
+    list: (input) => trpcQuery("subtitleUpdates.list", input),
+    get: (input) => trpcQuery("subtitleUpdates.get", input),
+    retry: (input) => trpcMutation("subtitleUpdates.retry", input),
+  },
   pending: {
     newFiles: () => trpcQuery("pending.newFiles"),
     jobs: () => trpcQuery("pending.jobs"),

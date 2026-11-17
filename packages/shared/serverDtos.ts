@@ -684,6 +684,7 @@ export const taskNotificationSchema = z.discriminatedUnion("kind", [
         "scrape-live",
         "scrape-history",
         "pending-actions",
+        "subtitle-jobs",
         "maintenance",
         "pending",
         "library",

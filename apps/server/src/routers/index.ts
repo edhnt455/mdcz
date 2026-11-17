@@ -66,6 +66,7 @@ import {
   toolExecuteInputSchema,
   translateTestInputSchema,
 } from "@mdcz/shared/serverDtos";
+import { subtitleJobListInputSchema } from "@mdcz/shared/subtitleJobs";
 import { TRPCError } from "@trpc/server";
 import { createHealthPayload } from "../http/health";
 import { decorateTaskLog } from "../services/runtimeLogService";
@@ -343,6 +344,17 @@ export const appRouter = t.router({
     delete: protectedProcedure
       .input(pendingIdInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.pending.delete(input.id)),
+  }),
+  subtitleUpdates: t.router({
+    list: protectedProcedure
+      .input(subtitleJobListInputSchema)
+      .query(({ ctx, input }) => ctx.services.subtitleUpdates.list(input)),
+    get: protectedProcedure
+      .input(pendingIdInputSchema)
+      .query(({ ctx, input }) => ctx.services.subtitleUpdates.get(input.id)),
+    retry: protectedProcedure
+      .input(pendingIdInputSchema)
+      .mutation(({ ctx, input }) => ctx.services.subtitleUpdates.retry(input.id)),
   }),
   apiKeys: t.router({
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.auth.listApiKeys()),

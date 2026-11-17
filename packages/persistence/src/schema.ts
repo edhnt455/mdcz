@@ -1,16 +1,40 @@
 import { sql } from "drizzle-orm";
 import { check, foreignKey, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-export const subtitleUpdateJobs = sqliteTable("subtitle_update_jobs", {
-  taskId: text("task_id").primaryKey(),
-  eventId: text("event_id").notNull().unique(),
-  inputJson: text("input_json").notNull(),
-  status: text("status").notNull(),
-  resultJson: text("result_json"),
-  warningsJson: text("warnings_json").notNull().default("[]"),
-  error: text("error"),
-  createdAt: integer("created_at").notNull(),
-});
+export const subtitleUpdateJobs = sqliteTable(
+  "subtitle_update_jobs",
+  {
+    taskId: text("task_id").primaryKey(),
+    movieKey: text("movie_key").notNull(),
+    inputsJson: text("inputs_json").notNull(),
+    status: text("status").notNull(),
+    stage: text("stage").notNull().default("queued"),
+    progress: text("progress").notNull().default(""),
+    attempts: integer("attempts").notNull().default(0),
+    resultJson: text("result_json"),
+    warningsJson: text("warnings_json").notNull().default("[]"),
+    error: text("error"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    completedAt: integer("completed_at"),
+  },
+  (table) => [
+    index("subtitle_update_jobs_queue_idx").on(table.status, table.createdAt),
+    index("subtitle_update_jobs_movie_idx").on(table.movieKey, table.status),
+  ],
+);
+
+export const subtitleUpdateEvents = sqliteTable(
+  "subtitle_update_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => subtitleUpdateJobs.taskId),
+    inputJson: text("input_json").notNull(),
+  },
+  (table) => [index("subtitle_update_events_task_idx").on(table.taskId)],
+);
 
 export const mediaRoots = sqliteTable(
   "media_roots",

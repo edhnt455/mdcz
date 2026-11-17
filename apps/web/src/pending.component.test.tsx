@@ -1,6 +1,8 @@
 import type { PendingActionJob, PendingDetailResponse, PendingItemDto } from "@mdcz/shared/pending";
+import type { SubtitleJob } from "@mdcz/shared/subtitleJobs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from "@tanstack/react-router";
+import { useState } from "react";
 import { toast } from "sonner";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -8,6 +10,84 @@ import { api } from "./client";
 import { queryKeys } from "./lib/queryKeys";
 import { PendingTasksPage } from "./pendingTasks";
 import { PendingPage } from "./routes/pending";
+
+test("subtitle and poster tasks show queue stages, pagination, warnings and retry results in the workbench", async () => {
+  const running: SubtitleJob = {
+    taskId: "subtitle-update-running",
+    mediaPath: "/media/ABC-001.mp4",
+    status: "running",
+    stage: "rendering",
+    progress: "裁剪并生成 poster 角标",
+    notificationCount: 3,
+    attempts: 1,
+    createdAt: 1,
+    updatedAt: 2,
+    completedAt: null,
+    result: null,
+    warnings: [],
+    error: null,
+  };
+  let failed: SubtitleJob = {
+    ...running,
+    taskId: "subtitle-update-failed",
+    mediaPath: "/media/ABC-002.mp4",
+    status: "failed",
+    stage: "publishing",
+    progress: "写入 NFO、图片与字幕记录",
+    error: "Permission denied",
+    warnings: ["图片来源不可用"],
+  };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
+  vi.spyOn(api.pending, "jobs").mockResolvedValue({ jobs: [] });
+  const list = vi.spyOn(api.subtitleUpdates, "list").mockImplementation(async ({ offset }) => ({
+    jobs: offset ? [failed] : [running],
+    counts: { queued: 50, running: 1, completed: 0, failed: 1 },
+    total: 52,
+    waitingForManual: true,
+  }));
+  vi.spyOn(api.subtitleUpdates, "get").mockImplementation(async () => failed);
+  const retry = vi
+    .spyOn(api.subtitleUpdates, "retry")
+    .mockRejectedValueOnce(new Error("该影片已有处理任务"))
+    .mockImplementation(async () => {
+      failed = { ...failed, status: "queued", stage: "queued", progress: "等待重试", error: null, warnings: [] };
+      return { taskId: failed.taskId };
+    });
+  function Workbench() {
+    const [id, select] = useState<string>();
+    return <PendingTasksPage selectedId={id} onSelect={select} />;
+  }
+  const screen = await render(
+    <QueryClientProvider client={client}>
+      <Workbench />
+    </QueryClientProvider>,
+  );
+  try {
+    await screen.getByRole("button", { name: "字幕与海报", exact: true }).click();
+    await expect.element(screen.getByRole("heading", { name: "ABC-001.mp4" })).toBeVisible();
+    await expect.element(screen.getByRole("status")).toHaveTextContent("裁剪并生成 poster 角标");
+    await expect.element(screen.getByText("排队 50 · 运行 1 · 完成 0 · 失败 1", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("正在等待手动任务完成，结束后自动继续队列。", { exact: true })).toBeVisible();
+    await screen.getByRole("button", { name: "下一页", exact: true }).click();
+    await expect.element(screen.getByRole("heading", { name: "ABC-002.mp4" })).toBeVisible();
+    expect(list).toHaveBeenCalledWith({ offset: 50, limit: 50 });
+    await expect.element(screen.getByText("第 2/2 页 · 共 52 条", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("Permission denied", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("图片来源不可用", { exact: true })).toBeVisible();
+    await screen.getByRole("button", { name: "继续处理", exact: true }).click();
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("该影片已有处理任务");
+    await screen.getByRole("button", { name: "继续处理", exact: true }).click();
+    await expect.element(screen.getByRole("status")).toHaveTextContent("等待重试");
+    expect(retry).toHaveBeenLastCalledWith({ id: failed.taskId });
+    await expect.element(screen.getByRole("button", { name: "继续处理", exact: true })).not.toBeInTheDocument();
+    await screen.getByRole("button", { name: "文件处理", exact: true }).click();
+    await expect.element(screen.getByText("暂无处理任务。", { exact: true })).toBeVisible();
+  } finally {
+    screen.unmount();
+    client.clear();
+    vi.restoreAllMocks();
+  }
+});
 
 test("pending selection displays local data immediately, reuses cached diagnostics and locks STRM deletion", async () => {
   const items: PendingItemDto[] = ["ABC-001.strm", "ABC-002.mp4"].map((fileName) => ({

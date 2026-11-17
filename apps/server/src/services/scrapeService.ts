@@ -355,7 +355,7 @@ export class ScrapeService {
   }
 
   async nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse> {
-    return await this.nfoAdapter.write(input);
+    return await this.taskGate.runManualWrite(() => this.nfoAdapter.write(input));
   }
 
   async posterCropSession(id: string): Promise<PosterCropSessionResponse> {
@@ -364,8 +364,10 @@ export class ScrapeService {
   }
 
   async posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse> {
-    const record = await this.toArtifactRecord(input.id);
-    return await this.posterCropAdapter.save(record, input);
+    return await this.taskGate.runManualWrite(async () => {
+      const record = await this.toArtifactRecord(input.id);
+      return await this.posterCropAdapter.save(record, input);
+    });
   }
 
   async removeRecord(input: FileActionInput): Promise<FileActionResponse> {

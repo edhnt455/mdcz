@@ -13,6 +13,56 @@ const releasedMigrationChecksums = {
 const migrationFile = "0003_additive_roots_and_scan_tasks.sql";
 
 describe("Persistence migration baseline", () => {
+  it("preserves subtitle queue inputs, event receipts and terminal results through queue migration", async () => {
+    const database = createPersistenceDatabase({ path: ":memory:" });
+    try {
+      const files = (await readdir(defaultMigrationsFolder)).filter((file) => /^\d{4}_.+\.sql$/u.test(file)).sort();
+      for (const file of files.filter((file) => file < "0023"))
+        database.sqlite.exec(await readFile(join(defaultMigrationsFolder, file), "utf8"));
+      const input = JSON.stringify({
+        eventId: "event",
+        mediaPath: "/media/movie.mp4",
+        subtitlePath: "/media/movie.srt",
+        language: "zh-CN",
+      });
+      for (const status of ["queued", "running", "completed", "failed"])
+        database.sqlite
+          .prepare(
+            "INSERT INTO subtitle_update_jobs(task_id, event_id, input_json, status, result_json, warnings_json, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            status,
+            `event-${status}`,
+            input,
+            status,
+            '{"metadataUpdated":true}',
+            '["warning"]',
+            status === "failed" ? "failure" : null,
+            123,
+          );
+      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0023_subtitle_queue.sql"), "utf8"));
+      for (const status of ["queued", "running", "completed", "failed"]) {
+        const row = database.sqlite.prepare("SELECT * FROM subtitle_update_jobs WHERE task_id = ?").get(status) as {
+          inputs_json: string;
+        };
+        expect(row).toMatchObject({
+          status,
+          updated_at: 123,
+          result_json: '{"metadataUpdated":true}',
+          warnings_json: '["warning"]',
+        });
+        expect(JSON.parse(row.inputs_json)).toEqual([JSON.parse(input)]);
+        expect(
+          database.sqlite
+            .prepare("SELECT task_id, input_json FROM subtitle_update_events WHERE event_id = ?")
+            .get(`event-${status}`),
+        ).toEqual({ task_id: status, input_json: input });
+      }
+      expect(database.sqlite.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
   it("preserves deletion progress and migrates acknowledged deletions directly to local cleanup", async () => {
     const database = createPersistenceDatabase({ path: ":memory:" });
     try {
@@ -133,6 +183,7 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 20, when: 1_794_787_200_000, tag: "0020_responsive_library_reads" }),
       expect.objectContaining({ idx: 21, when: 1_794_787_200_001, tag: "0021_webhook_receipts" }),
       expect.objectContaining({ idx: 22, when: 1_794_787_200_002, tag: "0022_subtitle_jobs" }),
+      expect.objectContaining({ idx: 23, when: 1_794_787_200_003, tag: "0023_subtitle_queue" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });

@@ -19,6 +19,7 @@ import type { RuntimeLogService } from "./services/runtimeLogService";
 import type { ScanQueueService } from "./services/scanQueueService";
 import type { ScrapeService } from "./services/scrapeService";
 import type { ServerPathService } from "./services/serverPathService";
+import type { SubtitleUpdateService } from "./services/subtitleUpdateService";
 import type { SystemService } from "./services/systemService";
 import type { ToolsService } from "./services/toolsService";
 import type { TaskEventBus } from "./taskEvents";
@@ -47,6 +48,7 @@ export interface ServerServices {
   scrape: ScrapeService;
   serverPaths: ServerPathService;
   system: SystemService;
+  subtitleUpdates: SubtitleUpdateService;
   taskEvents: TaskEventBus;
   tools: ToolsService;
 }

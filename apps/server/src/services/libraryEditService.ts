@@ -44,6 +44,7 @@ export class LibraryEditService {
     if (input.edit.field !== "actors" && configuration.download.nfoIgnoreFields.includes(input.edit.field)) {
       throw new Error(`字段 ${input.edit.field} 已在 NFO 设置中禁用`);
     }
+    await this.taskGate.waitForSubtitle();
     this.taskGate.assertAvailable("edit");
     if (this.#job?.status === "running") throw new LibraryTaskConflictError("edit");
     const ids = [...new Set(input.ids)];

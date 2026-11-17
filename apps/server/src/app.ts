@@ -274,6 +274,10 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       captureDelete: async (id) => await pendingDeletion.capture(id),
       isMediaBusy: async () => {
         if (maintenance.isBusy || (await scrape.liveRuns()).runs.length > 0) return true;
+        if (taskGate.subtitleBusy) {
+          const { repositories } = await persistence.getState();
+          if (repositories.pendingActions.hasReady()) await taskGate.waitForSubtitle();
+        }
         try {
           taskGate.assertAvailable("pending");
           return false;
@@ -350,6 +354,7 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     scrape,
     serverPaths: options.services?.serverPaths ?? new ServerPathService(mediaRoots, config, libraries),
     system,
+    subtitleUpdates,
     taskEvents,
     tools:
       options.services?.tools ??

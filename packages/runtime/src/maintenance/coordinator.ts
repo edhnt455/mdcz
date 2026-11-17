@@ -280,6 +280,10 @@ export class MaintenanceSessionCoordinator {
     if (this.previewStarting || this.session?.isActive()) {
       throw new Error("已有进行中的维护会话，请先完成或停止当前会话");
     }
+    if (this.deps.taskGate.subtitleBusy) await this.deps.taskGate.waitForSubtitle();
+    this.assertOpen();
+    if (this.previewStarting || this.session?.isActive())
+      throw new Error("已有进行中的维护会话，请先完成或停止当前会话");
     this.deps.taskGate.assertAvailable("maintenance");
     this.previewStarting = true;
     try {
@@ -421,6 +425,7 @@ export class MaintenanceSessionCoordinator {
     this.assertOpen();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
     if (this.session !== session) throw new Error("当前维护任务已失效，请重新开始");
+    await this.deps.taskGate.waitForSubtitle();
     this.deps.taskGate.assertAvailable("maintenance");
     const apply = session.beginApply(input.selections);
     try {

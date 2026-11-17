@@ -44,6 +44,7 @@ it("recovers durable jobs, preserves checkpoints and serializes file actions wit
     itemJson: "{}",
   }));
   const jobs = inputs.map((input) => actions.enqueue(input));
+  expect(actions.hasReady()).toBe(true);
   pending.saveDeletion(items[0].id, items[0].updatedAt, '{"step":"cleaning_source"}');
   expect(actions.claim()?.id).toBe(jobs[0].id);
   expect(actions.list().map((job) => [job.id, job.status])).toEqual([
@@ -90,6 +91,7 @@ it("recovers durable jobs, preserves checkpoints and serializes file actions wit
   await queue.waitForIdle();
   expect(executed).toEqual(jobs.map((job) => job.id));
   expect(actions.list().every((job) => job.status === "completed")).toBe(true);
+  expect(actions.hasReady()).toBe(false);
   expect(pending.list()).toEqual([]);
 });
 
