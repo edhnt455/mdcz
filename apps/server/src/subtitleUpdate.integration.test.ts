@@ -21,6 +21,83 @@ import { ServerPersistenceService } from "./services/persistenceService";
 afterEach(closeTestServers);
 afterEach(() => vi.restoreAllMocks());
 
+it("batch retries selected failure attempts across pages, including historical jobs for the same movie", async () => {
+  const root = await createTempRoot("subtitle-batch-retry");
+  const { fastify, services } = await createTestServer();
+  const token = await loginAsAdmin(fastify);
+  const headers = { authorization: `Bearer ${token}` };
+  const { rootId } = await createTestLibrary(fastify, token, root);
+  const movie = { number: "ABC-001", title: "Movie", actors: [], genres: [], scene_images: [], website: Website.JAVDB };
+  const mediaPath = join(root, "ABC-001.strm");
+  const subtitlePath = join(root, "ABC-001.srt");
+  const nfoPath = join(root, "ABC-001.nfo");
+  await writeFile(mediaPath, "video");
+  await writeFile(subtitlePath, "subtitle");
+  await writeFile(nfoPath, new NfoGenerator().buildXml(movie));
+  const { database, repositories } = await services.persistence.getState();
+  await repositories.library.upsertEntry({
+    movie: {
+      ...movie,
+      id: "movie-1",
+      crawlerDataJson: JSON.stringify(movie),
+      assets: [{ kind: "nfo", uri: "ABC-001.nfo", rootId, relativePath: "ABC-001.nfo", published: true }],
+    },
+    files: [{ fileId: "file-1", rootId, rootRelativePath: "ABC-001.strm" }],
+  });
+  const insert = database.sqlite.prepare(
+    "INSERT INTO subtitle_update_jobs (task_id, movie_key, inputs_json, status, stage, attempts, error, created_at, updated_at) VALUES (?, ?, ?, ?, 'scanning', 0, ?, ?, ?)",
+  );
+  const first = { eventId: randomUUID(), mediaPath, subtitlePath, language: "zh-CN" };
+  const duplicateError = `资源目标重复：${nfoPath}`;
+  insert.run("old-a", "movie:movie-1", JSON.stringify([first]), "failed", duplicateError, 1, 1);
+  insert.run("old-b", "movie:movie-1", JSON.stringify([first]), "failed", duplicateError, 2, 2);
+  database.sqlite
+    .prepare("INSERT INTO subtitle_update_events (event_id, task_id, input_json) VALUES (?, ?, ?)")
+    .run(first.eventId, "old-a", JSON.stringify(first));
+  for (let index = 0; index < 120; index += 1) {
+    const missingPath = join(root, `missing-${index}.strm`);
+    insert.run(
+      `failed-${index}`,
+      missingPath,
+      JSON.stringify([{ ...first, eventId: randomUUID(), mediaPath: missingPath }]),
+      "failed",
+      index === 119 ? "字幕文件不属于指定影片" : duplicateError,
+      index + 3,
+      index + 3,
+    );
+  }
+  insert.run("done", "movie:movie-1", JSON.stringify([first]), "completed", null, 200, 200);
+
+  const list = { method: "GET" as const, url: "/trpc/subtitleUpdates.listFailed" };
+  expect((await fastify.inject(list)).statusCode).toBe(401);
+  const response = await fastify.inject({ ...list, headers });
+  expect(response.statusCode).toBe(200);
+  const failures = response.json().result.data as Awaited<ReturnType<typeof services.subtitleUpdates.listFailed>>;
+  expect(failures).toHaveLength(122);
+  expect(failures[0]).toMatchObject({ taskId: "failed-119", errorType: "subtitleMismatch" });
+  expect(failures.at(-1)).toEqual({ taskId: "old-a", attempts: 0, mediaPath, errorType: "duplicateTarget" });
+  const jobs = failures
+    .filter(({ errorType }) => errorType === "duplicateTarget")
+    .map(({ taskId, attempts }) => ({ taskId, attempts }));
+  const retry = { method: "POST" as const, url: "/trpc/subtitleUpdates.retryBatch", payload: { jobs } };
+  expect((await fastify.inject(retry)).statusCode).toBe(401);
+  expect((await fastify.inject({ ...retry, headers, payload: { jobs: [] } })).statusCode).toBe(400);
+  expect((await fastify.inject({ ...retry, headers })).json().result.data).toEqual({ queued: 121 });
+  await expect
+    .poll(async () => (await services.subtitleUpdates.list({ offset: 0, limit: 1 })).counts, { timeout: 10_000 })
+    .toEqual({ queued: 0, running: 0, completed: 3, failed: 120 });
+  expect(await services.subtitleUpdates.get("old-b")).toMatchObject({ status: "completed", attempts: 1 });
+  expect(await services.subtitleUpdates.enqueue(first)).toEqual({ taskId: "old-a", status: "completed" });
+  expect(await readFile(nfoPath, "utf8")).toContain("<tag>中文字幕</tag>");
+  expect(await services.subtitleUpdates.get("failed-0")).toMatchObject({
+    status: "failed",
+    attempts: 1,
+    error: expect.stringContaining("ENOENT"),
+  });
+  expect(await services.subtitleUpdates.get("failed-119")).toMatchObject({ status: "failed", attempts: 0 });
+  expect((await fastify.inject({ ...retry, headers })).json().result.data).toEqual({ queued: 0 });
+});
+
 it("publishes and tracks subtitle updates by path with durable idempotency and clear failures", async () => {
   const root = await createTempRoot("subtitle-update");
   const image = await startTestImageServer();
@@ -172,13 +249,33 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
     expect(firstPage.jobs).toHaveLength(50);
     expect(firstPage.jobs[0].taskId).toBe(secondId);
     expect(firstPage.jobs[1]).toMatchObject({ taskId: followupId, notificationCount: 200 });
+    const clearRequest = { method: "POST" as const, url: "/trpc/subtitleUpdates.clearCompleted", payload: {} };
+    expect((await fastify.inject({ ...clearRequest, headers })).statusCode).toBe(401);
+    const admin = { authorization: `Bearer ${token}` };
+    const cleared = await fastify.inject({ ...clearRequest, headers: admin });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().result.data).toEqual({ cleared: 1 });
+    expect((await fastify.inject({ ...clearRequest, headers: admin })).json().result.data).toEqual({ cleared: 0 });
+    const afterClear = await services.subtitleUpdates.list({ offset: 0, limit: 50 });
+    expect(afterClear).toMatchObject({ counts: { queued: 121, running: 1, completed: 0, failed: 0 }, total: 122 });
+    expect(afterClear.jobs.map((job) => job.taskId)).not.toContain(taskId);
+    const hidden = await fastify.inject({
+      method: "GET",
+      url: `/trpc/subtitleUpdates.get?input=${encodeURIComponent(JSON.stringify({ id: taskId }))}`,
+      headers: admin,
+    });
+    expect(hidden.json().result.data).toBeNull();
+    expect(
+      (await fastify.inject({ method: "GET", url: `/api/automation/subtitles/jobs/${taskId}`, headers })).json(),
+    ).toEqual(job);
+    expect((await fastify.inject(request)).json()).toEqual({ taskId, status: "completed" });
     const pageResponse = await fastify.inject({
       method: "GET",
       url: `/trpc/subtitleUpdates.list?input=${encodeURIComponent(JSON.stringify({ offset: 100, limit: 50 }))}`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(pageResponse.statusCode).toBe(200);
-    expect(pageResponse.json().result.data.jobs).toHaveLength(23);
+    expect(pageResponse.json().result.data.jobs).toHaveLength(22);
     expect(
       (
         await fastify.inject({
@@ -300,6 +397,13 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
       )
       .toBe("completed");
     expect((await restarted.fastify.inject(request)).json().taskId).toBe(taskId);
+    const remaining = await restarted.services.subtitleUpdates.clearCompleted();
+    expect(remaining).toEqual({ cleared: 4 });
+    expect(await restarted.services.subtitleUpdates.list({ offset: 0, limit: 1 })).toMatchObject({
+      counts: { queued: 0, running: 0, completed: 0, failed: 120 },
+      total: 120,
+      jobs: [expect.objectContaining({ status: "failed" })],
+    });
   } finally {
     await restarted.fastify.close();
   }

@@ -8,6 +8,28 @@ export const pending = {
   fileTasks: "File tasks",
   subtitleTasks: "Subtitles & posters",
   subtitleQueue: {
+    batchRetry: "Batch retry",
+    batchRetryDescription: "Find failed tasks, then select the tasks to queue again.",
+    search: "Search file name or path",
+    errorTypes: {
+      duplicateTarget: "Duplicate output target",
+      missingFile: "File not found",
+      unregisteredMovie: "Movie not registered",
+      subtitleMismatch: "Subtitle does not match movie",
+      missingNfo: "Published NFO missing",
+      other: "Other errors",
+    },
+    filterTypes: "Error types",
+    allErrorTypes: "Select all error types",
+    allMatches: "Select all matching tasks",
+    retryCounts: (matched: number, selected: number) => `${matched} matching · ${selected} selected`,
+    noMatches: "No matching failed tasks.",
+    submitRetry: "Queue selected tasks",
+    retryQueued: (queued: number) => `${queued} tasks queued for retry`,
+    retryChanged: (queued: number, skipped: number) =>
+      `${queued} queued · ${skipped} skipped because their status changed`,
+    clearCompleted: "Clear completed records",
+    cleared: "Completed records cleared",
     waiting: "Waiting for manual tasks to finish; this queue resumes automatically.",
     priority: "One task at a time. Manual tasks run after the current item, ahead of queued items.",
     counts: (queued: number, running: number, completed: number, failed: number) =>

@@ -17,6 +17,7 @@ export const subtitleUpdateJobs = sqliteTable(
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
     completedAt: integer("completed_at"),
+    clearedAt: integer("cleared_at"),
   },
   (table) => [
     index("subtitle_update_jobs_queue_idx").on(table.status, table.createdAt),

@@ -1,5 +1,5 @@
 import type { PendingActionJob, PendingDetailResponse, PendingItemDto } from "@mdcz/shared/pending";
-import type { SubtitleJob } from "@mdcz/shared/subtitleJobs";
+import type { FailedSubtitleJob, SubtitleJob } from "@mdcz/shared/subtitleJobs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
@@ -10,8 +10,80 @@ import { api } from "./client";
 import { queryKeys } from "./lib/queryKeys";
 import { PendingTasksPage } from "./pendingTasks";
 import { PendingPage } from "./routes/pending";
+import { SubtitleTasksPage } from "./subtitleTasks";
 
-test("subtitle and poster tasks show queue stages, pagination, warnings and retry results in the workbench", async () => {
+test("batch retry combines keyword and error filters with selection across pages", async () => {
+  const failures: FailedSubtitleJob[] = Array.from({ length: 53 }, (_, index) => ({
+    taskId: `subtitle-update-${index}`,
+    attempts: index,
+    mediaPath: index === 50 ? "/media/Archive/CAWD-741-破解.strm" : `/media/ABC-${index}.strm`,
+    errorType: index < 51 ? "duplicateTarget" : index === 51 ? "missingFile" : "other",
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.spyOn(api.subtitleUpdates, "list").mockResolvedValue({
+    jobs: [],
+    total: 53,
+    counts: { queued: 0, running: 0, completed: 0, failed: 53 },
+    waitingForManual: false,
+  });
+  vi.spyOn(api.subtitleUpdates, "listFailed").mockResolvedValue(failures);
+  const retry = vi.spyOn(api.subtitleUpdates, "retryBatch").mockResolvedValue({ queued: 50 });
+  const info = vi.spyOn(toast, "info");
+  const screen = await render(
+    <QueryClientProvider client={client}>
+      <SubtitleTasksPage onSelect={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  try {
+    await screen.getByRole("button", { name: "批量重试" }).click();
+    const dialog = screen.getByRole("dialog");
+    const search = dialog.getByRole("searchbox", { name: "搜索文件名或路径" });
+    const allTypes = dialog.getByRole("checkbox", { name: "全选错误类型" });
+    const allMatches = dialog.getByRole("checkbox", { name: "全选命中任务" });
+    const submit = dialog.getByRole("button", { name: "提交重试" });
+    await expect.element(allTypes).toBeChecked();
+    await expect.element(submit).toBeDisabled();
+    await allTypes.click();
+    await expect.element(dialog.getByText("命中 0 条 · 已选 0 条")).toBeVisible();
+    await dialog.getByRole("checkbox", { name: "资源目标重复 (51)" }).click();
+    await dialog.getByRole("checkbox", { name: "文件不存在 (1)" }).click();
+    await expect.element(dialog.getByText("命中 52 条 · 已选 0 条")).toBeVisible();
+    await search.fill(" 741 ");
+    await expect.element(dialog.getByText("命中 1 条 · 已选 0 条")).toBeVisible();
+    await expect.element(dialog.getByRole("checkbox", { name: /CAWD-741/ })).toBeVisible();
+    await allMatches.click();
+    await expect.element(dialog.getByText("命中 1 条 · 已选 1 条")).toBeVisible();
+    await search.fill("archive/cawd");
+    await expect.element(dialog.getByText("命中 1 条 · 已选 1 条")).toBeVisible();
+    await dialog.getByRole("checkbox", { name: "资源目标重复 (51)" }).click();
+    await expect.element(dialog.getByText("暂无命中的失败任务。")).toBeVisible();
+    await expect.element(submit).toBeDisabled();
+    await dialog.getByRole("checkbox", { name: "资源目标重复 (51)" }).click();
+    await allMatches.click();
+    await search.fill("");
+    await expect.element(dialog.getByText("命中 52 条 · 已选 0 条")).toBeVisible();
+    const last = dialog.getByRole("checkbox", { name: /ABC-51\.strm/ });
+    await last.click();
+    await expect.element(dialog.getByText("命中 52 条 · 已选 1 条")).toBeVisible();
+    await allMatches.click();
+    await expect.element(dialog.getByText("命中 52 条 · 已选 52 条")).toBeVisible();
+    await last.click();
+    await expect.element(dialog.getByText("命中 52 条 · 已选 51 条")).toBeVisible();
+    await submit.click();
+    await expect.element(dialog).not.toBeInTheDocument();
+    expect(retry).toHaveBeenCalledExactlyOnceWith(
+      { jobs: failures.slice(0, 51).map(({ taskId, attempts }) => ({ taskId, attempts })) },
+      expect.anything(),
+    );
+    expect(info).toHaveBeenCalledWith("已入队 50 条 · 1 条状态已变化，已跳过");
+  } finally {
+    screen.unmount();
+    client.clear();
+    vi.restoreAllMocks();
+  }
+});
+
+test("subtitle and poster tasks show progress and let users clear completed records or retry failures", async () => {
   const running: SubtitleJob = {
     taskId: "subtitle-update-running",
     mediaPath: "/media/ABC-001.mp4",
@@ -37,15 +109,30 @@ test("subtitle and poster tasks show queue stages, pagination, warnings and retr
     error: "Permission denied",
     warnings: ["图片来源不可用"],
   };
+  const completed: SubtitleJob = {
+    ...running,
+    taskId: "subtitle-update-completed",
+    mediaPath: "/media/ABC-003.mp4",
+    status: "completed",
+    stage: "completed",
+    completedAt: 3,
+  };
+  let cleared = false;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   vi.spyOn(api.pending, "jobs").mockResolvedValue({ jobs: [] });
   const list = vi.spyOn(api.subtitleUpdates, "list").mockImplementation(async ({ offset }) => ({
-    jobs: offset ? [failed] : [running],
-    counts: { queued: 50, running: 1, completed: 0, failed: 1 },
-    total: 52,
+    jobs: offset ? (cleared ? [] : [completed]) : [running, failed],
+    counts: { queued: 48, running: 1, completed: cleared ? 0 : 1, failed: 1 },
+    total: cleared ? 50 : 51,
     waitingForManual: true,
   }));
-  vi.spyOn(api.subtitleUpdates, "get").mockImplementation(async () => failed);
+  vi.spyOn(api.subtitleUpdates, "get").mockImplementation(async ({ id }) =>
+    id === completed.taskId ? (cleared ? null : completed) : failed,
+  );
+  const clearCompleted = vi.spyOn(api.subtitleUpdates, "clearCompleted").mockImplementation(async () => {
+    cleared = true;
+    return { cleared: 1 };
+  });
   const retry = vi
     .spyOn(api.subtitleUpdates, "retry")
     .mockRejectedValueOnce(new Error("该影片已有处理任务"))
@@ -66,12 +153,21 @@ test("subtitle and poster tasks show queue stages, pagination, warnings and retr
     await screen.getByRole("button", { name: "字幕与海报", exact: true }).click();
     await expect.element(screen.getByRole("heading", { name: "ABC-001.mp4" })).toBeVisible();
     await expect.element(screen.getByRole("status")).toHaveTextContent("裁剪并生成 poster 角标");
-    await expect.element(screen.getByText("排队 50 · 运行 1 · 完成 0 · 失败 1", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("排队 48 · 运行 1 · 完成 1 · 失败 1", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("正在等待手动任务完成，结束后自动继续队列。", { exact: true })).toBeVisible();
     await screen.getByRole("button", { name: "下一页", exact: true }).click();
-    await expect.element(screen.getByRole("heading", { name: "ABC-002.mp4" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "ABC-003.mp4" })).toBeVisible();
     expect(list).toHaveBeenCalledWith({ offset: 50, limit: 50 });
-    await expect.element(screen.getByText("第 2/2 页 · 共 52 条", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("第 2/2 页 · 共 51 条", { exact: true })).toBeVisible();
+    await screen.getByRole("button", { name: /ABC-003.mp4/ }).click();
+    await expect.element(screen.getByRole("heading", { name: "ABC-003.mp4" })).toBeVisible();
+    const clearButton = screen.getByRole("button", { name: "清除已完成记录", exact: true });
+    await clearButton.click();
+    await expect.element(clearButton).toBeDisabled();
+    expect(clearCompleted).toHaveBeenCalledOnce();
+    await expect.element(screen.getByText("第 1/1 页 · 共 50 条", { exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "ABC-003.mp4" })).not.toBeInTheDocument();
+    await screen.getByRole("button", { name: /ABC-002.mp4/ }).click();
     await expect.element(screen.getByText("Permission denied", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("图片来源不可用", { exact: true })).toBeVisible();
     await screen.getByRole("button", { name: "继续处理", exact: true }).click();

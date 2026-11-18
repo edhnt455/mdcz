@@ -1,11 +1,13 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import { Badge, Button, cn } from "@mdcz/ui";
 import { useT } from "@mdcz/views/i18n";
-import { keepPreviousData, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { keepPreviousData, skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { api } from "./client";
 import { queryKeys } from "./lib/queryKeys";
+import { SubtitleBatchRetry } from "./subtitleBatchRetry";
 
 const PAGE_SIZE = 50;
 
@@ -31,13 +33,45 @@ export function SubtitleTasksPage({ selectedId, onSelect }: { selectedId?: strin
     refetchInterval: 2_000,
   });
   const items = jobs.data?.jobs ?? [];
-  const selected = detailId ? (detail.data ?? items.find((item) => item.taskId === detailId)) : items[0];
+  const selected =
+    detailId && detail.data !== null ? (detail.data ?? items.find((item) => item.taskId === detailId)) : items[0];
   const counts = jobs.data?.counts;
   const pages = Math.max(1, Math.ceil((jobs.data?.total ?? 0) / PAGE_SIZE));
+  if (jobs.data && !jobs.isPlaceholderData && page >= pages) setPage(pages - 1);
+  const clearCompleted = useMutation({
+    mutationFn: () => api.subtitleUpdates.clearCompleted(),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.subtitleJobs });
+      setPage(0);
+      toast.success(queue.cleared);
+    },
+    onError: (error) => toast.error(toErrorMessage(error)),
+  });
   return (
     <main className="flex h-full min-h-0 flex-col bg-surface-canvas">
       <header className="space-y-2 border-b p-4">
-        <h1 className="text-lg font-bold">{labels.subtitleTasks}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-lg font-bold">{labels.subtitleTasks}</h1>
+          <div className="flex flex-wrap gap-2">
+            <SubtitleBatchRetry
+              disabled={!counts?.failed}
+              onQueued={() => {
+                setPage(0);
+                setError(null);
+                onSelect("subtitle-queue");
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!counts?.completed || clearCompleted.isPending}
+              onClick={() => clearCompleted.mutate()}
+            >
+              {clearCompleted.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {queue.clearCompleted}
+            </Button>
+          </div>
+        </div>
         {counts ? <p>{queue.counts(counts.queued, counts.running, counts.completed, counts.failed)}</p> : null}
         <p className="text-sm text-muted-foreground">{jobs.data?.waitingForManual ? queue.waiting : queue.priority}</p>
         {jobs.error ? (

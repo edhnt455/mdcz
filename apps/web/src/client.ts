@@ -250,7 +250,10 @@ export const api: ServerApiContract = {
   subtitleUpdates: {
     list: (input) => trpcQuery("subtitleUpdates.list", input),
     get: (input) => trpcQuery("subtitleUpdates.get", input),
+    clearCompleted: () => trpcMutation("subtitleUpdates.clearCompleted"),
     retry: (input) => trpcMutation("subtitleUpdates.retry", input),
+    listFailed: () => trpcQuery("subtitleUpdates.listFailed"),
+    retryBatch: (input) => trpcMutation("subtitleUpdates.retryBatch", input),
   },
   pending: {
     newFiles: () => trpcQuery("pending.newFiles"),

@@ -169,6 +169,13 @@
       "when": 1794787200003,
       "tag": "0023_subtitle_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794787200004,
+      "tag": "0024_clear_completed_subtitle_jobs",
+      "breakpoints": true
     }
   ]
 }

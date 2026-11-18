@@ -5,6 +5,22 @@ export const subtitleJobListInputSchema = z.object({
   limit: z.number().int().min(1).max(100),
 });
 export type SubtitleJobListInput = z.infer<typeof subtitleJobListInputSchema>;
+
+export const subtitleJobBatchRetryInputSchema = z.object({
+  jobs: z.array(z.object({ taskId: z.string().min(1), attempts: z.number().int().nonnegative() })).min(1),
+});
+export type SubtitleJobBatchRetryInput = z.infer<typeof subtitleJobBatchRetryInputSchema>;
+export type SubtitleJobErrorType =
+  | "duplicateTarget"
+  | "missingFile"
+  | "unregisteredMovie"
+  | "subtitleMismatch"
+  | "missingNfo"
+  | "other";
+export type FailedSubtitleJob = SubtitleJobBatchRetryInput["jobs"][number] & {
+  mediaPath: string;
+  errorType: SubtitleJobErrorType;
+};
 export type SubtitleJobStage =
   | "queued"
   | "scanning"

@@ -16,7 +16,15 @@ import {
 } from "@mdcz/runtime/scrape";
 import { LibraryTaskConflictError, type LibraryTaskGate } from "@mdcz/runtime/tasks";
 import { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
-import type { SubtitleJob, SubtitleJobList, SubtitleJobListInput, SubtitleJobStage } from "@mdcz/shared/subtitleJobs";
+import type {
+  FailedSubtitleJob,
+  SubtitleJob,
+  SubtitleJobBatchRetryInput,
+  SubtitleJobErrorType,
+  SubtitleJobList,
+  SubtitleJobListInput,
+  SubtitleJobStage,
+} from "@mdcz/shared/subtitleJobs";
 import { z } from "@mdcz/shared/zod";
 import sharp from "sharp";
 import type { TaskEventBus } from "../taskEvents";
@@ -52,6 +60,16 @@ type Row = {
 };
 const JOB_SELECT =
   "SELECT j.*, (SELECT count(*) FROM subtitle_update_events e WHERE e.task_id = j.task_id) AS notification_count FROM subtitle_update_jobs j";
+const REQUEUE_FAILED_JOBS =
+  "UPDATE subtitle_update_jobs SET status = 'queued', stage = 'queued', progress = '等待重试', result_json = NULL, warnings_json = '[]', error = NULL, updated_at = ?, completed_at = NULL WHERE status = 'failed' AND cleared_at IS NULL";
+
+const failurePrefixes: [string, SubtitleJobErrorType][] = [
+  ["资源目标重复：", "duplicateTarget"],
+  ["ENOENT:", "missingFile"],
+  ["未找到已登记的影片：", "unregisteredMovie"],
+  ["字幕文件不属于指定影片", "subtitleMismatch"],
+  ["影片没有已发布的 NFO", "missingNfo"],
+];
 
 function toJob(row: Row): SubtitleJob {
   return {
@@ -163,9 +181,13 @@ export class SubtitleUpdateService {
     return { taskId: row.task_id, status: row.status };
   }
 
-  async get(id: string): Promise<SubtitleJob | null> {
+  async get(id: string, scope: "automation" | "workbench" = "automation"): Promise<SubtitleJob | null> {
     const { database } = await this.deps.persistence.getState();
-    const row = database.sqlite.prepare<[string], Row>(`${JOB_SELECT} WHERE j.task_id = ?`).get(id);
+    const row = database.sqlite
+      .prepare<[string], Row>(
+        `${JOB_SELECT} WHERE j.task_id = ?${scope === "workbench" ? " AND j.cleared_at IS NULL" : ""}`,
+      )
+      .get(id);
     return row ? toJob(row) : null;
   }
 
@@ -174,13 +196,13 @@ export class SubtitleUpdateService {
     const counts: SubtitleJobList["counts"] = { queued: 0, running: 0, completed: 0, failed: 0 };
     for (const row of database.sqlite
       .prepare<[], { status: SubtitleJob["status"]; count: number }>(
-        "SELECT status, count(*) AS count FROM subtitle_update_jobs GROUP BY status",
+        "SELECT status, count(*) AS count FROM subtitle_update_jobs WHERE cleared_at IS NULL GROUP BY status",
       )
       .all())
       counts[row.status] = row.count;
     const rows = database.sqlite
       .prepare<[number, number], Row>(
-        `${JOB_SELECT} ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, CASE WHEN j.status IN ('queued', 'running') THEN j.created_at END, CASE WHEN j.status IN ('queued', 'running') THEN j.rowid END, j.updated_at DESC, j.rowid DESC LIMIT ? OFFSET ?`,
+        `${JOB_SELECT} WHERE j.cleared_at IS NULL ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, CASE WHEN j.status IN ('queued', 'running') THEN j.created_at END, CASE WHEN j.status IN ('queued', 'running') THEN j.rowid END, j.updated_at DESC, j.rowid DESC LIMIT ? OFFSET ?`,
       )
       .all(input.limit, input.offset);
     return {
@@ -189,6 +211,48 @@ export class SubtitleUpdateService {
       total: Object.values(counts).reduce((a, b) => a + b, 0),
       waitingForManual: counts.queued > 0 && this.deps.gate.foregroundBusy,
     };
+  }
+
+  async clearCompleted(): Promise<{ cleared: number }> {
+    if (this.closed || this.deps.persistence.readOnly) throw new Error("服务不可写入字幕更新任务");
+    const { database } = await this.deps.persistence.getState();
+    const { changes } = database.sqlite
+      .prepare("UPDATE subtitle_update_jobs SET cleared_at = ? WHERE status = 'completed' AND cleared_at IS NULL")
+      .run(Date.now());
+    if (changes > 0) this.changed();
+    return { cleared: changes };
+  }
+
+  async listFailed(): Promise<FailedSubtitleJob[]> {
+    const { database } = await this.deps.persistence.getState();
+    return database.sqlite
+      .prepare<[], Pick<Row, "task_id" | "attempts" | "error"> & { media_path: string }>(
+        "SELECT task_id, attempts, error, json_extract(inputs_json, '$[0].mediaPath') AS media_path FROM subtitle_update_jobs WHERE status = 'failed' AND cleared_at IS NULL ORDER BY updated_at DESC, rowid DESC",
+      )
+      .all()
+      .map((row) => ({
+        taskId: row.task_id,
+        attempts: row.attempts,
+        mediaPath: row.media_path,
+        errorType: failurePrefixes.find(([prefix]) => row.error?.startsWith(prefix))?.[1] ?? "other",
+      }));
+  }
+
+  async retryBatch(input: SubtitleJobBatchRetryInput): Promise<{ queued: number }> {
+    if (this.closed || this.deps.persistence.readOnly) throw new Error("服务不可写入字幕更新任务");
+    const { database } = await this.deps.persistence.getState();
+    const { changes } = database.sqlite
+      .prepare(
+        `${REQUEUE_FAILED_JOBS} AND (task_id, attempts) IN (
+          SELECT json_extract(value, '$.taskId'), json_extract(value, '$.attempts') FROM json_each(?)
+        )`,
+      )
+      .run(Date.now(), JSON.stringify(input.jobs));
+    if (changes > 0) {
+      this.changed();
+      this.wake();
+    }
+    return { queued: changes };
   }
 
   async retry(id: string): Promise<{ taskId: string }> {
@@ -202,11 +266,7 @@ export class SubtitleUpdateService {
       )
       .get(row.movie_key);
     if (active) throw new Error("该影片已有处理任务，请等待其完成后重试");
-    database.sqlite
-      .prepare(
-        "UPDATE subtitle_update_jobs SET status = 'queued', stage = 'queued', progress = '等待重试', result_json = NULL, warnings_json = '[]', error = NULL, updated_at = ?, completed_at = NULL WHERE task_id = ?",
-      )
-      .run(Date.now(), id);
+    database.sqlite.prepare(`${REQUEUE_FAILED_JOBS} AND task_id = ?`).run(Date.now(), id);
     this.changed();
     this.wake();
     return { taskId: id };

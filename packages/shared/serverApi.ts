@@ -120,7 +120,13 @@ import type {
   TranslateTestInputDto,
   TranslateTestResponse,
 } from "./serverDtos";
-import type { SubtitleJob, SubtitleJobList, SubtitleJobListInput } from "./subtitleJobs";
+import type {
+  FailedSubtitleJob,
+  SubtitleJob,
+  SubtitleJobBatchRetryInput,
+  SubtitleJobList,
+  SubtitleJobListInput,
+} from "./subtitleJobs";
 import type { NamingPreviewItem } from "./types";
 
 export interface ServerApiContract {
@@ -243,7 +249,10 @@ export interface ServerApiContract {
   subtitleUpdates: {
     list(input: SubtitleJobListInput): Promise<SubtitleJobList>;
     get(input: { id: string }): Promise<SubtitleJob | null>;
+    clearCompleted(): Promise<{ cleared: number }>;
     retry(input: { id: string }): Promise<{ taskId: string }>;
+    listFailed(): Promise<FailedSubtitleJob[]>;
+    retryBatch(input: SubtitleJobBatchRetryInput): Promise<{ queued: number }>;
   };
   apiKeys: {
     list(): Promise<ApiKeyListResponse>;

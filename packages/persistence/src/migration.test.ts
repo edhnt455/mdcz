@@ -40,13 +40,15 @@ describe("Persistence migration baseline", () => {
             status === "failed" ? "failure" : null,
             123,
           );
-      database.sqlite.exec(await readFile(join(defaultMigrationsFolder, "0023_subtitle_queue.sql"), "utf8"));
+      for (const file of files.filter((file) => file >= "0023"))
+        database.sqlite.exec(await readFile(join(defaultMigrationsFolder, file), "utf8"));
       for (const status of ["queued", "running", "completed", "failed"]) {
         const row = database.sqlite.prepare("SELECT * FROM subtitle_update_jobs WHERE task_id = ?").get(status) as {
           inputs_json: string;
         };
         expect(row).toMatchObject({
           status,
+          cleared_at: null,
           updated_at: 123,
           result_json: '{"metadataUpdated":true}',
           warnings_json: '["warning"]',
@@ -184,6 +186,7 @@ describe("Persistence migration baseline", () => {
       expect.objectContaining({ idx: 21, when: 1_794_787_200_001, tag: "0021_webhook_receipts" }),
       expect.objectContaining({ idx: 22, when: 1_794_787_200_002, tag: "0022_subtitle_jobs" }),
       expect.objectContaining({ idx: 23, when: 1_794_787_200_003, tag: "0023_subtitle_queue" }),
+      expect.objectContaining({ idx: 24, when: 1_794_787_200_004, tag: "0024_clear_completed_subtitle_jobs" }),
     ]);
     expect(files).toEqual(journal.entries.map((entry) => `${entry.tag}.sql`));
   });
