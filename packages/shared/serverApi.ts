@@ -123,7 +123,7 @@ import type {
 import type {
   FailedSubtitleJob,
   SubtitleJob,
-  SubtitleJobBatchRetryInput,
+  SubtitleJobBatchInput,
   SubtitleJobList,
   SubtitleJobListInput,
 } from "./subtitleJobs";
@@ -252,7 +252,8 @@ export interface ServerApiContract {
     clearCompleted(): Promise<{ cleared: number }>;
     retry(input: { id: string }): Promise<{ taskId: string }>;
     listFailed(): Promise<FailedSubtitleJob[]>;
-    retryBatch(input: SubtitleJobBatchRetryInput): Promise<{ queued: number }>;
+    retryBatch(input: SubtitleJobBatchInput): Promise<{ queued: number }>;
+    ignoreBatch(input: SubtitleJobBatchInput): Promise<{ ignored: number }>;
   };
   apiKeys: {
     list(): Promise<ApiKeyListResponse>;

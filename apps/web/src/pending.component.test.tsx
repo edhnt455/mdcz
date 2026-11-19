@@ -12,7 +12,7 @@ import { PendingTasksPage } from "./pendingTasks";
 import { PendingPage } from "./routes/pending";
 import { SubtitleTasksPage } from "./subtitleTasks";
 
-test("batch retry combines keyword and error filters with selection across pages", async () => {
+test("batch failure actions combine keyword and error filters with selection across pages", async () => {
   const failures: FailedSubtitleJob[] = Array.from({ length: 53 }, (_, index) => ({
     taskId: `subtitle-update-${index}`,
     attempts: index,
@@ -28,7 +28,12 @@ test("batch retry combines keyword and error filters with selection across pages
   });
   vi.spyOn(api.subtitleUpdates, "listFailed").mockResolvedValue(failures);
   const retry = vi.spyOn(api.subtitleUpdates, "retryBatch").mockResolvedValue({ queued: 50 });
+  const ignore = vi
+    .spyOn(api.subtitleUpdates, "ignoreBatch")
+    .mockRejectedValueOnce(new Error("忽略失败，请重试"))
+    .mockResolvedValue({ ignored: 1 });
   const info = vi.spyOn(toast, "info");
+  const success = vi.spyOn(toast, "success");
   const screen = await render(
     <QueryClientProvider client={client}>
       <SubtitleTasksPage onSelect={vi.fn()} />
@@ -71,11 +76,26 @@ test("batch retry combines keyword and error filters with selection across pages
     await expect.element(dialog.getByText("命中 52 条 · 已选 51 条")).toBeVisible();
     await submit.click();
     await expect.element(dialog).not.toBeInTheDocument();
-    expect(retry).toHaveBeenCalledExactlyOnceWith(
-      { jobs: failures.slice(0, 51).map(({ taskId, attempts }) => ({ taskId, attempts })) },
-      expect.anything(),
-    );
+    expect(retry).toHaveBeenCalledExactlyOnceWith({
+      jobs: failures.slice(0, 51).map(({ taskId, attempts }) => ({ taskId, attempts })),
+    });
     expect(info).toHaveBeenCalledWith("已入队 50 条 · 1 条状态已变化，已跳过");
+    await screen.getByRole("button", { name: "批量忽略", exact: true }).click();
+    await expect.element(dialog.getByRole("heading", { name: "批量忽略" })).toBeVisible();
+    await expect.element(search).toHaveValue("");
+    const ignoreSubmit = dialog.getByRole("button", { name: "忽略所选记录" });
+    await expect.element(ignoreSubmit).toBeDisabled();
+    await search.fill("741");
+    await allMatches.click();
+    await expect.element(dialog.getByText("命中 1 条 · 已选 1 条")).toBeVisible();
+    await ignoreSubmit.click();
+    await expect.element(dialog.getByRole("alert")).toHaveTextContent("忽略失败，请重试");
+    await expect.element(dialog.getByText("命中 1 条 · 已选 1 条")).toBeVisible();
+    await ignoreSubmit.click();
+    await expect.element(dialog).not.toBeInTheDocument();
+    expect(ignore).toHaveBeenLastCalledWith({ jobs: [{ taskId: failures[50].taskId, attempts: 50 }] });
+    expect(success).toHaveBeenCalledWith("已忽略 1 条失败记录");
+    expect(retry).toHaveBeenCalledOnce();
   } finally {
     screen.unmount();
     client.clear();

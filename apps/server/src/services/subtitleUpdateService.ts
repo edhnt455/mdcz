@@ -19,7 +19,7 @@ import { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
 import type {
   FailedSubtitleJob,
   SubtitleJob,
-  SubtitleJobBatchRetryInput,
+  SubtitleJobBatchInput,
   SubtitleJobErrorType,
   SubtitleJobList,
   SubtitleJobListInput,
@@ -238,7 +238,7 @@ export class SubtitleUpdateService {
       }));
   }
 
-  async retryBatch(input: SubtitleJobBatchRetryInput): Promise<{ queued: number }> {
+  async retryBatch(input: SubtitleJobBatchInput): Promise<{ queued: number }> {
     if (this.closed || this.deps.persistence.readOnly) throw new Error("服务不可写入字幕更新任务");
     const { database } = await this.deps.persistence.getState();
     const { changes } = database.sqlite
@@ -255,10 +255,27 @@ export class SubtitleUpdateService {
     return { queued: changes };
   }
 
+  async ignoreBatch(input: SubtitleJobBatchInput): Promise<{ ignored: number }> {
+    if (this.closed || this.deps.persistence.readOnly) throw new Error("服务不可写入字幕更新任务");
+    const { database } = await this.deps.persistence.getState();
+    const { changes } = database.sqlite
+      .prepare(
+        `UPDATE subtitle_update_jobs SET cleared_at = ?
+          WHERE status = 'failed' AND cleared_at IS NULL AND (task_id, attempts) IN (
+            SELECT json_extract(value, '$.taskId'), json_extract(value, '$.attempts') FROM json_each(?)
+          )`,
+      )
+      .run(Date.now(), JSON.stringify(input.jobs));
+    if (changes > 0) this.changed();
+    return { ignored: changes };
+  }
+
   async retry(id: string): Promise<{ taskId: string }> {
     if (this.closed || this.deps.persistence.readOnly) throw new Error("服务不可写入字幕更新任务");
     const { database } = await this.deps.persistence.getState();
-    const row = database.sqlite.prepare<[string], Row>("SELECT * FROM subtitle_update_jobs WHERE task_id = ?").get(id);
+    const row = database.sqlite
+      .prepare<[string], Row>("SELECT * FROM subtitle_update_jobs WHERE task_id = ? AND cleared_at IS NULL")
+      .get(id);
     if (!row || row.status !== "failed") throw new Error("只能重试失败的字幕更新任务");
     const active = database.sqlite
       .prepare<[string], Row>(

@@ -1,5 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
-import type { SubtitleJobErrorType } from "@mdcz/shared/subtitleJobs";
+import type { SubtitleJobBatchInput, SubtitleJobErrorType } from "@mdcz/shared/subtitleJobs";
 import {
   Button,
   Checkbox,
@@ -15,13 +15,21 @@ import {
 } from "@mdcz/ui";
 import { useT } from "@mdcz/views/i18n";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RotateCcw } from "lucide-react";
+import { EyeOff, RotateCcw } from "lucide-react";
 import { useId, useState } from "react";
 import { toast } from "sonner";
 import { api } from "./client";
 import { queryKeys } from "./lib/queryKeys";
 
-export function SubtitleBatchRetry({ disabled, onQueued }: { disabled: boolean; onQueued: () => void }) {
+export function SubtitleBatchAction({
+  action,
+  disabled,
+  onSuccess,
+}: {
+  action: "retry" | "ignore";
+  disabled: boolean;
+  onSuccess: () => void;
+}) {
   const t = useT();
   const labels = t.pending.subtitleQueue;
   const client = useQueryClient();
@@ -46,42 +54,55 @@ export function SubtitleBatchRetry({ disabled, onQueued }: { disabled: boolean; 
   );
   const selected = matched.filter(({ taskId, attempts }) => selection.get(taskId) === attempts);
   const selectedTypes = errorTypes.filter((type) => includedTypes.includes(type)).length;
-  const retry = useMutation({
-    mutationFn: api.subtitleUpdates.retryBatch,
-    onSuccess: ({ queued }, { jobs }) => {
+  const ignoring = action === "ignore";
+  const title = ignoring ? labels.batchIgnore : labels.batchRetry;
+  const mutation = useMutation({
+    mutationFn: async (input: SubtitleJobBatchInput) =>
+      ignoring
+        ? (await api.subtitleUpdates.ignoreBatch(input)).ignored
+        : (await api.subtitleUpdates.retryBatch(input)).queued,
+    onSuccess: (processed, { jobs }) => {
       setOpen(false);
-      onQueued();
+      onSuccess();
       void client.invalidateQueries({ queryKey: queryKeys.subtitleJobs });
-      if (queued === jobs.length) toast.success(labels.retryQueued(queued));
-      else toast.info(labels.retryChanged(queued, jobs.length - queued));
+      if (processed === jobs.length)
+        toast.success(ignoring ? labels.ignored(processed) : labels.retryQueued(processed));
+      else
+        toast.info(
+          ignoring
+            ? labels.ignoreChanged(processed, jobs.length - processed)
+            : labels.retryChanged(processed, jobs.length - processed),
+        );
     },
   });
-  const error = retry.error ?? failures.error;
+  const error = mutation.error ?? failures.error;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (retry.isPending) return;
+        if (mutation.isPending) return;
         if (next) {
           setSearch("");
           setTypes(null);
           setSelection(new Map());
-          retry.reset();
+          mutation.reset();
         }
         setOpen(next);
       }}
     >
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" disabled={disabled}>
-          <RotateCcw className="size-4" />
-          {labels.batchRetry}
+          {ignoring ? <EyeOff className="size-4" /> : <RotateCcw className="size-4" />}
+          {title}
         </Button>
       </DialogTrigger>
       <DialogContent showCloseButton={false} className="max-h-[90dvh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{labels.batchRetry}</DialogTitle>
-          <DialogDescription>{labels.batchRetryDescription}</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {ignoring ? labels.batchIgnoreDescription : labels.batchRetryDescription}
+          </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 space-y-4 overflow-y-auto">
           {failures.isLoading ? <p role="status">{t.common.loading}</p> : null}
@@ -98,9 +119,9 @@ export function SubtitleBatchRetry({ disabled, onQueued }: { disabled: boolean; 
                 placeholder={labels.search}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                disabled={retry.isPending}
+                disabled={mutation.isPending}
               />
-              <fieldset disabled={retry.isPending} className="space-y-2 text-sm">
+              <fieldset disabled={mutation.isPending} className="space-y-2 text-sm">
                 <legend className="mb-2 font-semibold">{labels.filterTypes}</legend>
                 <label htmlFor={`${id}-all-types`} className="flex cursor-pointer items-center gap-2">
                   <Checkbox
@@ -126,7 +147,7 @@ export function SubtitleBatchRetry({ disabled, onQueued }: { disabled: boolean; 
                   ))}
                 </div>
               </fieldset>
-              <fieldset disabled={retry.isPending} className="min-w-0 space-y-2 border-t pt-3 text-sm">
+              <fieldset disabled={mutation.isPending} className="min-w-0 space-y-2 border-t pt-3 text-sm">
                 <p role="status" className="font-semibold">
                   {labels.retryCounts(matched.length, selected.length)}
                 </p>
@@ -180,15 +201,15 @@ export function SubtitleBatchRetry({ disabled, onQueued }: { disabled: boolean; 
         </div>
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline" disabled={retry.isPending}>
+            <Button variant="outline" disabled={mutation.isPending}>
               {t.common.cancel}
             </Button>
           </DialogClose>
           <Button
-            disabled={!selected.length || retry.isPending || failures.isFetching || failures.isError}
-            onClick={() => retry.mutate({ jobs: selected.map(({ taskId, attempts }) => ({ taskId, attempts })) })}
+            disabled={!selected.length || mutation.isPending || failures.isFetching || failures.isError}
+            onClick={() => mutation.mutate({ jobs: selected.map(({ taskId, attempts }) => ({ taskId, attempts })) })}
           >
-            {retry.isPending ? t.pending.submitting : labels.submitRetry}
+            {mutation.isPending ? t.pending.submitting : ignoring ? labels.submitIgnore : labels.submitRetry}
           </Button>
         </DialogFooter>
       </DialogContent>

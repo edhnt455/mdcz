@@ -96,6 +96,42 @@ it("batch retries selected failure attempts across pages, including historical j
   });
   expect(await services.subtitleUpdates.get("failed-119")).toMatchObject({ status: "failed", attempts: 0 });
   expect((await fastify.inject({ ...retry, headers })).json().result.data).toEqual({ queued: 0 });
+
+  const remaining = await services.subtitleUpdates.listFailed();
+  const receiptInput = { ...first, eventId: randomUUID(), mediaPath: join(root, "missing-0.strm") };
+  database.sqlite
+    .prepare("INSERT INTO subtitle_update_events (event_id, task_id, input_json) VALUES (?, 'failed-0', ?)")
+    .run(receiptInput.eventId, JSON.stringify(receiptInput));
+  const original = await services.subtitleUpdates.get("failed-0");
+  database.sqlite.prepare("UPDATE subtitle_update_jobs SET attempts = attempts + 1 WHERE task_id = 'failed-119'").run();
+  database.sqlite.prepare("UPDATE subtitle_update_jobs SET status = 'completed' WHERE task_id = 'failed-118'").run();
+  const ignore = {
+    method: "POST" as const,
+    url: "/trpc/subtitleUpdates.ignoreBatch",
+    payload: {
+      jobs: [...remaining, remaining[0], { taskId: "done", attempts: 0 }, { taskId: "missing", attempts: 0 }],
+    },
+  };
+  expect((await fastify.inject(ignore)).statusCode).toBe(401);
+  expect((await fastify.inject({ ...ignore, headers, payload: { jobs: [] } })).statusCode).toBe(400);
+  expect((await fastify.inject({ ...ignore, headers })).json().result.data).toEqual({ ignored: 118 });
+  expect((await fastify.inject({ ...ignore, headers })).json().result.data).toEqual({ ignored: 0 });
+  expect(await services.subtitleUpdates.list({ offset: 0, limit: 50 })).toMatchObject({
+    total: 5,
+    counts: { queued: 0, running: 0, completed: 4, failed: 1 },
+  });
+  expect(await services.subtitleUpdates.listFailed()).toEqual([
+    expect.objectContaining({ taskId: "failed-119", attempts: 1 }),
+  ]);
+  expect(await services.subtitleUpdates.get("failed-0", "workbench")).toBeNull();
+  expect(await services.subtitleUpdates.get("failed-0")).toEqual(original);
+  expect(await services.subtitleUpdates.enqueue(receiptInput)).toEqual({ taskId: "failed-0", status: "failed" });
+  await expect(services.subtitleUpdates.retry("failed-0")).rejects.toThrow("只能重试失败");
+  expect(await services.subtitleUpdates.retryBatch({ jobs: [{ taskId: "failed-0", attempts: 1 }] })).toEqual({
+    queued: 0,
+  });
+  expect(await readFile(mediaPath, "utf8")).toBe("video");
+  expect(await readFile(subtitlePath, "utf8")).toBe("subtitle");
 });
 
 it("publishes and tracks subtitle updates by path with durable idempotency and clear failures", async () => {

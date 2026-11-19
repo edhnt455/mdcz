@@ -7,7 +7,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "./client";
 import { queryKeys } from "./lib/queryKeys";
-import { SubtitleBatchRetry } from "./subtitleBatchRetry";
+import { SubtitleBatchAction } from "./subtitleBatchAction";
 
 const PAGE_SIZE = 50;
 
@@ -53,14 +53,18 @@ export function SubtitleTasksPage({ selectedId, onSelect }: { selectedId?: strin
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-lg font-bold">{labels.subtitleTasks}</h1>
           <div className="flex flex-wrap gap-2">
-            <SubtitleBatchRetry
-              disabled={!counts?.failed}
-              onQueued={() => {
-                setPage(0);
-                setError(null);
-                onSelect("subtitle-queue");
-              }}
-            />
+            {(["retry", "ignore"] as const).map((action) => (
+              <SubtitleBatchAction
+                key={action}
+                action={action}
+                disabled={!counts?.failed}
+                onSuccess={() => {
+                  setPage(0);
+                  setError(null);
+                  onSelect("subtitle-queue");
+                }}
+              />
+            ))}
             <Button
               variant="outline"
               size="sm"

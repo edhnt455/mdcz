@@ -9,6 +9,12 @@ export const pending = {
   subtitleTasks: "Subtitles & posters",
   subtitleQueue: {
     batchRetry: "Batch retry",
+    batchIgnore: "Batch ignore",
+    batchIgnoreDescription: "Select resolved failure records to remove from the workbench.",
+    submitIgnore: "Ignore selected records",
+    ignored: (count: number) => `Ignored ${count} failure records`,
+    ignoreChanged: (ignored: number, skipped: number) =>
+      `Ignored ${ignored} · ${skipped} skipped because their status changed`,
     batchRetryDescription: "Find failed tasks, then select the tasks to queue again.",
     search: "Search file name or path",
     errorTypes: {

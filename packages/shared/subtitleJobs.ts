@@ -6,10 +6,10 @@ export const subtitleJobListInputSchema = z.object({
 });
 export type SubtitleJobListInput = z.infer<typeof subtitleJobListInputSchema>;
 
-export const subtitleJobBatchRetryInputSchema = z.object({
+export const subtitleJobBatchInputSchema = z.object({
   jobs: z.array(z.object({ taskId: z.string().min(1), attempts: z.number().int().nonnegative() })).min(1),
 });
-export type SubtitleJobBatchRetryInput = z.infer<typeof subtitleJobBatchRetryInputSchema>;
+export type SubtitleJobBatchInput = z.infer<typeof subtitleJobBatchInputSchema>;
 export type SubtitleJobErrorType =
   | "duplicateTarget"
   | "missingFile"
@@ -17,7 +17,7 @@ export type SubtitleJobErrorType =
   | "subtitleMismatch"
   | "missingNfo"
   | "other";
-export type FailedSubtitleJob = SubtitleJobBatchRetryInput["jobs"][number] & {
+export type FailedSubtitleJob = SubtitleJobBatchInput["jobs"][number] & {
   mediaPath: string;
   errorType: SubtitleJobErrorType;
 };

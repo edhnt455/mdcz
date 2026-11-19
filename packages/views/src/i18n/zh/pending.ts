@@ -8,6 +8,11 @@ export const pending: Messages["pending"] = {
   subtitleTasks: "字幕与海报",
   subtitleQueue: {
     batchRetry: "批量重试",
+    batchIgnore: "批量忽略",
+    batchIgnoreDescription: "勾选已处理的失败记录，忽略后将从工作台移除。",
+    submitIgnore: "忽略所选记录",
+    ignored: (count: number) => `已忽略 ${count} 条失败记录`,
+    ignoreChanged: (ignored: number, skipped: number) => `已忽略 ${ignored} 条 · ${skipped} 条状态已变化，已跳过`,
     batchRetryDescription: "查找失败任务，再勾选要重新入队的任务。",
     search: "搜索文件名或路径",
     errorTypes: {

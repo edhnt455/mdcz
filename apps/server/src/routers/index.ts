@@ -66,7 +66,7 @@ import {
   toolExecuteInputSchema,
   translateTestInputSchema,
 } from "@mdcz/shared/serverDtos";
-import { subtitleJobBatchRetryInputSchema, subtitleJobListInputSchema } from "@mdcz/shared/subtitleJobs";
+import { subtitleJobBatchInputSchema, subtitleJobListInputSchema } from "@mdcz/shared/subtitleJobs";
 import { TRPCError } from "@trpc/server";
 import { createHealthPayload } from "../http/health";
 import { decorateTaskLog } from "../services/runtimeLogService";
@@ -358,8 +358,11 @@ export const appRouter = t.router({
       .mutation(({ ctx, input }) => ctx.services.subtitleUpdates.retry(input.id)),
     listFailed: protectedProcedure.query(({ ctx }) => ctx.services.subtitleUpdates.listFailed()),
     retryBatch: protectedProcedure
-      .input(subtitleJobBatchRetryInputSchema)
+      .input(subtitleJobBatchInputSchema)
       .mutation(({ ctx, input }) => ctx.services.subtitleUpdates.retryBatch(input)),
+    ignoreBatch: protectedProcedure
+      .input(subtitleJobBatchInputSchema)
+      .mutation(({ ctx, input }) => ctx.services.subtitleUpdates.ignoreBatch(input)),
   }),
   apiKeys: t.router({
     list: protectedProcedure.query(async ({ ctx }) => await ctx.services.auth.listApiKeys()),
