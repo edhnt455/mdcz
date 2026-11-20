@@ -54,7 +54,7 @@ export function PendingPage({ newFiles = false }: { newFiles?: boolean } = {}) {
         return;
       }
       if (kind === "action") {
-        await navigate({ to: "/workbench", search: { intent: "actions", jobId: id } });
+        await navigate({ to: "/workbench", search: { intent: "file_tasks", jobId: id } });
         return;
       }
       const snapshot = await api.scrape.snapshot({ taskId: id });

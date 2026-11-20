@@ -694,7 +694,7 @@ describe("buildServer maintenance integration", () => {
       });
     }
     if (scenario === "metadata-changed")
-      await writeFile(join(root, "ABC-300.nfo"), "<movie><title>Changed after approval</title></movie>");
+      await writeFile(join(root, "ABC-300-CD1.chs.srt"), "Subtitle downloaded after preview");
     if (scenario === "conflict") {
       await mkdir(join(root, "JAV_output", "ABC-300"), { recursive: true });
       await writeFile(join(root, "JAV_output", "ABC-300", sourceNames[0]), "occupied");
@@ -739,7 +739,7 @@ describe("buildServer maintenance integration", () => {
     }
     expect(applyResponse.statusCode).toBe(200);
     expect(applyResponse.json().result.data).toEqual({ sessionId });
-    const failed = scenario !== "single" && scenario !== "multipart" && scenario !== "added";
+    const failed = scenario !== "single" && scenario !== "multipart";
     const appliedSession = await waitForMaintenanceSession(
       fastify,
       token,
@@ -753,6 +753,8 @@ describe("buildServer maintenance integration", () => {
       });
       if (scenario === "directory_conflict")
         expect(appliedSession.currentBatch?.items[0]?.error).toContain("此输出目录已属于其他影片");
+      if (scenario === "added" || scenario === "metadata-changed")
+        expect(appliedSession.currentBatch?.items[0]?.error).toContain("请刷新维护预览后重试");
       const remainingFiles = (await readdir(root, { recursive: true, withFileTypes: true }))
         .filter((entry) => entry.isFile())
         .map((entry) => join(entry.parentPath, entry.name));
@@ -786,7 +788,7 @@ describe("buildServer maintenance integration", () => {
     );
     const refreshed = await state.repositories.library.getEntryById("maintenance-movie");
     expect(refreshed.files.map((file) => file.id).sort()).toEqual(
-      [...sourceNames.map((name) => `maintenance-file:${name}`), ...(scenario === "added" ? ["new-file"] : [])].sort(),
+      sourceNames.map((name) => `maintenance-file:${name}`).sort(),
     );
     const organizedNfoContent = await readFile(organizedNfo, "utf8");
     expect(organizedNfoContent).toContain("Remote Title ABC-300");

@@ -176,6 +176,13 @@
       "when": 1794787200004,
       "tag": "0024_clear_completed_subtitle_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795132800000,
+      "tag": "0025_subtitle_resource_state",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,6 @@ import type { SkipReason } from "@mdcz/shared/siteResults";
 export const pending = {
   title: "Pending",
   newFiles: "Awaiting scrape",
-  tasks: "Processing tasks",
   fileTasks: "File tasks",
   subtitleTasks: "Subtitles & posters",
   subtitleQueue: {
@@ -36,8 +35,10 @@ export const pending = {
       `${queued} queued · ${skipped} skipped because their status changed`,
     clearCompleted: "Clear completed records",
     cleared: "Completed records cleared",
-    waiting: "Waiting for manual tasks to finish; this queue resumes automatically.",
-    priority: "One task at a time. Manual tasks run after the current item, ahead of queued items.",
+    waiting: (count: number) =>
+      `${count} task(s) waiting for related movies or output directories; other tasks continue.`,
+    priority:
+      "Subtitle tasks run one at a time, waiting only for related movies or output folders. Other movies can keep scraping.",
     counts: (queued: number, running: number, completed: number, failed: number) =>
       `Queued ${queued} · Running ${running} · Completed ${completed} · Failed ${failed}`,
     page: (page: number, pages: number, total: number) => `Page ${page}/${pages} · ${total} tasks`,

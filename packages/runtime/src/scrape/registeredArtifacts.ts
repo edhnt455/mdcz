@@ -15,6 +15,7 @@ import { XMLValidator } from "fast-xml-parser";
 import { type MovieLibrary, resolveRegisteredNfoPaths, writePublishedMovie } from "../library/registeredMedia";
 import { buildMovieTags } from "../maintenance/movieTags";
 import { parseNfoSnapshot } from "../maintenance/nfoSnapshot";
+import { withMovieTask } from "../publication/mediaTasks";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
 import type { PublicationOutputPort } from "../publication/types";
@@ -63,97 +64,112 @@ export async function writeNfoPublication(
         return root;
       })
     : undefined;
-  const library = publication.library;
-  if (owned && !library) throw new Error("写入已登记的 NFO 需要同步更新媒体库");
-  const targets = owned?.paths ?? paths.requiredPaths;
-  if (input.edit && !owned) throw new Error("批量编辑需要已登记的 NFO");
-  const result = { path: owned ? nfoPath : paths.canonicalPath, changed: false, directories: [] as string[] };
-  if (!changedFields.length) return result;
-  const candidates = owned?.paths ?? getNfoReadCandidates(nfoPath, nfoNaming, videoPath);
-  const inventory = new DirectoryInventory();
-  const release = await acquireOutputDirectories([...targets, ...candidates], (directory) =>
-    inventory.canonicalDirectory(directory),
-  );
-  try {
-    const existing = new Map<string, string>();
-    for (const candidate of new Set([...targets, ...candidates])) {
-      const { root, relativePath } = resolveRootFile(publication.roots, candidate);
-      const content = await readRootFile(root, relativePath).catch((error: unknown) => {
-        if (!owned && error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
-        throw error;
+  return await withMovieTask(owned?.movieId ?? nfoPath, "编辑当前影片 NFO", async () => {
+    if (owned && publication.outputs) {
+      const current = await resolveRegisteredNfoPaths(nfoPath, publication.outputs, async (id) => {
+        const root = publication.roots.find((root) => root.id === id);
+        if (!root) throw new Error(`未找到发布根目录：${id}`);
+        return root;
       });
-      if (content !== null) {
-        const xml = content.toString("utf-8");
-        const validation = XMLValidator.validate(xml);
-        if (validation !== true) throw new Error(`NFO XML 无效： ${validation.err.msg}`);
-        existing.set(candidate, xml);
+      if (
+        !current ||
+        current.movieId !== owned.movieId ||
+        JSON.stringify(current.paths) !== JSON.stringify(owned.paths)
+      )
+        throw new Error("影片资源位置已变化，请刷新后重试");
+    }
+    const library = publication.library;
+    if (owned && !library) throw new Error("写入已登记的 NFO 需要同步更新媒体库");
+    const targets = owned?.paths ?? paths.requiredPaths;
+    if (input.edit && !owned) throw new Error("批量编辑需要已登记的 NFO");
+    const result = { path: owned ? nfoPath : paths.canonicalPath, changed: false, directories: [] as string[] };
+    if (!changedFields.length) return result;
+    const candidates = owned?.paths ?? getNfoReadCandidates(nfoPath, nfoNaming, videoPath);
+    const inventory = new DirectoryInventory();
+    const release = await acquireOutputDirectories([...targets, ...candidates], (directory) =>
+      inventory.canonicalDirectory(directory),
+    );
+    try {
+      const existing = new Map<string, string>();
+      for (const candidate of new Set([...targets, ...candidates])) {
+        const { root, relativePath } = resolveRootFile(publication.roots, candidate);
+        const content = await readRootFile(root, relativePath).catch((error: unknown) => {
+          if (!owned && error instanceof StorageError && error.code === storageErrorCodes.MissingPath) return null;
+          throw error;
+        });
+        if (content !== null) {
+          const xml = content.toString("utf-8");
+          const validation = XMLValidator.validate(xml);
+          if (validation !== true) throw new Error(`NFO XML 无效： ${validation.err.msg}`);
+          existing.set(candidate, xml);
+        }
       }
-    }
-    const fallback = candidates.map((candidate) => existing.get(candidate)).find((xml) => xml !== undefined);
-    const sourceData = fallback === undefined ? input.data : parseNfoSnapshot(fallback).crawlerData;
-    if (!sourceData) throw new Error("缺少 NFO 元数据");
-    const artifacts = targets.flatMap((targetPath) => {
-      const xml = existing.get(targetPath) ?? fallback;
-      const snapshot = xml === undefined ? undefined : parseNfoSnapshot(xml);
-      const options = {
-        buildTags: buildMovieTags,
-        localState: snapshot?.localState,
-        enabledFields,
-        nfoNaming,
-        titleNaming: configuration.naming,
-      };
-      const data = input.edit
-        ? applyLibraryEdit(snapshot?.crawlerData ?? sourceData, input.edit)
-        : snapshot
-          ? applyNfoEditorChanges(snapshot.crawlerData, input.data, changedFields)
-          : input.data;
-      if (!data) return [];
-      return [
-        {
-          targetPath,
-          data:
-            xml === undefined || !snapshot
-              ? nfoGenerator.buildXml(data, options)
-              : nfoGenerator.mergeEditableXml(xml, data, changedFields, options, input.edit),
-        },
-      ];
-    });
-    if (input.edit && owned && library && !artifacts.length) {
-      const entry = await library.getEntryById(owned.movieId);
-      if (!applyLibraryEdit(entry.crawlerDataJson ? JSON.parse(entry.crawlerDataJson) : sourceData, input.edit))
-        return result;
-    }
-    await new WriteOutput().install(artifacts, {
-      protectedMediaFiles: owned?.mediaPaths ?? (videoPath ? [videoPath] : []),
-      commit: async () => {
-        if (!owned || !library) return;
+      const fallback = candidates.map((candidate) => existing.get(candidate)).find((xml) => xml !== undefined);
+      const sourceData = fallback === undefined ? input.data : parseNfoSnapshot(fallback).crawlerData;
+      if (!sourceData) throw new Error("缺少 NFO 元数据");
+      const artifacts = targets.flatMap((targetPath) => {
+        const xml = existing.get(targetPath) ?? fallback;
+        const snapshot = xml === undefined ? undefined : parseNfoSnapshot(xml);
+        const options = {
+          buildTags: buildMovieTags,
+          localState: snapshot?.localState,
+          enabledFields,
+          nfoNaming,
+          titleNaming: configuration.naming,
+        };
+        const data = input.edit
+          ? applyLibraryEdit(snapshot?.crawlerData ?? sourceData, input.edit)
+          : snapshot
+            ? applyNfoEditorChanges(snapshot.crawlerData, input.data, changedFields)
+            : input.data;
+        if (!data) return [];
+        return [
+          {
+            targetPath,
+            data:
+              xml === undefined || !snapshot
+                ? nfoGenerator.buildXml(data, options)
+                : nfoGenerator.mergeEditableXml(xml, data, changedFields, options, input.edit),
+          },
+        ];
+      });
+      if (input.edit && owned && library && !artifacts.length) {
         const entry = await library.getEntryById(owned.movieId);
-        const currentData: CrawlerData = entry.crawlerDataJson ? JSON.parse(entry.crawlerDataJson) : sourceData;
-        await writePublishedMovie(
-          library,
-          owned.movieId,
-          artifacts.map((artifact) => {
-            const ref = toRootFileRef(artifact.targetPath, publication.roots);
-            return {
-              kind: "nfo",
-              uri: ref.relativePath,
-              rootId: ref.rootId,
-              relativePath: ref.relativePath,
-              published: true,
-            };
-          }),
-          input.edit
-            ? (applyLibraryEdit(currentData, input.edit) ?? currentData)
-            : applyNfoEditorChanges(currentData, input.data, changedFields),
-        );
-      },
-    });
-    result.changed = true;
-    result.directories = [...new Set(targets.map((target) => dirname(target)))];
-  } finally {
-    release();
-  }
-  return result;
+        if (!applyLibraryEdit(entry.crawlerDataJson ? JSON.parse(entry.crawlerDataJson) : sourceData, input.edit))
+          return result;
+      }
+      await new WriteOutput().install(artifacts, {
+        protectedMediaFiles: owned?.mediaPaths ?? (videoPath ? [videoPath] : []),
+        commit: async () => {
+          if (!owned || !library) return;
+          const entry = await library.getEntryById(owned.movieId);
+          const currentData: CrawlerData = entry.crawlerDataJson ? JSON.parse(entry.crawlerDataJson) : sourceData;
+          await writePublishedMovie(
+            library,
+            owned.movieId,
+            artifacts.map((artifact) => {
+              const ref = toRootFileRef(artifact.targetPath, publication.roots);
+              return {
+                kind: "nfo",
+                uri: ref.relativePath,
+                rootId: ref.rootId,
+                relativePath: ref.relativePath,
+                published: true,
+              };
+            }),
+            input.edit
+              ? (applyLibraryEdit(currentData, input.edit) ?? currentData)
+              : applyNfoEditorChanges(currentData, input.data, changedFields),
+          );
+        },
+      });
+      result.changed = true;
+      result.directories = [...new Set(targets.map((target) => dirname(target)))];
+    } finally {
+      release();
+    }
+    return result;
+  });
 }
 
 export async function registeredPosterCropContext(

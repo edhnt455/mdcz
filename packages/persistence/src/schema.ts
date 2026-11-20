@@ -7,6 +7,7 @@ export const subtitleUpdateJobs = sqliteTable(
     taskId: text("task_id").primaryKey(),
     movieKey: text("movie_key").notNull(),
     inputsJson: text("inputs_json").notNull(),
+    bindingsJson: text("bindings_json").notNull().default("{}"),
     status: text("status").notNull(),
     stage: text("stage").notNull().default("queued"),
     progress: text("progress").notNull().default(""),
@@ -36,6 +37,15 @@ export const subtitleUpdateEvents = sqliteTable(
   },
   (table) => [index("subtitle_update_events_task_idx").on(table.taskId)],
 );
+
+export const subtitleUpdateState = sqliteTable("subtitle_update_state", {
+  movieId: text("movie_id")
+    .primaryKey()
+    .references(() => libraryItems.id, { onDelete: "cascade" }),
+  fingerprint: text("fingerprint").notNull(),
+  subtitleFingerprint: text("subtitle_fingerprint").notNull(),
+  notifyPending: integer("notify_pending").notNull().default(0),
+});
 
 export const mediaRoots = sqliteTable(
   "media_roots",

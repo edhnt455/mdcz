@@ -40,6 +40,8 @@ import type { NetworkClient } from "../network";
 import { toCommittedMovie } from "../publication/committedMovie";
 import { assertMovieDirectoryOwnership } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
+import { mediaSnapshot } from "../publication/mediaSnapshot";
+import { acquireMediaTask, movieTaskKey } from "../publication/mediaTasks";
 import { assertSymlinkSupport } from "../publication/outputFileSystem";
 import { movieOutputResultAssets } from "../publication/outputLibrary";
 import { acquireOutputDirectories } from "../publication/outputMutex";
@@ -66,6 +68,7 @@ import { DownloadManager, type ImageHostCooldownStore } from "./download";
 import { createScrapeExecutionPolicy } from "./executionPolicy";
 import { assertTargetLayout, FileOrganizer } from "./FileOrganizer";
 import { FileScraper, type PreparedMovieGroup, type RuntimeScrapeSignalService } from "./FileScraper";
+import { findSubtitleSidecars } from "./media";
 import { admitScrapeGroups, groupMovieMembers, type MovieGroup, type MovieMember } from "./movieGroups";
 import { NumberRecognitionService } from "./NumberRecognitionService";
 import { NfoGenerator } from "./nfo";
@@ -293,14 +296,12 @@ export class ScrapeRunner {
     if (this.closed) throw new Error("刮削队列正在关闭");
     const configuration = structuredClone(await this.deps.getConfiguration());
     const normalized = await this.normalizeStartInput(input, configuration);
-    await this.deps.taskGate.waitForSubtitle();
     const snapshot = await this.claimCoordinator().start({ normalized, configuration });
     return await this.accepted(snapshot.runId, "start", snapshot.progress.totalItems);
   }
 
   async retry(runId: string, itemIds?: readonly string[]): Promise<StartScrapeResult> {
     await this.bindExistingRun(runId);
-    await this.deps.taskGate.waitForSubtitle();
     const snapshot = await this.claimCoordinator().retry(runId, itemIds);
     return await this.accepted(
       snapshot.runId,
@@ -313,7 +314,6 @@ export class ScrapeRunner {
 
   async rerunDirectory(runId: string): Promise<StartScrapeResult> {
     await this.bindExistingRun(runId);
-    await this.deps.taskGate.waitForSubtitle();
     const snapshot = await this.claimCoordinator().rerunDirectory(runId);
     return await this.accepted(snapshot.runId, "rerun", null);
   }
@@ -882,6 +882,47 @@ export class ScrapeRunner {
     const outputRoot = await this.deps.persistence.mediaRoots.get(manifest.requestedOutputRootId);
     roots.set(outputRoot.id, outputRoot);
 
+    const movieResources = new Map<string, { keys: string[]; sourcePaths: string[] }>();
+    const movieLocks = new Map<
+      string,
+      {
+        keys: string[];
+        release: () => void;
+        sourcePaths: string[];
+        revision: string;
+        signal: AbortSignal;
+      }
+    >();
+    const movieRevision = async (sourcePaths: string[]): Promise<string> => {
+      await inventory.refreshMetadata(sourcePaths);
+      const snapshot = this.deps.persistence.library.publicationSnapshot({
+        paths: sourcePaths,
+        includeOwners: true,
+      });
+      const assets = await Promise.all(
+        snapshot.assets.map(async (asset) =>
+          resolveRootRelativePath(await this.deps.persistence.mediaRoots.get(asset.rootId), asset.relativePath),
+        ),
+      );
+      await inventory.refreshMetadata(assets);
+      const nfos = await Promise.all(
+        [...new Set(sourcePaths.map(dirname))].map(async (directory) =>
+          (await inventory.files(directory, (name) => name.toLowerCase().endsWith(".nfo"))).map((entry) =>
+            join(directory, entry.name),
+          ),
+        ),
+      );
+      const sidecars = await Promise.all(
+        sourcePaths.map((sourcePath) => findSubtitleSidecars(sourcePath, undefined, configuration.scrape)),
+      );
+      const observedPaths = [
+        ...sourcePaths,
+        ...assets,
+        ...nfos.flat(),
+        ...sidecars.flatMap((files) => files.map((file) => file.path)),
+      ];
+      return JSON.stringify([snapshot, await mediaSnapshot(observedPaths)]);
+    };
     const fileScraper = new FileScraper(
       {
         aggregationService: numberResolver.aggregationService,
@@ -915,9 +956,29 @@ export class ScrapeRunner {
                 }),
             )
           ).filter((ref) => !sources.has(ref.entryIdentity));
-          const ownership = this.deps.persistence.library.inventoryOwnership(refs);
+          let ownership = this.deps.persistence.library.inventoryOwnership(refs);
           const [movieId, ...others] = new Set(ownership.map((entry) => entry.movieId));
           if (!movieId || others.length) return undefined;
+          const admission = [...movieLocks.values()].find((candidate) =>
+            sourcePaths.every((sourcePath) => candidate.sourcePaths.includes(sourcePath)),
+          );
+          if (!admission) throw new Error("刮削影片缺少资源执行权");
+          const finalKey = movieTaskKey(movieId);
+          if (!admission.keys.includes(finalKey)) {
+            // New versions learn their destination movie during lookup; acquire all keys together to avoid cycles.
+            admission.release();
+            admission.keys.push(finalKey);
+            admission.release = await acquireMediaTask(admission.keys, "刮削当前影片", admission.signal);
+            if ((await movieRevision(admission.sourcePaths)) !== admission.revision)
+              throw new Error("等待影片执行权期间源文件或元数据已变化，请重试刮削");
+            admission.sourcePaths.push(
+              ...refs.map((ref) => resolveRootRelativePath(requireRoot(ref.rootId), ref.relativePath)),
+            );
+            admission.revision = await movieRevision(admission.sourcePaths);
+            ownership = this.deps.persistence.library.inventoryOwnership(refs);
+            if (!ownership.length || ownership.some((owner) => owner.movieId !== movieId))
+              throw new Error("等待影片执行权期间影片归属已变化，请重试刮削");
+          }
           const movie = await this.deps.persistence.library.getEntryById(movieId);
           if (movie.number?.trim().toUpperCase() !== number.trim().toUpperCase()) return undefined;
           return {
@@ -989,6 +1050,35 @@ export class ScrapeRunner {
 
     return {
       concurrency: manifest.executionMode === "single" ? 1 : policy.concurrency,
+      acquireGroup: async (group, signal) => {
+        const id = group.members
+          .map((member) => member.id)
+          .sort()
+          .join("\0");
+        const resources = movieResources.get(id) ?? {
+          keys: [movieTaskKey(group.movieId), ...group.members.map((member) => `file:${member.id}`)],
+          sourcePaths: group.members.map((member) => member.sourcePath),
+        };
+        movieResources.set(id, resources);
+        const release = await acquireMediaTask(resources.keys, "刮削当前影片", signal);
+        try {
+          const revision = await movieRevision(resources.sourcePaths);
+          const admission = { ...resources, release, revision, signal };
+          movieLocks.set(id, admission);
+          return {
+            get revision() {
+              return admission.revision;
+            },
+            release: () => {
+              admission.release();
+              if (movieLocks.get(id) === admission) movieLocks.delete(id);
+            },
+          };
+        } catch (error) {
+          release();
+          throw error;
+        }
+      },
       movieGroups: movieGroups.flatMap((group) =>
         target.placement === "copy" &&
         !group.error &&
@@ -1076,6 +1166,14 @@ export class ScrapeRunner {
         );
       },
       executePreparedGroup: async ({ group, prepared }, signal) => {
+        const admission = movieLocks.get(
+          group.members
+            .map((member) => member.id)
+            .sort()
+            .join("\0"),
+        );
+        if (!admission) throw new Error("刮削影片缺少资源执行权");
+        if (!admission.keys.includes(movieTaskKey(prepared.movieId))) throw new Error("刮削目标影片缺少资源执行权");
         const executed = await fileScraper.executePreparedFiles(prepared, signal);
         return {
           ...executed,

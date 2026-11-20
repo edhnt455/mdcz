@@ -7,8 +7,10 @@ import {
 } from "@mdcz/shared/posterCrop";
 import sharp, { type Sharp } from "sharp";
 import { type MovieLibrary, writePublishedMovie } from "../library/registeredMedia";
+import { withMovieTask } from "../publication/mediaTasks";
 import { acquireOutputDirectories } from "../publication/outputMutex";
 import { toRootFileRef } from "../publication/outputRefs";
+import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import { DirectoryInventory } from "./DirectoryInventory";
 import { resolveExistingImageAsset } from "./download/assets/helpers";
@@ -81,41 +83,48 @@ export class PosterCropService {
     crop: NormalizedCropRegion,
     assets?: { thumb?: string; poster?: string },
     movie?: {
-      library: MovieLibrary;
+      library: MovieLibrary & Pick<PublicationOutputPort, "publicationSnapshot">;
       movieId: string;
       roots: readonly { id: string; hostPath: string }[];
     },
   ): Promise<PosterCropSession & { revision: string }> {
-    const session = await this.prepare(videoPath, assetNamingMode, assets);
-    const extension = extname(session.targetPath).toLowerCase() || ".jpg";
-    if (!supportedExtensions.has(extension)) throw new Error(`不支持的海报格式：${extension}`);
-    const pixelCrop = normalizedCropToPixels(crop, session.width, session.height);
-    const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
-    const data = await encodePoster(source, extension).toBuffer();
-    const inventory = new DirectoryInventory();
-    const release = await acquireOutputDirectories([session.targetPath], (directory) =>
-      inventory.canonicalDirectory(directory),
-    );
-    try {
-      await new WriteOutput().install([{ targetPath: session.targetPath, data }], {
-        protectedMediaFiles: [videoPath],
-        commit: async () => {
-          if (!movie) return;
-          const ref = toRootFileRef(session.targetPath, movie.roots);
-          await writePublishedMovie(movie.library, movie.movieId, [
-            {
-              kind: "poster",
-              uri: ref.relativePath,
-              rootId: ref.rootId,
-              relativePath: ref.relativePath,
-              published: true,
-            },
-          ]);
-        },
-      });
-    } finally {
-      release();
-    }
-    return { ...session, revision: String(Date.now()) };
+    return await withMovieTask(movie?.movieId ?? videoPath, "保存当前影片海报", async () => {
+      if (movie) {
+        const current = movie.library.publicationSnapshot({ paths: [videoPath] });
+        if (!current.files.some((file) => file.itemId === movie.movieId))
+          throw new Error("影片资源位置已变化，请刷新后重试");
+      }
+      const session = await this.prepare(videoPath, assetNamingMode, assets);
+      const extension = extname(session.targetPath).toLowerCase() || ".jpg";
+      if (!supportedExtensions.has(extension)) throw new Error(`不支持的海报格式：${extension}`);
+      const pixelCrop = normalizedCropToPixels(crop, session.width, session.height);
+      const source = sharp(session.sourcePath, { animated: false }).rotate().extract(pixelCrop);
+      const data = await encodePoster(source, extension).toBuffer();
+      const inventory = new DirectoryInventory();
+      const release = await acquireOutputDirectories([session.targetPath], (directory) =>
+        inventory.canonicalDirectory(directory),
+      );
+      try {
+        await new WriteOutput().install([{ targetPath: session.targetPath, data }], {
+          protectedMediaFiles: [videoPath],
+          commit: async () => {
+            if (!movie) return;
+            const ref = toRootFileRef(session.targetPath, movie.roots);
+            await writePublishedMovie(movie.library, movie.movieId, [
+              {
+                kind: "poster",
+                uri: ref.relativePath,
+                rootId: ref.rootId,
+                relativePath: ref.relativePath,
+                published: true,
+              },
+            ]);
+          },
+        });
+      } finally {
+        release();
+      }
+      return { ...session, revision: String(Date.now()) };
+    });
   }
 }

@@ -4,6 +4,7 @@ import path from "node:path";
 import { filesystemPathKey, isPathInside } from "@mdcz/media-store";
 import { type EmbyDeletionEventRow, type EmbyDeletionLibraryBinding, EmbyDeletionRepository } from "@mdcz/persistence";
 import { type MediaLibraryService, MediaPathBusyError, mediaPathOwnership } from "@mdcz/runtime/library";
+import { movieTaskKey, tryAcquireMediaTask } from "@mdcz/runtime/publication/mediaTasks";
 import type { Configuration, DeepPartial } from "@mdcz/shared/config";
 import {
   type EmbyDeletionConfig,
@@ -436,6 +437,15 @@ export class EmbyDeletionService {
           continue;
         }
         const snapshot = event.snapshotJson ? (JSON.parse(event.snapshotJson) as StrmCloudBinding) : undefined;
+        const file = event.path ? repository.findFile(event.path) : undefined;
+        const releaseTask = tryAcquireMediaTask(
+          file ? [movieTaskKey(file.itemId), `file:${file.id}`] : [],
+          "删除当前影片",
+        );
+        if (!releaseTask) {
+          repository.update(event.id, { nextAttemptAt: this.now() + CONFIRMATION_MS, result: "waiting_for_resource" });
+          continue;
+        }
         let release: () => void;
         try {
           release = mediaPathOwnership.acquireAll([
@@ -452,6 +462,7 @@ export class EmbyDeletionService {
               : []),
           ]);
         } catch (error) {
+          releaseTask();
           if (!(error instanceof MediaPathBusyError)) throw error;
           repository.update(event.id, { nextAttemptAt: this.now() + CONFIRMATION_MS, result: "waiting_for_resource" });
           continue;
@@ -487,6 +498,7 @@ export class EmbyDeletionService {
           .finally(() => {
             this.processing.delete(event.id);
             release();
+            releaseTask();
           });
         this.processing.set(event.id, task);
         launched.push(task);

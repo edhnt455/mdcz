@@ -5,6 +5,7 @@ import type { CrawlerProvider } from "@mdcz/runtime/crawler";
 import type { MediaLibraryService } from "@mdcz/runtime/library";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { withMovieTask } from "@mdcz/runtime/publication/mediaTasks";
 import {
   type AggregationService,
   applyImageWatermarks,
@@ -355,7 +356,7 @@ export class ScrapeService {
   }
 
   async nfoWrite(input: NfoWriteInput): Promise<NfoWriteResponse> {
-    return await this.taskGate.runManualWrite(() => this.nfoAdapter.write(input));
+    return await this.nfoAdapter.write(input);
   }
 
   async posterCropSession(id: string): Promise<PosterCropSessionResponse> {
@@ -364,10 +365,8 @@ export class ScrapeService {
   }
 
   async posterCropSave(input: PosterCropSaveInput): Promise<PosterCropSessionResponse> {
-    return await this.taskGate.runManualWrite(async () => {
-      const record = await this.toArtifactRecord(input.id);
-      return await this.posterCropAdapter.save(record, input);
-    });
+    const record = await this.toArtifactRecord(input.id);
+    return await this.posterCropAdapter.save(record, input);
   }
 
   async removeRecord(input: FileActionInput): Promise<FileActionResponse> {
@@ -379,9 +378,14 @@ export class ScrapeService {
       (candidate) => candidate.rootId === target.rootId && candidate.rootRelativePath === target.relativePath,
     );
     if (!file) throw new Error("未找到媒体库文件");
-    state.repositories.library.removeFile(file.id);
-    this.taskEvents.invalidate("scrape-history");
-    return { ok: true, ...target };
+    return await withMovieTask(entry.id, "移除当前影片记录", async () => {
+      const current = state.repositories.library.getFileById(file.id);
+      if (current.rootId !== target.rootId || current.rootRelativePath !== target.relativePath)
+        throw new Error("影片记录已变化，请刷新后重试");
+      state.repositories.library.removeFile(file.id);
+      this.taskEvents.invalidate("scrape-history");
+      return { ok: true, ...target };
+    });
   }
 
   async close(): Promise<void> {

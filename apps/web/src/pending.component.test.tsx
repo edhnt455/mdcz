@@ -1,15 +1,21 @@
 import type { PendingActionJob, PendingDetailResponse, PendingItemDto } from "@mdcz/shared/pending";
 import type { FailedSubtitleJob, SubtitleJob } from "@mdcz/shared/subtitleJobs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from "@tanstack/react-router";
-import { useState } from "react";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { toast } from "sonner";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 import { api } from "./client";
 import { queryKeys } from "./lib/queryKeys";
-import { PendingTasksPage } from "./pendingTasks";
+import { FileTasksPage } from "./pendingTasks";
 import { PendingPage } from "./routes/pending";
+import { Route as WorkbenchRoute } from "./routes/workbench";
 import { SubtitleTasksPage } from "./subtitleTasks";
 
 test("batch failure actions combine keyword and error filters with selection across pages", async () => {
@@ -24,7 +30,7 @@ test("batch failure actions combine keyword and error filters with selection acr
     jobs: [],
     total: 53,
     counts: { queued: 0, running: 0, completed: 0, failed: 53 },
-    waitingForManual: false,
+    waitingForResources: 0,
   });
   vi.spyOn(api.subtitleUpdates, "listFailed").mockResolvedValue(failures);
   const retry = vi.spyOn(api.subtitleUpdates, "retryBatch").mockResolvedValue({ queued: 50 });
@@ -144,7 +150,7 @@ test("subtitle and poster tasks show progress and let users clear completed reco
     jobs: offset ? (cleared ? [] : [completed]) : [running, failed],
     counts: { queued: 48, running: 1, completed: cleared ? 0 : 1, failed: 1 },
     total: cleared ? 50 : 51,
-    waitingForManual: true,
+    waitingForResources: 1,
   }));
   vi.spyOn(api.subtitleUpdates, "get").mockImplementation(async ({ id }) =>
     id === completed.taskId ? (cleared ? null : completed) : failed,
@@ -160,21 +166,45 @@ test("subtitle and poster tasks show progress and let users clear completed reco
       failed = { ...failed, status: "queued", stage: "queued", progress: "等待重试", error: null, warnings: [] };
       return { taskId: failed.taskId };
     });
-  function Workbench() {
-    const [id, select] = useState<string>();
-    return <PendingTasksPage selectedId={id} onSelect={select} />;
-  }
+  const root = createRootRoute();
+  const workbench = createRoute({
+    getParentRoute: () => root,
+    path: "/workbench",
+    validateSearch: WorkbenchRoute.options.validateSearch,
+    component: WorkbenchRoute.options.component,
+  });
+  const router = createRouter({
+    routeTree: root.addChildren([workbench]),
+    history: createMemoryHistory({ initialEntries: ["/workbench?intent=file_tasks"] }),
+  });
   const screen = await render(
     <QueryClientProvider client={client}>
-      <Workbench />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
   try {
+    const navigation = screen.getByRole("navigation", { name: "刮削 / 维护工作台" });
+    await expect.element(navigation).toBeVisible();
+    expect(Array.from(navigation.element().querySelectorAll("button"), (button) => button.textContent)).toEqual([
+      "刮削 / 维护工作台",
+      "待刮削",
+      "文件处理",
+      "字幕与海报",
+      "删除任务",
+    ]);
+    await expect.element(screen.getByRole("button", { name: "处理任务", exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "文件处理", exact: true })).toBeVisible();
     await screen.getByRole("button", { name: "字幕与海报", exact: true }).click();
+    await expect
+      .element(navigation.getByRole("button", { name: "字幕与海报" }))
+      .toHaveAttribute("aria-pressed", "true");
+    expect(router.state.location.search).toEqual({ intent: "subtitle_tasks" });
     await expect.element(screen.getByRole("heading", { name: "ABC-001.mp4" })).toBeVisible();
     await expect.element(screen.getByRole("status")).toHaveTextContent("裁剪并生成 poster 角标");
     await expect.element(screen.getByText("排队 48 · 运行 1 · 完成 1 · 失败 1", { exact: true })).toBeVisible();
-    await expect.element(screen.getByText("正在等待手动任务完成，结束后自动继续队列。", { exact: true })).toBeVisible();
+    await expect
+      .element(screen.getByText("1 项正在等待相关影片或输出目录，其他任务继续处理。", { exact: true }))
+      .toBeVisible();
     await screen.getByRole("button", { name: "下一页", exact: true }).click();
     await expect.element(screen.getByRole("heading", { name: "ABC-003.mp4" })).toBeVisible();
     expect(list).toHaveBeenCalledWith({ offset: 50, limit: 50 });
@@ -188,6 +218,8 @@ test("subtitle and poster tasks show progress and let users clear completed reco
     await expect.element(screen.getByText("第 1/1 页 · 共 50 条", { exact: true })).toBeVisible();
     await expect.element(screen.getByRole("heading", { name: "ABC-003.mp4" })).not.toBeInTheDocument();
     await screen.getByRole("button", { name: /ABC-002.mp4/ }).click();
+    expect(router.state.location.search).toEqual({ intent: "subtitle_tasks", jobId: failed.taskId });
+    await router.invalidate();
     await expect.element(screen.getByText("Permission denied", { exact: true })).toBeVisible();
     await expect.element(screen.getByText("图片来源不可用", { exact: true })).toBeVisible();
     await screen.getByRole("button", { name: "继续处理", exact: true }).click();
@@ -197,6 +229,8 @@ test("subtitle and poster tasks show progress and let users clear completed reco
     expect(retry).toHaveBeenLastCalledWith({ id: failed.taskId });
     await expect.element(screen.getByRole("button", { name: "继续处理", exact: true })).not.toBeInTheDocument();
     await screen.getByRole("button", { name: "文件处理", exact: true }).click();
+    await expect.element(navigation.getByRole("button", { name: "文件处理" })).toHaveAttribute("aria-pressed", "true");
+    expect(router.state.location.search).toEqual({ intent: "file_tasks" });
     await expect.element(screen.getByText("暂无处理任务。", { exact: true })).toBeVisible();
   } finally {
     screen.unmount();
@@ -379,7 +413,7 @@ test("new files stay in the workbench until accepted and background actions show
     });
     await screen.rerender(
       <QueryClientProvider client={client}>
-        <PendingTasksPage selectedId="action" onSelect={select} />
+        <FileTasksPage selectedId="action" onSelect={select} />
       </QueryClientProvider>,
     );
     await expect.element(screen.getByRole("heading", { name: item.fileName })).toBeVisible();

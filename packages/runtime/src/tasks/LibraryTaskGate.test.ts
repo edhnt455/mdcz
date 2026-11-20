@@ -1,48 +1,44 @@
 import { expect, it } from "vitest";
+import {
+  acquireMediaTask,
+  mediaTaskConflict,
+  movieTaskKey,
+  tryAcquireMediaTask,
+  withMovieTask,
+} from "../publication/mediaTasks";
 import { LibraryTaskGate } from "./LibraryTaskGate";
 
-it("hands the next admission to waiting manual tasks before resuming background work", async () => {
+it("serializes conflicting movies fairly while leaving independent work and paused sessions free", async () => {
   const gate = new LibraryTaskGate();
-  let subtitle = true;
-  let edit = false;
-  let maintenance = false;
-  gate.track("subtitle", () => subtitle);
-  gate.track("edit", () => edit);
+  let maintenance = true;
   gate.track("maintenance", () => maintenance);
-  const manual = gate.waitForSubtitle().then(() => {
-    gate.assertAvailable("edit");
-    edit = true;
-  });
-  const competing = gate.waitForSubtitle().then(() => gate.assertAvailable("maintenance"));
-  expect(gate.foregroundBusy).toBe(true);
-  subtitle = false;
-  gate.subtitleFinished();
-  expect(() => gate.assertAvailable("subtitle")).toThrow();
-  const outcomes = await Promise.allSettled([manual, competing]);
-  expect(outcomes.map((outcome) => outcome.status)).toEqual(["fulfilled", "rejected"]);
-  expect(() => gate.assertAvailable("subtitle")).toThrow("批量编辑");
-  edit = false;
-  maintenance = true;
-  expect(() => gate.assertAvailable("subtitle")).toThrow("维护任务");
+  expect(() => gate.assertAvailable("scrape")).toThrow("维护任务");
+  gate.assertAvailable("maintenance");
   maintenance = false;
-  expect(gate.foregroundBusy).toBe(false);
-  expect(() => gate.assertAvailable("subtitle")).not.toThrow();
-  await gate.waitForSubtitle();
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const save = gate.runManualWrite(() => held);
-  await Promise.resolve();
-  expect(gate.foregroundBusy).toBe(true);
-  expect(() => gate.assertAvailable("subtitle")).toThrow();
+  gate.assertAvailable("scrape");
+  const a = movieTaskKey("a");
+  const b = movieTaskKey("b");
+  const release = await acquireMediaTask([a], "刮削当前影片");
+  expect(mediaTaskConflict([a])).toBe("刮削当前影片");
+  expect(tryAcquireMediaTask([a], "字幕更新")).toBeNull();
+  const manual = acquireMediaTask([a], "编辑当前影片");
+  const independent = tryAcquireMediaTask([b], "字幕更新");
+  expect(independent).not.toBeNull();
+  independent?.();
+  const controller = new AbortController();
+  const aborted = acquireMediaTask([a, b], "已取消任务", controller.signal);
+  controller.abort(new Error("stopped"));
+  await expect(aborted).rejects.toThrow("stopped");
   release();
-  await save;
+  release();
+  expect(tryAcquireMediaTask([a], "字幕更新")).toBeNull();
+  (await manual)();
+  expect(mediaTaskConflict([a])).toBeNull();
   await expect(
-    gate.runManualWrite(async () => {
+    withMovieTask("a", "编辑", async () => {
+      await withMovieTask("a", "嵌套写入", async () => undefined);
       throw new Error("write failed");
     }),
   ).rejects.toThrow("write failed");
-  expect(gate.foregroundBusy).toBe(false);
-  expect(() => gate.assertAvailable("subtitle")).not.toThrow();
+  expect(mediaTaskConflict([a])).toBeNull();
 });

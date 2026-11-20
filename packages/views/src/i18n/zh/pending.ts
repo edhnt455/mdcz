@@ -3,7 +3,6 @@ import type { Messages } from "../en";
 export const pending: Messages["pending"] = {
   title: "待处理",
   newFiles: "待刮削",
-  tasks: "处理任务",
   fileTasks: "文件处理",
   subtitleTasks: "字幕与海报",
   subtitleQueue: {
@@ -33,8 +32,8 @@ export const pending: Messages["pending"] = {
     retryChanged: (queued: number, skipped: number) => `已入队 ${queued} 条 · ${skipped} 条状态已变化，已跳过`,
     clearCompleted: "清除已完成记录",
     cleared: "已清除成功任务记录",
-    waiting: "正在等待手动任务完成，结束后自动继续队列。",
-    priority: "逐条执行。当前条完成后，手动任务优先于后续排队任务。",
+    waiting: (count: number) => `${count} 项正在等待相关影片或输出目录，其他任务继续处理。`,
+    priority: "字幕任务逐条执行，仅等待相关影片或输出目录，其他影片可继续刮削。",
     counts: (queued: number, running: number, completed: number, failed: number) =>
       `排队 ${queued} · 运行 ${running} · 完成 ${completed} · 失败 ${failed}`,
     page: (page: number, pages: number, total: number) => `第 ${page}/${pages} 页 · 共 ${total} 条`,

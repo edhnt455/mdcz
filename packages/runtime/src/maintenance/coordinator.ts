@@ -26,7 +26,10 @@ import type { RootFileRef } from "@mdcz/shared/mediaRef";
 import type { LocalScanEntry, MaintenancePresetId } from "@mdcz/shared/types";
 import { writeCommittedMovie } from "../publication/committedMovie";
 import { PublicationConflictError } from "../publication/conflicts";
+import { mediaSnapshot } from "../publication/mediaSnapshot";
+import { withMovieTask } from "../publication/mediaTasks";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
+import { findSubtitleSidecars } from "../scrape/media/subtitleSidecars";
 import { admitMaintenanceGroups, type MovieOwnership } from "../scrape/movieGroups";
 import { isAbortError } from "../scrape/utils/abort";
 import { type LibraryTaskGate, TaskExecutor, type TaskExecutorContext } from "../tasks";
@@ -78,6 +81,7 @@ type MaintenanceMovieSelection = {
   ref: MaintenanceSessionRef;
   identity: MaintenanceMovieGroup;
   files?: LocalScanEntry[];
+  sourceState?: { paths: string[]; mediaPaths: string[]; fingerprint: string; publication: string };
 };
 
 type PreviewExecutionResult = {
@@ -280,7 +284,6 @@ export class MaintenanceSessionCoordinator {
     if (this.previewStarting || this.session?.isActive()) {
       throw new Error("已有进行中的维护会话，请先完成或停止当前会话");
     }
-    if (this.deps.taskGate.subtitleBusy) await this.deps.taskGate.waitForSubtitle();
     this.assertOpen();
     if (this.previewStarting || this.session?.isActive())
       throw new Error("已有进行中的维护会话，请先完成或停止当前会话");
@@ -425,7 +428,6 @@ export class MaintenanceSessionCoordinator {
     this.assertOpen();
     if (this.previewStarting) throw new Error("维护预览正在启动，请稍后重试");
     if (this.session !== session) throw new Error("当前维护任务已失效，请重新开始");
-    await this.deps.taskGate.waitForSubtitle();
     this.deps.taskGate.assertAvailable("maintenance");
     const apply = session.beginApply(input.selections);
     try {
@@ -669,10 +671,37 @@ export class MaintenanceSessionCoordinator {
         if (!selection) throw new Error(`维护影片选择已失效：${ref.rootId}:${ref.relativePath}`);
         return selection;
       });
+      const configuration = await this.runtime.getConfiguration();
       for (const selection of selections) {
         if (selection.files) continue;
-        const scanned = await scanMembers(this.runtime, this.deps.roots, selection.identity, scanController.signal);
-        selection.files = scanned;
+        await withMovieTask(
+          selection.identity.movieId,
+          "读取维护预览",
+          async () => {
+            const scanned = await scanMembers(this.runtime, this.deps.roots, selection.identity, scanController.signal);
+            const mediaPaths = scanned.map((file) => file.fileInfo.filePath);
+            const subtitles = await Promise.all(
+              mediaPaths.map((mediaPath) => findSubtitleSidecars(mediaPath, undefined, configuration.scrape)),
+            );
+            const paths = [
+              ...subtitles.flatMap((sidecars) => sidecars.map((sidecar) => sidecar.path)),
+              ...scanned.flatMap((file) => [
+                file.fileInfo.filePath,
+                ...file.nfoPaths,
+                ...Object.values(file.assets).flatMap((value) => value ?? []),
+              ]),
+            ];
+            const { library } = await this.deps.persistence.get();
+            selection.sourceState = {
+              paths,
+              mediaPaths,
+              fingerprint: await mediaSnapshot(paths),
+              publication: JSON.stringify(library.publicationSnapshot({ paths, includeOwners: true })),
+            };
+            selection.files = scanned;
+          },
+          scanController.signal,
+        );
       }
       let current = this.assertCurrent(sessionId, ["running", "paused"]);
       if (current.status === "paused") return;
@@ -791,6 +820,7 @@ export class MaintenanceSessionCoordinator {
             const publicationRoots = await this.deps.roots.list();
             const { library } = await this.deps.persistence.get();
             const applied = await this.runtime.applyEntry({
+              expectedState: this.previewSelections.get(refKey(active.preview))?.sourceState,
               presetId: latest.presetId,
               entry,
               committed,

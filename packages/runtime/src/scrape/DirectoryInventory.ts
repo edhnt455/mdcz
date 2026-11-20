@@ -27,6 +27,21 @@ export class DirectoryInventory {
   private readonly nfos = new Map<string, Promise<ParsedNfoSnapshot | undefined>>();
   private readonly nfoContents = new Map<string, Promise<string | undefined>>();
 
+  async refreshMetadata(paths: readonly string[]): Promise<void> {
+    const directories = new Set(
+      await Promise.all(
+        paths.map(async (filePath) => filesystemPathKey(await this.canonicalDirectory(dirname(filePath)))),
+      ),
+    );
+    for (const directory of directories) {
+      this.directories.delete(directory);
+      this.media.delete(directory);
+    }
+    for (const cache of [this.fileObservations, this.nfos, this.nfoContents]) {
+      for (const key of cache.keys()) if (directories.has(dirname(key))) cache.delete(key);
+    }
+  }
+
   observeDirectory(path: string, canonicalPath: string, entries: readonly Dirent[]): void {
     this.directoryPaths.set(filesystemPathKey(path), Promise.resolve(canonicalPath));
     const key = filesystemPathKey(canonicalPath);

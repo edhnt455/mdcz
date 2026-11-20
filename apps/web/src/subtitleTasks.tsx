@@ -77,7 +77,9 @@ export function SubtitleTasksPage({ selectedId, onSelect }: { selectedId?: strin
           </div>
         </div>
         {counts ? <p>{queue.counts(counts.queued, counts.running, counts.completed, counts.failed)}</p> : null}
-        <p className="text-sm text-muted-foreground">{jobs.data?.waitingForManual ? queue.waiting : queue.priority}</p>
+        <p className="text-sm text-muted-foreground">
+          {jobs.data?.waitingForResources ? queue.waiting(jobs.data.waitingForResources) : queue.priority}
+        </p>
         {jobs.error ? (
           <p role="alert" className="text-destructive">
             {toErrorMessage(jobs.error)}

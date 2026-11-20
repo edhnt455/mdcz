@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { acquireMediaTask, movieTaskKey } from "@mdcz/runtime/publication/mediaTasks";
 import { type AggregationResult, ImageWatermarkService, LlmApiClient, TranslateService } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
@@ -589,7 +590,18 @@ describe("buildServer scrape integration", () => {
 
     await scrape(["ABC-123.mp4", "ABC-123-4K.mp4", "ABC-123(2).strm", "ABC-123(1).strm"]);
     await writeFile(join(root, "ABC-123-1080P.mp4"), "hd");
-    await scrape(["ABC-123-1080P.mp4"]);
+    const [existing] = await repositories.library.listEntries();
+    const beforeVersion = await readFile(join(output, "movie.nfo"));
+    const releaseMovie = await acquireMediaTask([movieTaskKey(existing.id)], "字幕更新当前影片");
+    const laterVersion = scrape(["ABC-123-1080P.mp4"]);
+    try {
+      await expect.poll(async () => (await services.scrape.liveRuns()).runs[0]?.latestStage?.stage).toBe("search");
+      expect(await readFile(join(output, "movie.nfo"))).toEqual(beforeVersion);
+      expect(await readFile(join(root, "ABC-123-1080P.mp4"), "utf8")).toBe("hd");
+    } finally {
+      releaseMovie();
+    }
+    await laterVersion;
     await scrape([
       `${relativeOutput}/ABC-123.mp4`,
       `${relativeOutput}/ABC-123 - Version 2.strm`,

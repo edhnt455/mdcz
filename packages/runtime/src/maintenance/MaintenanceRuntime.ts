@@ -29,6 +29,8 @@ import type { CommittedMovie } from "../publication/committedMovie";
 import { toCommittedMovie } from "../publication/committedMovie";
 import { assertMovieDirectoryOwnership, PublicationConflictError } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
+import { mediaSnapshot } from "../publication/mediaSnapshot";
+import { withMovieTask } from "../publication/mediaTasks";
 import {
   MANAGED_MOVIE_ASSET_KINDS,
   type MovieArtifacts,
@@ -53,6 +55,7 @@ import {
 import { AggregationService, type CrawlerPort, mergeSiteData, type SiteResultSink } from "../scrape/aggregation";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
+import { findSubtitleSidecars } from "../scrape/media/subtitleSidecars";
 import { editedKeys } from "../scrape/nfoEdits";
 import { assignVersionLabels } from "../scrape/organize/versionLabels";
 import { prepareOnlineMetadata } from "../scrape/prepareOnlineMetadata";
@@ -134,6 +137,7 @@ export interface MaintenanceRuntimePreviewItem {
 }
 
 export interface MaintenanceRuntimeApplyEntryInput {
+  expectedState?: { paths: string[]; mediaPaths: string[]; fingerprint: string; publication: string };
   presetId: MaintenancePresetId;
   entry: LocalScanEntry;
   files?: LocalScanEntry[];
@@ -451,334 +455,362 @@ export class MaintenanceRuntime {
   }
 
   async applyEntry(input: MaintenanceRuntimeApplyEntryInput): Promise<MaintenanceRuntimeApplyResult> {
-    const preset = getMaintenancePreset(input.presetId);
-    const { entry, files = [entry], committed, publication, signal } = input;
-    const config = await this.getPresetConfig(input.presetId);
-    throwIfAborted(signal);
+    return await withMovieTask(
+      input.publication.identity.movieId,
+      "维护当前影片",
+      async () => {
+        const config = await this.getPresetConfig(input.presetId);
+        const expected = input.expectedState;
+        const subtitles = expected
+          ? await Promise.all(
+              expected.mediaPaths.map((mediaPath) => findSubtitleSidecars(mediaPath, undefined, config.scrape)),
+            )
+          : [];
+        if (
+          expected &&
+          ((await mediaSnapshot([
+            ...expected.paths,
+            ...subtitles.flatMap((sidecars) => sidecars.map((sidecar) => sidecar.path)),
+          ])) !== expected.fingerprint ||
+            JSON.stringify(
+              input.publication.library.publicationSnapshot({ paths: expected.paths, includeOwners: true }),
+            ) !== expected.publication)
+        )
+          throw new Error("维护预览涉及的文件或记录已变化，请刷新维护预览后重试");
+        const preset = getMaintenancePreset(input.presetId);
+        const { entry, files = [entry], committed, publication, signal } = input;
+        throwIfAborted(signal);
 
-    const crawlerData =
-      committed?.crawlerData ??
-      entry.crawlerData ??
-      (preset.output === "none"
-        ? {
-            title: entry.fileInfo.fileName,
-            number: entry.fileInfo.number,
-            actors: [],
-            genres: [],
-            scene_images: [],
-          }
-        : undefined);
-    if (!crawlerData) throw new Error("维护输出需要影片元数据");
+        const crawlerData =
+          committed?.crawlerData ??
+          entry.crawlerData ??
+          (preset.output === "none"
+            ? {
+                title: entry.fileInfo.fileName,
+                number: entry.fileInfo.number,
+                actors: [],
+                genres: [],
+                scene_images: [],
+              }
+            : undefined);
+        if (!crawlerData) throw new Error("维护输出需要影片元数据");
 
-    const plans = await this.buildPlans(files, config, preset, crawlerData, signal);
-    const sharedPlan = plans[this.memberIndex(files, entry)];
-    const members = await Promise.all(
-      files.map(async (file, index) => {
-        const layout = plans[index].plan;
-        if (!layout) throw new Error(`维护文件缺少已解析的输出布局：${file.fileId}`);
-        const { sourceVideoPath: _sourceVideoPath, ...outputLayout } = layout;
-        return {
-          source: file.ref,
-          fileId: file.fileId,
-          fileInfo: file.fileInfo,
-          layout: outputLayout,
-          assetLayout: await resolvePublicationAssetLayout({
-            inventory: this.inventory,
-            layout,
-            config,
-            crawlerData,
-            existingAssets: file.assets,
-            assetDecisions: committed?.assetDecisions,
-            movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : undefined,
-          }),
-          existingAssets: file.assets,
-          existingNfoPath: file.nfoPath,
-        };
-      }),
-    );
-
-    let stagingDir: string | undefined;
-    try {
-      const stagingParent = members[0].layout.metadataDir;
-      if (preset.dataSource === "online") {
-        await mkdir(stagingParent, { recursive: true });
-        stagingDir = await createStagingDirectory(stagingParent);
-      }
-
-      const preparedOutputData = stagingDir
-        ? await prepareOutputCrawlerData({
-            crawlerData,
-            enabled: Boolean(sharedPlan.plan),
-            signal,
-          })
-        : { data: crawlerData };
-      throwIfAborted(signal);
-
-      let preparedCrawlerData = preparedOutputData.data ?? crawlerData;
-
-      let downloadedAssets: DownloadedAssets = {
-        poster: undefined,
-        fanart: undefined,
-        thumb: undefined,
-        trailer: undefined,
-        sceneImages: [],
-        downloaded: [],
-      };
-
-      if (stagingDir && preset.dataSource === "online") {
-        if (!this.deps.downloadManager) {
-          throw new Error("在线预设缺少下载服务");
-        }
-        const downloaded = await downloadCrawlerAssets({
-          config,
-          crawlerData: preparedCrawlerData,
-          downloadManager: this.deps.downloadManager,
-          fileInfo: entry.fileInfo,
-          imageAlternatives: committed?.imageAlternatives,
-          movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : entry.fileInfo.fileName,
-          outputDir: stagingDir,
-          existingAssetDir: stagingParent,
-          existingAssets: entry.assets,
-          inventory: this.inventory,
-          sources: undefined,
-          callbacks: {
-            signal,
-            assetDecisions: committed?.assetDecisions,
-            forceReplace: {
-              thumb: committed?.assetDecisions?.thumb === "replace",
-              poster: committed?.assetDecisions?.poster === "replace",
-              fanart: committed?.assetDecisions?.fanart === "replace",
-            },
-          },
-        });
-        downloadedAssets = downloaded.assets;
-        preparedCrawlerData = downloaded.crawlerData;
-      }
-      throwIfAborted(signal);
-
-      if (this.deps.postProcessAssets && stagingDir && preset.dataSource === "online") {
-        downloadedAssets = await this.deps.postProcessAssets({
-          assets: downloadedAssets,
-          configuration: config,
-          crawlerData: preparedCrawlerData,
-          fileInfo: entry.fileInfo,
-          localState: entry.nfoLocalState,
-          signal,
-          signalService: this.deps.signalService,
-        });
-      }
-
-      const published = await prepareMovieArtifacts({
-        inventory: this.inventory,
-        roots: publication.roots,
-        members,
-        retainedMovieAssets: retainedRegisteredFeatures(members, publication.identity.assets),
-        stagingDir,
-        downloadedAssets,
-        assetDecisions: committed?.assetDecisions,
-        relocateExistingArtifacts: input.presetId === "local_organize",
-        ownedAssetPaths: await Promise.all(
-          publication.identity.assets
-            .filter((asset) => asset.published && MANAGED_MOVIE_ASSET_KINDS.has(asset.kind))
-            .map(async (asset) => {
-              const root = publication.roots.find((root) => root.id === asset.rootId);
-              if (!root) throw new Error(`未找到发布根目录：${asset.rootId}`);
-              return resolveRootRelativePath(root, asset.relativePath);
-            }),
-        ),
-        nfoNaming: config.download.nfoNaming,
-        writeNfo: async (assets, writeFile) =>
-          preset.output === "none"
-            ? (entry.nfoPath ?? files.find((file) => file.nfoPath)?.nfoPath)
-            : await writePreparedNfo({
-                assets,
+        const plans = await this.buildPlans(files, config, preset, crawlerData, signal);
+        const sharedPlan = plans[this.memberIndex(files, entry)];
+        const members = await Promise.all(
+          files.map(async (file, index) => {
+            const layout = plans[index].plan;
+            if (!layout) throw new Error(`维护文件缺少已解析的输出布局：${file.fileId}`);
+            const { sourceVideoPath: _sourceVideoPath, ...outputLayout } = layout;
+            return {
+              source: file.ref,
+              fileId: file.fileId,
+              fileInfo: file.fileInfo,
+              layout: outputLayout,
+              assetLayout: await resolvePublicationAssetLayout({
+                inventory: this.inventory,
+                layout,
                 config,
-                crawlerData: preparedCrawlerData,
-                enabled: Boolean((preset.dataSource !== "local" || config.download.generateNfo) && sharedPlan.plan),
-                fileInfo: entry.fileInfo,
-                localState: entry.nfoLocalState,
-                buildTags: buildMovieTags,
-                nfoGenerator: this.deps.nfoGenerator,
-                nfoPath: sharedPlan.plan?.nfoPath,
-                sourceVideoPath: entry.fileInfo.filePath,
-                sources: undefined,
-                writeFile,
+                crawlerData,
+                existingAssets: file.assets,
+                assetDecisions: committed?.assetDecisions,
+                movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : undefined,
               }),
-      });
-      throwIfAborted(signal);
-
-      if (!published.files.some((candidate) => candidate.fileId === entry.fileId))
-        throw new Error("维护发布需要选中的媒体成员");
-      if (preset.output === "none" && (published.moves.length || published.artifacts.length))
-        throw new Error("导入本地元数据不能修改文件");
-
-      const movieAssets = [...published.movieAssets];
-      if (preset.output === "none") {
-        // The shared layout keeps one NFO and image set per directory; import must also own every other member's set.
-        const registered = new Set(
-          movieAssets.flatMap((asset) =>
-            asset.type === "local" ? [`${asset.kind}\0${asset.file.rootId}\0${asset.file.relativePath}`] : [],
-          ),
+              existingAssets: file.assets,
+              existingNfoPath: file.nfoPath,
+            };
+          }),
         );
-        for (const file of files) {
-          for (const [kind, paths] of [
-            ["nfo", file.nfoPaths],
-            ["thumb", [file.assets.thumb]],
-            ["poster", [file.assets.poster]],
-            ["fanart", [file.assets.fanart]],
-            ["trailer", [file.assets.trailer]],
-            ["scene", file.assets.sceneImages],
-          ] as const) {
-            for (const path of paths) {
-              if (!path) continue;
-              const ref = toRootFileRef(path, publication.roots);
-              const key = `${kind}\0${ref.rootId}\0${ref.relativePath}`;
-              if (registered.has(key)) continue;
-              registered.add(key);
-              movieAssets.push({ type: "local", kind, file: ref });
+
+        let stagingDir: string | undefined;
+        try {
+          const stagingParent = members[0].layout.metadataDir;
+          if (preset.dataSource === "online") {
+            await mkdir(stagingParent, { recursive: true });
+            stagingDir = await createStagingDirectory(stagingParent);
+          }
+
+          const preparedOutputData = stagingDir
+            ? await prepareOutputCrawlerData({
+                crawlerData,
+                enabled: Boolean(sharedPlan.plan),
+                signal,
+              })
+            : { data: crawlerData };
+          throwIfAborted(signal);
+
+          let preparedCrawlerData = preparedOutputData.data ?? crawlerData;
+
+          let downloadedAssets: DownloadedAssets = {
+            poster: undefined,
+            fanart: undefined,
+            thumb: undefined,
+            trailer: undefined,
+            sceneImages: [],
+            downloaded: [],
+          };
+
+          if (stagingDir && preset.dataSource === "online") {
+            if (!this.deps.downloadManager) {
+              throw new Error("在线预设缺少下载服务");
+            }
+            const downloaded = await downloadCrawlerAssets({
+              config,
+              crawlerData: preparedCrawlerData,
+              downloadManager: this.deps.downloadManager,
+              fileInfo: entry.fileInfo,
+              imageAlternatives: committed?.imageAlternatives,
+              movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : entry.fileInfo.fileName,
+              outputDir: stagingDir,
+              existingAssetDir: stagingParent,
+              existingAssets: entry.assets,
+              inventory: this.inventory,
+              sources: undefined,
+              callbacks: {
+                signal,
+                assetDecisions: committed?.assetDecisions,
+                forceReplace: {
+                  thumb: committed?.assetDecisions?.thumb === "replace",
+                  poster: committed?.assetDecisions?.poster === "replace",
+                  fanart: committed?.assetDecisions?.fanart === "replace",
+                },
+              },
+            });
+            downloadedAssets = downloaded.assets;
+            preparedCrawlerData = downloaded.crawlerData;
+          }
+          throwIfAborted(signal);
+
+          if (this.deps.postProcessAssets && stagingDir && preset.dataSource === "online") {
+            downloadedAssets = await this.deps.postProcessAssets({
+              assets: downloadedAssets,
+              configuration: config,
+              crawlerData: preparedCrawlerData,
+              fileInfo: entry.fileInfo,
+              localState: entry.nfoLocalState,
+              signal,
+              signalService: this.deps.signalService,
+            });
+          }
+
+          const published = await prepareMovieArtifacts({
+            inventory: this.inventory,
+            roots: publication.roots,
+            members,
+            retainedMovieAssets: retainedRegisteredFeatures(members, publication.identity.assets),
+            stagingDir,
+            downloadedAssets,
+            assetDecisions: committed?.assetDecisions,
+            relocateExistingArtifacts: input.presetId === "local_organize",
+            ownedAssetPaths: await Promise.all(
+              publication.identity.assets
+                .filter((asset) => asset.published && MANAGED_MOVIE_ASSET_KINDS.has(asset.kind))
+                .map(async (asset) => {
+                  const root = publication.roots.find((root) => root.id === asset.rootId);
+                  if (!root) throw new Error(`未找到发布根目录：${asset.rootId}`);
+                  return resolveRootRelativePath(root, asset.relativePath);
+                }),
+            ),
+            nfoNaming: config.download.nfoNaming,
+            writeNfo: async (assets, writeFile) =>
+              preset.output === "none"
+                ? (entry.nfoPath ?? files.find((file) => file.nfoPath)?.nfoPath)
+                : await writePreparedNfo({
+                    assets,
+                    config,
+                    crawlerData: preparedCrawlerData,
+                    enabled: Boolean((preset.dataSource !== "local" || config.download.generateNfo) && sharedPlan.plan),
+                    fileInfo: entry.fileInfo,
+                    localState: entry.nfoLocalState,
+                    buildTags: buildMovieTags,
+                    nfoGenerator: this.deps.nfoGenerator,
+                    nfoPath: sharedPlan.plan?.nfoPath,
+                    sourceVideoPath: entry.fileInfo.filePath,
+                    sources: undefined,
+                    writeFile,
+                  }),
+          });
+          throwIfAborted(signal);
+
+          if (!published.files.some((candidate) => candidate.fileId === entry.fileId))
+            throw new Error("维护发布需要选中的媒体成员");
+          if (preset.output === "none" && (published.moves.length || published.artifacts.length))
+            throw new Error("导入本地元数据不能修改文件");
+
+          const movieAssets = [...published.movieAssets];
+          if (preset.output === "none") {
+            // The shared layout keeps one NFO and image set per directory; import must also own every other member's set.
+            const registered = new Set(
+              movieAssets.flatMap((asset) =>
+                asset.type === "local" ? [`${asset.kind}\0${asset.file.rootId}\0${asset.file.relativePath}`] : [],
+              ),
+            );
+            for (const file of files) {
+              for (const [kind, paths] of [
+                ["nfo", file.nfoPaths],
+                ["thumb", [file.assets.thumb]],
+                ["poster", [file.assets.poster]],
+                ["fanart", [file.assets.fanart]],
+                ["trailer", [file.assets.trailer]],
+                ["scene", file.assets.sceneImages],
+              ] as const) {
+                for (const path of paths) {
+                  if (!path) continue;
+                  const ref = toRootFileRef(path, publication.roots);
+                  const key = `${kind}\0${ref.rootId}\0${ref.relativePath}`;
+                  if (registered.has(key)) continue;
+                  registered.add(key);
+                  movieAssets.push({ type: "local", kind, file: ref });
+                }
+              }
+            }
+          }
+          const movie = toCommittedMovie(
+            {
+              ...published,
+              movieId: publication.identity.movieId,
+              movieAssets,
+              // Imported NFOs and images become MDCz-owned so later refreshes may rewrite them.
+              publishedTargets:
+                preset.output === "none"
+                  ? movieAssets.flatMap((asset) =>
+                      asset.type === "local" && MANAGED_MOVIE_ASSET_KINDS.has(asset.kind) ? [asset.file] : [],
+                    )
+                  : published.publishedTargets,
+            },
+            { crawlerData: preparedCrawlerData, sources: undefined },
+          );
+
+          const cleanupPaths = [
+            ...new Set(published.artifacts.flatMap((artifact) => artifact.removeSourcesAfterCommit ?? [])),
+          ];
+          const unlock = await acquireOutputDirectories(
+            [
+              ...published.moves.map((move) => move.targetPath),
+              ...published.artifacts.map((artifact) => artifact.targetPath),
+              ...cleanupPaths,
+            ],
+            (directory) => this.inventory.canonicalDirectory(directory),
+            preset.output === "move" ? published.metadataDirectories : [],
+          );
+          try {
+            throwIfAborted(signal);
+            if (preset.output === "move" && this.target) {
+              await assertMovieDirectoryOwnership({
+                target: { ...this.target, placement: "move" },
+                movieId: movie.id,
+                sourcePaths: files.map((file) => file.fileInfo.filePath),
+                directories: published.metadataDirectories,
+                library: publication.library,
+              });
+            }
+            const actorCopies = published.artifacts.flatMap((artifact) =>
+              "sourcePath" in artifact && basename(dirname(artifact.targetPath)) === ".actors" ? [artifact] : [],
+            );
+            const ownershipPaths = [
+              ...new Set([...cleanupPaths, ...actorCopies.map((artifact) => artifact.targetPath)]),
+            ];
+            let preservedSourcePaths: string[] = [];
+            if (ownershipPaths.length) {
+              const entryPaths = new Map(
+                await Promise.all(
+                  ownershipPaths.map(async (path) => [path, await this.inventory.entryPath(path)] as const),
+                ),
+              );
+              const snapshot = publication.library.publicationSnapshot({
+                paths: [...ownershipPaths, ...entryPaths.values()],
+              });
+              const shared = new Set(
+                await Promise.all(
+                  [...snapshot.files, ...snapshot.assets]
+                    .filter((row) => row.itemId !== movie.id)
+                    .map(async (row) => {
+                      const root = publication.roots.find((candidate) => candidate.id === row.rootId);
+                      if (!root) throw new Error(`未找到发布根目录：${row.rootId}`);
+                      return filesystemPathKey(
+                        await this.inventory.entryPath(resolveRootRelativePath(root, row.relativePath)),
+                      );
+                    }),
+                ),
+              );
+              const isShared = (path: string) => shared.has(filesystemPathKey(entryPaths.get(path) ?? path));
+              for (const copy of actorCopies) {
+                if (!isShared(copy.targetPath)) continue;
+                const exists = await lstat(copy.targetPath).then(
+                  () => true,
+                  (error: NodeJS.ErrnoException) => {
+                    if (error.code === "ENOENT") return false;
+                    throw error;
+                  },
+                );
+                if (exists)
+                  throw new PublicationConflictError(copy.sourcePath, copy.targetPath, "其他影片仍在使用此演员照片");
+              }
+              preservedSourcePaths = cleanupPaths.filter(isShared);
+              const preserved = new Set(preservedSourcePaths);
+              for (const artifact of published.artifacts) {
+                artifact.removeSourcesAfterCommit = artifact.removeSourcesAfterCommit?.filter(
+                  (path) => !preserved.has(path),
+                );
+              }
+            }
+            const validate = async () => {
+              throwIfAborted(signal);
+              publication.validate?.(movie);
+              await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));
+              throwIfAborted(signal);
+            };
+            const commit = () => publication.commit(movie);
+            if (published.moves.length) {
+              await new MoveOutput(undefined, this.deps.logger).install({
+                reorganize: true,
+                moves: published.moves,
+                artifacts: published.artifacts,
+                protectedMediaFiles: published.protectedMediaFiles,
+                preservedSourcePaths,
+                validate,
+                commit,
+              });
+            } else {
+              await new WriteOutput(undefined, this.deps.logger).install(published.artifacts, {
+                protectedMediaFiles: published.protectedMediaFiles,
+                validate,
+                commit,
+              });
+            }
+          } finally {
+            unlock();
+          }
+
+          if (preset.output !== "none")
+            this.deps.onPublished?.(published.metadataDirectories, config, preparedCrawlerData);
+          return {
+            status: "success",
+            crawlerData: preparedCrawlerData,
+            output: published,
+            error: null,
+          };
+        } catch (error) {
+          if (isAbortError(error) || error instanceof PublicationConflictError || publication === undefined)
+            throw error;
+          (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
+            `应用维护条目 ${entry.fileInfo.filePath} 失败：${toErrorMessage(error)}`,
+          );
+          return { status: "failed", error: toErrorMessage(error) };
+        } finally {
+          if (stagingDir) {
+            try {
+              await removeStagingDirectory(stagingDir);
+            } catch (error) {
+              (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
+                `移除维护暂存目录 ${stagingDir} 失败：${toErrorMessage(error)}`,
+              );
             }
           }
         }
-      }
-      const movie = toCommittedMovie(
-        {
-          ...published,
-          movieId: publication.identity.movieId,
-          movieAssets,
-          // Imported NFOs and images become MDCz-owned so later refreshes may rewrite them.
-          publishedTargets:
-            preset.output === "none"
-              ? movieAssets.flatMap((asset) =>
-                  asset.type === "local" && MANAGED_MOVIE_ASSET_KINDS.has(asset.kind) ? [asset.file] : [],
-                )
-              : published.publishedTargets,
-        },
-        { crawlerData: preparedCrawlerData, sources: undefined },
-      );
-
-      const cleanupPaths = [
-        ...new Set(published.artifacts.flatMap((artifact) => artifact.removeSourcesAfterCommit ?? [])),
-      ];
-      const unlock = await acquireOutputDirectories(
-        [
-          ...published.moves.map((move) => move.targetPath),
-          ...published.artifacts.map((artifact) => artifact.targetPath),
-          ...cleanupPaths,
-        ],
-        (directory) => this.inventory.canonicalDirectory(directory),
-        preset.output === "move" ? published.metadataDirectories : [],
-      );
-      try {
-        throwIfAborted(signal);
-        if (preset.output === "move" && this.target) {
-          await assertMovieDirectoryOwnership({
-            target: { ...this.target, placement: "move" },
-            movieId: movie.id,
-            sourcePaths: files.map((file) => file.fileInfo.filePath),
-            directories: published.metadataDirectories,
-            library: publication.library,
-          });
-        }
-        const actorCopies = published.artifacts.flatMap((artifact) =>
-          "sourcePath" in artifact && basename(dirname(artifact.targetPath)) === ".actors" ? [artifact] : [],
-        );
-        const ownershipPaths = [...new Set([...cleanupPaths, ...actorCopies.map((artifact) => artifact.targetPath)])];
-        let preservedSourcePaths: string[] = [];
-        if (ownershipPaths.length) {
-          const entryPaths = new Map(
-            await Promise.all(
-              ownershipPaths.map(async (path) => [path, await this.inventory.entryPath(path)] as const),
-            ),
-          );
-          const snapshot = publication.library.publicationSnapshot({
-            paths: [...ownershipPaths, ...entryPaths.values()],
-          });
-          const shared = new Set(
-            await Promise.all(
-              [...snapshot.files, ...snapshot.assets]
-                .filter((row) => row.itemId !== movie.id)
-                .map(async (row) => {
-                  const root = publication.roots.find((candidate) => candidate.id === row.rootId);
-                  if (!root) throw new Error(`未找到发布根目录：${row.rootId}`);
-                  return filesystemPathKey(
-                    await this.inventory.entryPath(resolveRootRelativePath(root, row.relativePath)),
-                  );
-                }),
-            ),
-          );
-          const isShared = (path: string) => shared.has(filesystemPathKey(entryPaths.get(path) ?? path));
-          for (const copy of actorCopies) {
-            if (!isShared(copy.targetPath)) continue;
-            const exists = await lstat(copy.targetPath).then(
-              () => true,
-              (error: NodeJS.ErrnoException) => {
-                if (error.code === "ENOENT") return false;
-                throw error;
-              },
-            );
-            if (exists)
-              throw new PublicationConflictError(copy.sourcePath, copy.targetPath, "其他影片仍在使用此演员照片");
-          }
-          preservedSourcePaths = cleanupPaths.filter(isShared);
-          const preserved = new Set(preservedSourcePaths);
-          for (const artifact of published.artifacts) {
-            artifact.removeSourcesAfterCommit = artifact.removeSourcesAfterCommit?.filter(
-              (path) => !preserved.has(path),
-            );
-          }
-        }
-        const validate = async () => {
-          throwIfAborted(signal);
-          publication.validate?.(movie);
-          await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));
-          throwIfAborted(signal);
-        };
-        const commit = () => publication.commit(movie);
-        if (published.moves.length) {
-          await new MoveOutput(undefined, this.deps.logger).install({
-            reorganize: true,
-            moves: published.moves,
-            artifacts: published.artifacts,
-            protectedMediaFiles: published.protectedMediaFiles,
-            preservedSourcePaths,
-            validate,
-            commit,
-          });
-        } else {
-          await new WriteOutput(undefined, this.deps.logger).install(published.artifacts, {
-            protectedMediaFiles: published.protectedMediaFiles,
-            validate,
-            commit,
-          });
-        }
-      } finally {
-        unlock();
-      }
-
-      if (preset.output !== "none") this.deps.onPublished?.(published.metadataDirectories, config, preparedCrawlerData);
-      return {
-        status: "success",
-        crawlerData: preparedCrawlerData,
-        output: published,
-        error: null,
-      };
-    } catch (error) {
-      if (isAbortError(error) || error instanceof PublicationConflictError || publication === undefined) throw error;
-      (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
-        `应用维护条目 ${entry.fileInfo.filePath} 失败：${toErrorMessage(error)}`,
-      );
-      return { status: "failed", error: toErrorMessage(error) };
-    } finally {
-      if (stagingDir) {
-        try {
-          await removeStagingDirectory(stagingDir);
-        } catch (error) {
-          (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
-            `移除维护暂存目录 ${stagingDir} 失败：${toErrorMessage(error)}`,
-          );
-        }
-      }
-    }
+      },
+      input.signal,
+    );
   }
 
   private memberIndex(files: readonly LocalScanEntry[], entry: LocalScanEntry): number {

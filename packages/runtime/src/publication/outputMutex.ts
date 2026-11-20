@@ -1,8 +1,8 @@
 import { basename, dirname, join } from "node:path";
 import { canonicalPath, filesystemPathKey } from "@mdcz/media-store";
 
-type Waiter = { promise: Promise<void>; release: () => void };
-const tails = new Map<string, Waiter>();
+import { acquireMediaTask } from "./mediaTasks";
+
 let registration = Promise.resolve();
 
 const resolveCanonicalOutputDirectory = async (directory: string): Promise<string> => {
@@ -15,49 +15,37 @@ const resolveCanonicalOutputDirectory = async (directory: string): Promise<strin
   }
 };
 
-export const acquireOutputDirectories = async (
+export async function outputDirectoryKeys(
   targetPaths: readonly string[],
   canonicalDirectory: (directory: string) => Promise<string> = resolveCanonicalOutputDirectory,
   metadataDirectories: readonly string[] = [],
-): Promise<() => void> => {
-  let waiters: Array<{ key: string; previous: Promise<void>; waiter: Waiter }> = [];
-  let releaseRegistration!: () => void;
-  const previousRegistration = registration;
-  registration = new Promise<void>((resolve) => {
-    releaseRegistration = resolve;
-  });
-  try {
-    await previousRegistration;
-    const keys = [
-      ...new Set(
-        await Promise.all(
-          [...targetPaths.map((targetPath) => dirname(targetPath)), ...metadataDirectories].map(async (directory) =>
-            filesystemPathKey(await canonicalDirectory(directory)),
-          ),
+): Promise<string[]> {
+  return [
+    ...new Set(
+      await Promise.all(
+        [...targetPaths.map((targetPath) => dirname(targetPath)), ...metadataDirectories].map(
+          async (directory) => `directory:${filesystemPathKey(await canonicalDirectory(directory))}`,
         ),
       ),
-    ].sort();
-    waiters = keys.map((key) => {
-      const previous = (tails.get(key)?.promise ?? Promise.resolve()).catch(() => {});
-      let release!: () => void;
-      const promise = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const waiter = { promise, release };
-      tails.set(key, waiter);
-      return { key, previous, waiter };
-    });
+    ),
+  ].sort();
+}
+
+export const acquireOutputDirectories = async (
+  targetPaths: readonly string[],
+  canonicalDirectory?: (directory: string) => Promise<string>,
+  metadataDirectories: readonly string[] = [],
+): Promise<() => void> => {
+  const previous = registration;
+  let registered!: () => void;
+  registration = new Promise<void>((resolve) => {
+    registered = resolve;
+  });
+  await previous;
+  try {
+    const keys = await outputDirectoryKeys(targetPaths, canonicalDirectory, metadataDirectories);
+    return acquireMediaTask(keys, "文件发布");
   } finally {
-    releaseRegistration();
+    registered();
   }
-  await Promise.all(waiters.map(({ previous }) => previous));
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    for (const { key, waiter } of waiters) {
-      waiter.release();
-      if (tails.get(key) === waiter) tails.delete(key);
-    }
-  };
 };

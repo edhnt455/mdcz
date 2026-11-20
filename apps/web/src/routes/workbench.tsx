@@ -37,16 +37,20 @@ import { api } from "../client";
 import { DeletionTasksPage } from "../deletionTasks";
 import { requestScrapeLiveRunsRefresh } from "../hooks/useWebTaskSync";
 import { queryKeys } from "../lib/queryKeys";
-import { PendingTasksPage } from "../pendingTasks";
+import { FileTasksPage } from "../pendingTasks";
 import { ErrorBanner } from "../routeCommon";
+import { SubtitleTasksPage } from "../subtitleTasks";
 import { PendingPage } from "./pending";
 
 export const Route = createFileRoute("/workbench")({
-  validateSearch: (search): { intent?: "maintenance" | "deletion" | "actions" | "new_files"; jobId?: string } => ({
+  validateSearch: (
+    search,
+  ): { intent?: "maintenance" | "deletion" | "file_tasks" | "subtitle_tasks" | "new_files"; jobId?: string } => ({
     intent:
       search.intent === "maintenance" ||
       search.intent === "deletion" ||
-      search.intent === "actions" ||
+      search.intent === "file_tasks" ||
+      search.intent === "subtitle_tasks" ||
       search.intent === "new_files"
         ? search.intent
         : undefined,
@@ -61,7 +65,7 @@ function WorkbenchRoutePage() {
   const navigate = useNavigate();
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <nav aria-label={t.deletions.title} className="flex shrink-0 flex-wrap gap-2 border-b px-4 py-2">
+      <nav aria-label={t.deletions.back} className="flex shrink-0 flex-wrap gap-2 border-b px-4 py-2">
         <Button
           size="sm"
           variant={!search.intent || search.intent === "maintenance" ? "secondary" : "ghost"}
@@ -78,10 +82,19 @@ function WorkbenchRoutePage() {
         </Button>
         <Button
           size="sm"
-          variant={search.intent === "actions" ? "secondary" : "ghost"}
-          onClick={() => void navigate({ to: "/workbench", search: { intent: "actions" } })}
+          variant={search.intent === "file_tasks" ? "secondary" : "ghost"}
+          aria-pressed={search.intent === "file_tasks"}
+          onClick={() => void navigate({ to: "/workbench", search: { intent: "file_tasks" } })}
         >
-          {t.pending.tasks}
+          {t.pending.fileTasks}
+        </Button>
+        <Button
+          size="sm"
+          variant={search.intent === "subtitle_tasks" ? "secondary" : "ghost"}
+          aria-pressed={search.intent === "subtitle_tasks"}
+          onClick={() => void navigate({ to: "/workbench", search: { intent: "subtitle_tasks" } })}
+        >
+          {t.pending.subtitleTasks}
         </Button>
         <Button
           size="sm"
@@ -94,10 +107,15 @@ function WorkbenchRoutePage() {
       <div className="min-h-0 flex-1">
         {search.intent === "new_files" ? (
           <PendingPage newFiles />
-        ) : search.intent === "actions" ? (
-          <PendingTasksPage
+        ) : search.intent === "file_tasks" ? (
+          <FileTasksPage
             selectedId={search.jobId}
-            onSelect={(jobId) => void navigate({ to: "/workbench", search: { intent: "actions", jobId } })}
+            onSelect={(jobId) => void navigate({ to: "/workbench", search: { intent: "file_tasks", jobId } })}
+          />
+        ) : search.intent === "subtitle_tasks" ? (
+          <SubtitleTasksPage
+            selectedId={search.jobId}
+            onSelect={(jobId) => void navigate({ to: "/workbench", search: { intent: "subtitle_tasks", jobId } })}
           />
         ) : search.intent === "deletion" ? (
           <DeletionTasksPage

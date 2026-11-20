@@ -151,7 +151,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
     config,
     persistence,
     roots: mediaRoots,
-    gate: taskGate,
     network: networkClient,
     events: taskEvents,
     logger: runtimeLogs.getLogger("SubtitleUpdate"),
@@ -274,10 +273,6 @@ export const buildServer = (options: BuildServerOptions = {}): ServerApp => {
       captureDelete: async (id) => await pendingDeletion.capture(id),
       isMediaBusy: async () => {
         if (maintenance.isBusy || (await scrape.liveRuns()).runs.length > 0) return true;
-        if (taskGate.subtitleBusy) {
-          const { repositories } = await persistence.getState();
-          if (repositories.pendingActions.hasReady()) await taskGate.waitForSubtitle();
-        }
         try {
           taskGate.assertAvailable("pending");
           return false;

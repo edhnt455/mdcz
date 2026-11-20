@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolveRootRelativePath } from "@mdcz/media-store";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
+import { withMovieTask } from "@mdcz/runtime/publication/mediaTasks";
 import { NfoGenerator, writeNfoPublication } from "@mdcz/runtime/scrape";
 import { runtimeLoggerService } from "@mdcz/runtime/shared";
 import { LibraryTaskConflictError, type LibraryTaskGate } from "@mdcz/runtime/tasks";
@@ -44,7 +45,6 @@ export class LibraryEditService {
     if (input.edit.field !== "actors" && configuration.download.nfoIgnoreFields.includes(input.edit.field)) {
       throw new Error(`字段 ${input.edit.field} 已在 NFO 设置中禁用`);
     }
-    await this.taskGate.waitForSubtitle();
     this.taskGate.assertAvailable("edit");
     if (this.#job?.status === "running") throw new LibraryTaskConflictError("edit");
     const ids = [...new Set(input.ids)];
@@ -79,25 +79,27 @@ export class LibraryEditService {
       const generator = new NfoGenerator();
       for (const id of ids) {
         try {
-          const entry = await repositories.library.getEntryById(id);
-          const nfo = entry.assets.find(
-            (asset) => asset.kind === "nfo" && asset.published && asset.rootId && asset.relativePath,
-          );
-          if (!nfo?.rootId || !nfo.relativePath) {
-            job = { ...job, skipped: job.skipped + 1 };
-          } else {
-            const root = roots.find((root) => root.id === nfo.rootId);
-            if (!root) throw new Error(`未找到媒体根目录： ${nfo.rootId}`);
-            const result = await writeNfoPublication({
-              nfoPath: resolveRootRelativePath(root, nfo.relativePath),
-              edit: job.edit,
-              configuration,
-              nfoGenerator: generator,
-              publication: { roots, outputs: repositories.library, library: repositories.library },
-            });
-            job = result.changed ? { ...job, changed: job.changed + 1 } : { ...job, unchanged: job.unchanged + 1 };
-            for (const directory of result.directories) directories.add(directory);
-          }
+          await withMovieTask(id, "批量编辑当前影片", async () => {
+            const entry = await repositories.library.getEntryById(id);
+            const nfo = entry.assets.find(
+              (asset) => asset.kind === "nfo" && asset.published && asset.rootId && asset.relativePath,
+            );
+            if (!nfo?.rootId || !nfo.relativePath) {
+              job = { ...job, skipped: job.skipped + 1 };
+            } else {
+              const root = roots.find((root) => root.id === nfo.rootId);
+              if (!root) throw new Error(`未找到媒体根目录： ${nfo.rootId}`);
+              const result = await writeNfoPublication({
+                nfoPath: resolveRootRelativePath(root, nfo.relativePath),
+                edit: job.edit,
+                configuration,
+                nfoGenerator: generator,
+                publication: { roots, outputs: repositories.library, library: repositories.library },
+              });
+              job = result.changed ? { ...job, changed: job.changed + 1 } : { ...job, unchanged: job.unchanged + 1 };
+              for (const directory of result.directories) directories.add(directory);
+            }
+          });
         } catch (error) {
           job = { ...job, failures: [...job.failures, { id, reason: toErrorMessage(error) }] };
         }

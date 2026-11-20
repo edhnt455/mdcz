@@ -52,5 +52,5 @@ export type SubtitleJobList = {
   jobs: SubtitleJob[];
   counts: Record<SubtitleJob["status"], number>;
   total: number;
-  waitingForManual: boolean;
+  waitingForResources: number;
 };

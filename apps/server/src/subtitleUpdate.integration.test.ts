@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NetworkClient } from "@mdcz/runtime/network";
+import { acquireMediaTask, movieTaskKey } from "@mdcz/runtime/publication/mediaTasks";
+import { acquireOutputDirectories } from "@mdcz/runtime/publication/outputMutex";
 import { NfoGenerator } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
@@ -10,6 +12,7 @@ import { buildServer } from "./app";
 import {
   closeTestServers,
   createTempRoot,
+  createTestAggregation,
   createTestLibrary,
   createTestServer,
   loginAsAdmin,
@@ -23,10 +26,27 @@ afterEach(() => vi.restoreAllMocks());
 
 it("batch retries selected failure attempts across pages, including historical jobs for the same movie", async () => {
   const root = await createTempRoot("subtitle-batch-retry");
-  const { fastify, services } = await createTestServer();
+  let releaseScrape!: () => void;
+  let scrapeStarted!: () => void;
+  const scrapeHeld = new Promise<void>((resolve) => {
+    releaseScrape = resolve;
+  });
+  const scraping = new Promise<void>((resolve) => {
+    scrapeStarted = resolve;
+  });
+  const aggregation = createTestAggregation("https://unused.example/image.png");
+  const { fastify, services } = await createTestServer({
+    scrapeAggregation: {
+      aggregate: async (number, options) => {
+        scrapeStarted();
+        await scrapeHeld;
+        return await aggregation.aggregate(number, options);
+      },
+    },
+  });
   const token = await loginAsAdmin(fastify);
   const headers = { authorization: `Bearer ${token}` };
-  const { rootId } = await createTestLibrary(fastify, token, root);
+  const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
   const movie = { number: "ABC-001", title: "Movie", actors: [], genres: [], scene_images: [], website: Website.JAVDB };
   const mediaPath = join(root, "ABC-001.strm");
   const subtitlePath = join(root, "ABC-001.srt");
@@ -92,7 +112,7 @@ it("batch retries selected failure attempts across pages, including historical j
   expect(await services.subtitleUpdates.get("failed-0")).toMatchObject({
     status: "failed",
     attempts: 1,
-    error: expect.stringContaining("ENOENT"),
+    error: expect.stringContaining("未找到已登记的影片"),
   });
   expect(await services.subtitleUpdates.get("failed-119")).toMatchObject({ status: "failed", attempts: 0 });
   expect((await fastify.inject({ ...retry, headers })).json().result.data).toEqual({ queued: 0 });
@@ -132,6 +152,208 @@ it("batch retries selected failure attempts across pages, including historical j
   });
   expect(await readFile(mediaPath, "utf8")).toBe("video");
   expect(await readFile(subtitlePath, "utf8")).toBe("subtitle");
+
+  await mkdir(join(root, "independent"));
+  const independent = {
+    eventId: randomUUID(),
+    mediaPath: join(root, "independent", "BBB-002.strm"),
+    subtitlePath: join(root, "independent", "BBB-002.srt"),
+    language: "zh-CN",
+  };
+  await writeFile(independent.mediaPath, "video");
+  await writeFile(independent.subtitlePath, "subtitle");
+  await writeFile(
+    join(root, "independent", "BBB-002.nfo"),
+    new NfoGenerator().buildXml({ ...movie, number: "BBB-002" }),
+  );
+  await repositories.library.upsertEntry({
+    movie: {
+      id: "movie-2",
+      assets: [
+        {
+          kind: "nfo",
+          uri: "independent/BBB-002.nfo",
+          rootId,
+          relativePath: "independent/BBB-002.nfo",
+          published: true,
+        },
+      ],
+    },
+    files: [{ fileId: "file-2", rootId, rootRelativePath: "independent/BBB-002.strm" }],
+  });
+  for (const label of [
+    "刮削当前影片",
+    "维护当前影片",
+    "批量编辑当前影片",
+    "文件处理当前影片",
+    "保存当前影片海报",
+    "文件发布",
+  ]) {
+    const release =
+      label === "文件发布"
+        ? await acquireOutputDirectories([nfoPath])
+        : await acquireMediaTask([movieTaskKey("movie-1")], label);
+    let blockedId = "";
+    try {
+      blockedId = (await services.subtitleUpdates.enqueue({ ...first, eventId: randomUUID() })).taskId;
+      const free = await services.subtitleUpdates.enqueue({ ...independent, eventId: randomUUID() });
+      await expect
+        .poll(async () => (await services.subtitleUpdates.get(free.taskId))?.status, { timeout: 10_000 })
+        .toBe("completed");
+      expect(await services.subtitleUpdates.get(blockedId)).toMatchObject({
+        status: "queued",
+        attempts: 0,
+        progress: expect.stringContaining(label),
+      });
+      expect((await services.subtitleUpdates.list({ offset: 0, limit: 1 })).waitingForResources).toBe(1);
+    } finally {
+      release();
+    }
+    await expect
+      .poll(async () => (await services.subtitleUpdates.get(blockedId))?.status, { timeout: 10_000 })
+      .toBe("completed");
+  }
+
+  // Keep a real scrape session running while an already published movie finishes its subtitle chain.
+  await services.config.update({
+    translate: { enableTranslation: false },
+    download: {
+      downloadThumb: false,
+      downloadPoster: false,
+      downloadFanart: false,
+      downloadSceneImages: false,
+      downloadTrailer: false,
+    },
+  });
+  await mkdir(join(root, "incoming"));
+  await writeFile(join(root, "incoming", "CCC-003.strm"), "video");
+  const scrape = await services.scrape.start({
+    libraryId,
+    executionMode: "batch",
+    refs: [{ rootId, relativePath: "incoming/CCC-003.strm" }],
+  });
+  try {
+    await scraping;
+    const update = await services.subtitleUpdates.enqueue({ ...first, eventId: randomUUID() });
+    await expect
+      .poll(async () => (await services.subtitleUpdates.get(update.taskId))?.status, { timeout: 10_000 })
+      .toBe("completed");
+    expect((await services.scrape.liveRuns()).runs.some((run) => run.task.id === scrape.task.id)).toBe(true);
+  } finally {
+    releaseScrape();
+  }
+  await expect.poll(async () => (await services.scrape.liveRuns()).runs.length, { timeout: 10_000 }).toBe(0);
+
+  await services.config.update({ emby: { url: "http://127.0.0.1:1", apiKey: "test", notifyAfterPublish: true } });
+  const notifications = vi.spyOn(NetworkClient.prototype, "postText").mockResolvedValue("");
+  const releaseMove = await acquireMediaTask([movieTaskKey("movie-1")], "维护当前影片");
+  let movedId = "";
+  const movedMedia = join(root, "moved", "RENAMED.strm");
+  const movedSubtitle = join(root, "moved", "RENAMED.srt");
+  const movedNfo = join(root, "moved", "RENAMED.nfo");
+  try {
+    movedId = (await services.subtitleUpdates.enqueue({ ...first, eventId: randomUUID() })).taskId;
+    await mkdir(join(root, "moved"));
+    await rename(mediaPath, movedMedia);
+    await rename(subtitlePath, movedSubtitle);
+    await rename(nfoPath, movedNfo);
+    database.sqlite
+      .prepare("UPDATE library_item_files SET root_relative_path = 'moved/RENAMED.strm' WHERE id = 'file-1'")
+      .run();
+    database.sqlite
+      .prepare(
+        "UPDATE library_item_assets SET relative_path = 'moved/RENAMED.nfo', uri = 'moved/RENAMED.nfo' WHERE item_id = 'movie-1' AND kind = 'nfo'",
+      )
+      .run();
+  } finally {
+    releaseMove();
+  }
+  await expect
+    .poll(async () => (await services.subtitleUpdates.get(movedId))?.status, { timeout: 10_000 })
+    .toBe("completed");
+  expect(await readFile(movedNfo, "utf8")).toContain("<tag>中文字幕</tag>");
+  expect(notifications).toHaveBeenCalledOnce();
+  const beforeRepeat = (await stat(movedNfo)).mtimeMs;
+  const duplicate = await services.subtitleUpdates.enqueue({
+    ...first,
+    eventId: randomUUID(),
+    mediaPath: movedMedia,
+    subtitlePath: movedSubtitle,
+  });
+  await expect
+    .poll(async () => (await services.subtitleUpdates.get(duplicate.taskId))?.status, { timeout: 10_000 })
+    .toBe("completed");
+  expect((await services.subtitleUpdates.get(duplicate.taskId))?.result).toMatchObject({
+    metadataUpdated: false,
+    mediaServerNotified: false,
+  });
+  expect((await stat(movedNfo)).mtimeMs).toBe(beforeRepeat);
+  expect(notifications).toHaveBeenCalledOnce();
+  await writeFile(movedSubtitle, "changed subtitle content");
+  const changed = await services.subtitleUpdates.enqueue({
+    ...first,
+    eventId: randomUUID(),
+    mediaPath: movedMedia,
+    subtitlePath: movedSubtitle,
+  });
+  await expect
+    .poll(async () => (await services.subtitleUpdates.get(changed.taskId))?.status, { timeout: 10_000 })
+    .toBe("completed");
+  expect(notifications).toHaveBeenCalledTimes(2);
+
+  notifications.mockRejectedValueOnce(new Error("refresh unavailable"));
+  await writeFile(movedSubtitle, "subtitle requiring another refresh");
+  const failedRefresh = await services.subtitleUpdates.enqueue({
+    ...first,
+    eventId: randomUUID(),
+    mediaPath: movedMedia,
+    subtitlePath: movedSubtitle,
+  });
+  await expect
+    .poll(async () => (await services.subtitleUpdates.get(failedRefresh.taskId))?.status, { timeout: 10_000 })
+    .toBe("completed");
+  expect((await services.subtitleUpdates.get(failedRefresh.taskId))?.warnings.join(" ")).toContain(
+    "refresh unavailable",
+  );
+  const beforeRefreshRetry = (await stat(movedNfo)).mtimeMs;
+  const retryRefresh = await services.subtitleUpdates.enqueue({
+    ...first,
+    eventId: randomUUID(),
+    mediaPath: movedMedia,
+    subtitlePath: movedSubtitle,
+  });
+  await expect
+    .poll(async () => (await services.subtitleUpdates.get(retryRefresh.taskId))?.status, { timeout: 10_000 })
+    .toBe("completed");
+  expect((await services.subtitleUpdates.get(retryRefresh.taskId))?.result).toMatchObject({
+    metadataUpdated: false,
+    mediaServerNotified: true,
+  });
+  expect((await stat(movedNfo)).mtimeMs).toBe(beforeRefreshRetry);
+  expect(notifications).toHaveBeenCalledTimes(4);
+
+  const releaseMissing = await acquireMediaTask([movieTaskKey("movie-1")], "文件处理当前影片");
+  let missingId = "";
+  try {
+    missingId = (
+      await services.subtitleUpdates.enqueue({
+        ...first,
+        eventId: randomUUID(),
+        mediaPath: movedMedia,
+        subtitlePath: movedSubtitle,
+      })
+    ).taskId;
+    database.sqlite
+      .prepare("UPDATE subtitle_update_jobs SET bindings_json = ? WHERE task_id = ?")
+      .run(JSON.stringify({ [movedMedia]: "deleted-file" }), missingId);
+  } finally {
+    releaseMissing();
+  }
+  await expect
+    .poll(async () => (await services.subtitleUpdates.get(missingId))?.status, { timeout: 10_000 })
+    .toBe("failed");
+  expect((await services.subtitleUpdates.get(missingId))?.error).toBe("未找到媒体库文件：deleted-file");
+  expect(notifications).toHaveBeenCalledTimes(4);
 });
 
 it("publishes and tracks subtitle updates by path with durable idempotency and clear failures", async () => {
@@ -251,6 +473,7 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
     await blocked;
     return await originalDownload.call(this, url, init);
   });
+  await writeFile(join(root, "259LUXU-1573.srt"), "updated subtitle content");
   const second = await fastify.inject({ ...request, payload: { ...input, eventId: randomUUID() } });
   const secondId = second.json().taskId;
   let followupId = "";
@@ -324,12 +547,9 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
       ids: ["movie-1"],
       edit: { field: "genres", operation: "add", value: "Manual tag" },
     });
-    await expect
-      .poll(async () => (await services.subtitleUpdates.list({ offset: 0, limit: 1 })).waitingForManual, {
-        timeout: 10_000,
-      })
-      .toBe(true);
-    expect(services.libraryEdit.status()).toBeNull();
+    await manual;
+    expect(services.libraryEdit.status()?.status).toBe("running");
+    expect(await readFile(join(root, "movie.nfo"), "utf8")).not.toContain("Manual tag");
     releaseDownload();
     await manual;
     await expect.poll(() => services.libraryEdit.status()?.status, { timeout: 10_000 }).toBe("completed");
@@ -348,6 +568,18 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
         .map((asset) => asset.fileId),
     ).toEqual(expect.arrayContaining(["file-1", "file-2"]));
     expect(downloads).toHaveBeenCalledTimes(2);
+    const unchangedNfoTime = (await stat(join(root, "movie.nfo"))).mtimeMs;
+    const duplicate = await services.subtitleUpdates.enqueue({ ...input, eventId: randomUUID() });
+    await expect
+      .poll(async () => (await services.subtitleUpdates.get(duplicate.taskId))?.status, { timeout: 10_000 })
+      .toBe("completed");
+    expect((await services.subtitleUpdates.get(duplicate.taskId))?.result).toEqual({
+      metadataUpdated: false,
+      badgeStatus: "unchanged",
+      mediaServerNotified: false,
+    });
+    expect(downloads).toHaveBeenCalledTimes(2);
+    expect((await stat(join(root, "movie.nfo"))).mtimeMs).toBe(unchangedNfoTime);
     expect((await fastify.inject({ ...request, payload: batch[199] })).json().taskId).toBe(followupId);
   } finally {
     releaseDownload();
@@ -381,7 +613,7 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
   const skipped = (
     await fastify.inject({ method: "GET", url: `/api/automation/subtitles/jobs/${noSourceId}`, headers })
   ).json();
-  expect(skipped.result).toMatchObject({ metadataUpdated: true, badgeStatus: "skipped" });
+  expect(skipped.result).toMatchObject({ metadataUpdated: false, badgeStatus: "skipped" });
   expect(skipped.warnings).toEqual(expect.arrayContaining([expect.stringContaining("原图来源")]));
   expect(await readFile(join(root, "poster.jpg"))).toEqual(firstPoster);
   const conflict = await fastify.inject({ ...request, payload: { ...input, language: "en" } });
@@ -434,7 +666,7 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
       .toBe("completed");
     expect((await restarted.fastify.inject(request)).json().taskId).toBe(taskId);
     const remaining = await restarted.services.subtitleUpdates.clearCompleted();
-    expect(remaining).toEqual({ cleared: 4 });
+    expect(remaining).toEqual({ cleared: 5 });
     expect(await restarted.services.subtitleUpdates.list({ offset: 0, limit: 1 })).toMatchObject({
       counts: { queued: 0, running: 0, completed: 0, failed: 120 },
       total: 120,

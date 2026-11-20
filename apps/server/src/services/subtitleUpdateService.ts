@@ -1,11 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { filesystemPathKey, resolveRootFile, resolveRootRelativePath } from "@mdcz/media-store";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { notifyMediaServersOfPublish } from "@mdcz/runtime/mediaserver";
 import type { NetworkClient } from "@mdcz/runtime/network";
-import { acquireOutputDirectories } from "@mdcz/runtime/publication/outputMutex";
+import { mediaTaskConflict, movieTaskKey, tryAcquireMediaTask } from "@mdcz/runtime/publication/mediaTasks";
+import { outputDirectoryKeys } from "@mdcz/runtime/publication/outputMutex";
 import { WriteOutput } from "@mdcz/runtime/publication/WriteOutput";
 import {
   findSubtitleSidecars,
@@ -14,7 +15,6 @@ import {
   resolveFileInfoWithSubtitles,
   resolvePosterBadgeDefinitions,
 } from "@mdcz/runtime/scrape";
-import { LibraryTaskConflictError, type LibraryTaskGate } from "@mdcz/runtime/tasks";
 import { resolveThumbToPosterCropRegion } from "@mdcz/shared/posterCrop";
 import type {
   FailedSubtitleJob,
@@ -46,6 +46,7 @@ type Row = {
   task_id: string;
   movie_key: string;
   inputs_json: string;
+  bindings_json: string;
   status: SubtitleJob["status"];
   stage: SubtitleJobStage;
   progress: string;
@@ -90,7 +91,7 @@ function toJob(row: Row): SubtitleJob {
 }
 
 export class SubtitleUpdateService {
-  private running = false;
+  private readonly blocked = new Map<string, string>();
   private closed = false;
   private timer?: ReturnType<typeof setTimeout>;
   private notificationTimer?: ReturnType<typeof setTimeout>;
@@ -101,14 +102,11 @@ export class SubtitleUpdateService {
       config: ServerConfigService;
       persistence: ServerPersistenceService;
       roots: MediaRootService;
-      gate: LibraryTaskGate;
       network: NetworkClient;
       events: TaskEventBus;
       logger: ReturnType<RuntimeLogService["getLogger"]>;
     },
-  ) {
-    deps.gate.track("subtitle", () => this.running);
-  }
+  ) {}
 
   async start(): Promise<void> {
     const { database } = await this.deps.persistence.getState();
@@ -154,6 +152,8 @@ export class SubtitleUpdateService {
         .get(movieKey);
       const id = queued?.task_id ?? `subtitle-update-${randomUUID()}`;
       const inputs = queued ? (JSON.parse(queued.inputs_json) as Input[]) : [];
+      const bindings: Record<string, string> = queued ? JSON.parse(queued.bindings_json) : {};
+      if (file) bindings[input.mediaPath] = file.fileId;
       const index = inputs.findIndex(
         (value) => value.mediaPath === input.mediaPath && value.subtitlePath === input.subtitlePath,
       );
@@ -162,14 +162,16 @@ export class SubtitleUpdateService {
       const now = Date.now();
       if (queued)
         database.sqlite
-          .prepare("UPDATE subtitle_update_jobs SET inputs_json = ?, updated_at = ? WHERE task_id = ?")
-          .run(JSON.stringify(inputs), now, id);
+          .prepare(
+            "UPDATE subtitle_update_jobs SET inputs_json = ?, bindings_json = ?, updated_at = ? WHERE task_id = ?",
+          )
+          .run(JSON.stringify(inputs), JSON.stringify(bindings), now, id);
       else
         database.sqlite
           .prepare(
-            "INSERT INTO subtitle_update_jobs (task_id, movie_key, inputs_json, status, stage, progress, created_at, updated_at) VALUES (?, ?, ?, 'queued', 'queued', '等待执行', ?, ?)",
+            "INSERT INTO subtitle_update_jobs (task_id, movie_key, inputs_json, bindings_json, status, stage, progress, created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', 'queued', '等待执行', ?, ?)",
           )
-          .run(id, movieKey, JSON.stringify(inputs), now, now);
+          .run(id, movieKey, JSON.stringify(inputs), JSON.stringify(bindings), now, now);
       database.sqlite
         .prepare("INSERT INTO subtitle_update_events (event_id, task_id, input_json) VALUES (?, ?, ?)")
         .run(input.eventId, id, json);
@@ -209,7 +211,7 @@ export class SubtitleUpdateService {
       jobs: rows.map(toJob),
       counts,
       total: Object.values(counts).reduce((a, b) => a + b, 0),
-      waitingForManual: counts.queued > 0 && this.deps.gate.foregroundBusy,
+      waitingForResources: this.blocked.size,
     };
   }
 
@@ -318,82 +320,141 @@ export class SubtitleUpdateService {
   private async work(): Promise<void> {
     const { database } = await this.deps.persistence.getState();
     while (!this.closed) {
-      const row = database.sqlite
-        .prepare<[], Row>(
-          "SELECT * FROM subtitle_update_jobs WHERE status = 'queued' ORDER BY created_at, rowid LIMIT 1",
-        )
-        .get();
-      if (!row) return;
-      try {
-        this.deps.gate.assertAvailable("subtitle");
-      } catch (error) {
-        if (!(error instanceof LibraryTaskConflictError)) throw error;
-        return;
-      }
-      this.running = true;
-      database.sqlite
-        .prepare(
-          "UPDATE subtitle_update_jobs SET status = 'running', stage = 'scanning', progress = '核验影片与字幕', attempts = attempts + 1, updated_at = ? WHERE task_id = ?",
-        )
-        .run(Date.now(), row.task_id);
-      this.changed();
-      try {
-        const progress = (stage: SubtitleJobStage, message: string) => {
+      const rows = database.sqlite
+        .prepare<[], Row>("SELECT * FROM subtitle_update_jobs WHERE status = 'queued' ORDER BY created_at, rowid")
+        .all();
+      const seen = new Set<string>();
+      let processed = false;
+      for (const row of rows) {
+        if (this.closed) return;
+        if (seen.has(row.movie_key)) continue;
+        seen.add(row.movie_key);
+        const keys = [
+          row.movie_key,
+          ...Object.values(JSON.parse(row.bindings_json) as Record<string, string>).map((id) => `file:${id}`),
+        ];
+        const releases: Array<() => void> = [];
+        const wait = (reason: string) => {
+          const message = `等待${reason}完成，其他影片继续处理`;
+          if (this.blocked.get(row.task_id) === reason) return;
+          this.blocked.set(row.task_id, reason);
           database.sqlite
-            .prepare("UPDATE subtitle_update_jobs SET stage = ?, progress = ?, updated_at = ? WHERE task_id = ?")
-            .run(stage, message, Date.now(), row.task_id);
+            .prepare("UPDATE subtitle_update_jobs SET progress = ?, updated_at = ? WHERE task_id = ?")
+            .run(message, Date.now(), row.task_id);
           this.changed();
         };
-        const { result, warnings } = await this.process(JSON.parse(row.inputs_json), progress);
-        database.sqlite
-          .prepare(
-            "UPDATE subtitle_update_jobs SET status = 'completed', stage = 'completed', progress = '处理完成', result_json = ?, warnings_json = ?, error = NULL, updated_at = ?, completed_at = ? WHERE task_id = ?",
-          )
-          .run(JSON.stringify(result), JSON.stringify(warnings), Date.now(), Date.now(), row.task_id);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.deps.logger.warn(`字幕更新失败：${message}`);
-        database.sqlite
-          .prepare(
-            "UPDATE subtitle_update_jobs SET status = 'failed', error = ?, updated_at = ?, completed_at = ? WHERE task_id = ?",
-          )
-          .run(message, Date.now(), Date.now(), row.task_id);
-      } finally {
-        this.running = false;
-        this.deps.gate.subtitleFinished();
+        const releaseMovie = tryAcquireMediaTask(keys, "字幕更新当前影片");
+        if (!releaseMovie) {
+          wait(mediaTaskConflict(keys) ?? "相关影片任务");
+          continue;
+        }
+        releases.push(releaseMovie);
+        try {
+          let job = await this.resolveJob(row);
+          const movieKey = movieTaskKey(job.entry.id);
+          if (row.movie_key !== movieKey && seen.has(movieKey)) continue;
+          seen.add(movieKey);
+          const extraKeys = [movieTaskKey(job.entry.id), ...job.files.map((file) => `file:${file.fileId}`)].filter(
+            (key) => !keys.includes(key),
+          );
+          const releaseExtra = tryAcquireMediaTask(extraKeys, "字幕更新当前影片");
+          if (!releaseExtra) {
+            wait(mediaTaskConflict(extraKeys) ?? "相关影片任务");
+            continue;
+          }
+          releases.push(releaseExtra);
+          if (extraKeys.length) job = await this.resolveJob(row);
+          const directories = await outputDirectoryKeys([
+            ...job.nfos,
+            ...job.targets.map((target) => target.path),
+            ...job.mediaPaths,
+          ]);
+          const releaseDirectories = tryAcquireMediaTask(directories, "字幕更新当前影片");
+          if (!releaseDirectories) {
+            wait(mediaTaskConflict(directories) ?? "相关输出目录写入");
+            continue;
+          }
+          releases.push(releaseDirectories);
+          this.blocked.delete(row.task_id);
+          database.sqlite
+            .prepare(
+              "UPDATE subtitle_update_jobs SET status = 'running', stage = 'scanning', progress = '核验影片与字幕', attempts = attempts + 1, updated_at = ? WHERE task_id = ?",
+            )
+            .run(Date.now(), row.task_id);
+          this.changed();
+          const progress = (stage: SubtitleJobStage, message: string) => {
+            database.sqlite
+              .prepare("UPDATE subtitle_update_jobs SET stage = ?, progress = ?, updated_at = ? WHERE task_id = ?")
+              .run(stage, message, Date.now(), row.task_id);
+            this.changed();
+          };
+          const { result, warnings } = await this.process(job, progress);
+          database.sqlite
+            .prepare(
+              "UPDATE subtitle_update_jobs SET status = 'completed', stage = 'completed', progress = ?, result_json = ?, warnings_json = ?, error = NULL, updated_at = ?, completed_at = ? WHERE task_id = ?",
+            )
+            .run(
+              result.metadataUpdated || result.badgeStatus === "updated" || result.mediaServerNotified
+                ? "处理完成"
+                : "已核验，当前结果无需更新",
+              JSON.stringify(result),
+              JSON.stringify(warnings),
+              Date.now(),
+              Date.now(),
+              row.task_id,
+            );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.blocked.delete(row.task_id);
+          this.deps.logger.warn(`字幕更新失败：${message}`);
+          database.sqlite
+            .prepare(
+              "UPDATE subtitle_update_jobs SET status = 'failed', attempts = attempts + CASE WHEN status = 'queued' THEN 1 ELSE 0 END, error = ?, updated_at = ?, completed_at = ? WHERE task_id = ?",
+            )
+            .run(message, Date.now(), Date.now(), row.task_id);
+        } finally {
+          for (const release of releases.reverse()) release();
+        }
         this.changed();
+        processed = true;
+        break;
       }
+      for (const id of this.blocked.keys()) if (!rows.some((row) => row.task_id === id)) this.blocked.delete(id);
+      if (!processed) return;
     }
   }
 
-  private async process(
-    inputs: Input[],
-    progress: (stage: SubtitleJobStage, message: string) => void,
-  ): Promise<{ result: NonNullable<SubtitleJob["result"]>; warnings: string[] }> {
+  private async resolveJob(row: Row) {
     const config = await this.deps.config.get();
-    const mapped = inputs.map((input) => ({
-      ...input,
-      mediaPath: applyPathMappings(input.mediaPath, config.automation.pathMappings),
-      subtitlePath: applyPathMappings(input.subtitlePath, config.automation.pathMappings),
-    }));
-    for (const input of mapped) {
-      if (!path.isAbsolute(input.mediaPath) || !path.isAbsolute(input.subtitlePath))
-        throw new Error("媒体和字幕路径必须为绝对路径");
-      if (!(await stat(input.mediaPath)).isFile()) throw new Error("影片路径不是文件");
-      if (!(await stat(input.subtitlePath)).isFile()) throw new Error("字幕路径不是文件");
-    }
-    const mediaPaths = [...new Set(mapped.map((input) => input.mediaPath))];
     const roots = await this.deps.roots.listRoots();
+    const { repositories, database } = await this.deps.persistence.getState();
     const absolute = (rootId: string | null, relativePath: string | null): string => {
       const root = roots.find((candidate) => candidate.id === rootId);
       if (!root || !relativePath) throw new Error(`找不到已登记资源的根目录或路径：${rootId}`);
       return resolveRootRelativePath(root, relativePath);
     };
-    for (const input of mapped) {
-      resolveRootFile(roots, input.mediaPath);
-      resolveRootFile(roots, input.subtitlePath);
-    }
-    const { repositories } = await this.deps.persistence.getState();
+    const bindings: Record<string, string> = JSON.parse(row.bindings_json);
+    const mapped = (JSON.parse(row.inputs_json) as Input[]).map((input) => {
+      const originalMedia = applyPathMappings(input.mediaPath, config.automation.pathMappings);
+      const originalSubtitle = applyPathMappings(input.subtitlePath, config.automation.pathMappings);
+      const fileId = bindings[input.mediaPath];
+      const file = fileId
+        ? repositories.library.getFileById(fileId)
+        : repositories.library.publicationSnapshot({ paths: [originalMedia] }).files[0];
+      if (!file) return { ...input, mediaPath: originalMedia, subtitlePath: originalSubtitle };
+      bindings[input.mediaPath] = fileId ?? ("id" in file ? file.id : file.fileId);
+      const mediaPath = absolute(file.rootId, "rootRelativePath" in file ? file.rootRelativePath : file.relativePath);
+      const relative = path.relative(path.dirname(originalMedia), originalSubtitle);
+      if (path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`))
+        throw new Error("字幕文件不属于指定影片");
+      const oldStem = path.parse(originalMedia).name;
+      const subtitleName = path.basename(relative);
+      const newName = subtitleName.startsWith(`${oldStem}.`)
+        ? `${path.parse(mediaPath).name}${subtitleName.slice(oldStem.length)}`
+        : subtitleName;
+      return { ...input, mediaPath, subtitlePath: path.join(path.dirname(mediaPath), path.dirname(relative), newName) };
+    });
+    const mediaPaths = [...new Set(mapped.map((input) => input.mediaPath))];
     const snapshot = repositories.library.publicationSnapshot({ paths: mediaPaths, includeOwners: true });
     const files = mediaPaths.map((mediaPath) => {
       const file = snapshot.files.find(
@@ -402,16 +463,18 @@ export class SubtitleUpdateService {
       if (!file) throw new Error(`未找到已登记的影片：${mediaPath}`);
       return { ...file, mediaPath };
     });
-    if (files.some((file) => file.itemId !== files[0].itemId))
+    if (
+      files.some((file) => file.itemId !== files[0].itemId) ||
+      (row.movie_key.startsWith("movie:") && row.movie_key !== movieTaskKey(files[0].itemId))
+    )
       throw new Error("合并通知的影片归属已改变，请重新提交通知");
     const entry = await repositories.library.getEntryById(files[0].itemId);
     const nfos = [
-      ...new Map(
+      ...new Set(
         entry.assets
           .filter((asset) => asset.kind === "nfo" && asset.published && asset.rootId && asset.relativePath)
-          .map((asset) => absolute(asset.rootId, asset.relativePath))
-          .map((nfoPath) => [filesystemPathKey(nfoPath), nfoPath]),
-      ).values(),
+          .map((asset) => absolute(asset.rootId, asset.relativePath)),
+      ),
     ];
     if (!nfos.length) throw new Error("影片没有已发布的 NFO");
     const targets = entry.assets
@@ -427,149 +490,269 @@ export class SubtitleUpdateService {
         path: absolute(asset.rootId, asset.relativePath),
       }))
       .filter((target, index, all) => all.findIndex((candidate) => candidate.path === target.path) === index);
-    const release = await acquireOutputDirectories([...nfos, ...targets.map((target) => target.path), ...mediaPaths]);
+    database.sqlite
+      .prepare("UPDATE subtitle_update_jobs SET bindings_json = ?, movie_key = ? WHERE task_id = ?")
+      .run(JSON.stringify(bindings), movieTaskKey(entry.id), row.task_id);
+    return {
+      config,
+      mapped,
+      roots,
+      absolute,
+      repositories,
+      database,
+      mediaPaths,
+      snapshot,
+      files,
+      entry,
+      nfos,
+      targets,
+    };
+  }
+
+  private async process(
+    job: Awaited<ReturnType<SubtitleUpdateService["resolveJob"]>>,
+    progress: (stage: SubtitleJobStage, message: string) => void,
+  ): Promise<{ result: NonNullable<SubtitleJob["result"]>; warnings: string[] }> {
+    const { config, mapped, roots, absolute, repositories, database, mediaPaths, snapshot, entry, nfos, targets } = job;
+    for (const input of mapped) {
+      if (!path.isAbsolute(input.mediaPath) || !path.isAbsolute(input.subtitlePath))
+        throw new Error("媒体和字幕路径必须为绝对路径");
+      resolveRootFile(roots, input.mediaPath);
+      resolveRootFile(roots, input.subtitlePath);
+      if (!(await stat(input.mediaPath)).isFile()) throw new Error("影片路径不是文件");
+      if (!(await stat(input.subtitlePath)).isFile()) throw new Error("字幕路径不是文件");
+    }
     const warnings: string[] = [];
     let badgeStatus: NonNullable<SubtitleJob["result"]>["badgeStatus"] = "skipped";
-    try {
-      progress("scanning", "重新扫描外挂字幕");
-      const scans = await Promise.all(
-        files.map(async (file) => {
-          const sidecars = await findSubtitleSidecars(file.mediaPath, undefined, config.scrape);
-          for (const input of mapped.filter((input) => input.mediaPath === file.mediaPath)) {
+    let metadataUpdated = false;
+    progress("scanning", "重新扫描外挂字幕");
+    const scans = await Promise.all(
+      snapshot.files
+        .filter((file) => file.itemId === entry.id)
+        .map(async (file) => {
+          const mediaPath = absolute(file.rootId, file.relativePath);
+          const sidecars = await findSubtitleSidecars(mediaPath, undefined, config.scrape);
+          for (const input of mapped.filter((input) => input.mediaPath === mediaPath)) {
             if (!sidecars.some((sidecar) => filesystemPathKey(sidecar.path) === filesystemPathKey(input.subtitlePath)))
               throw new Error("字幕文件不属于指定影片");
           }
-          const info = await resolveFileInfoWithSubtitles(file.mediaPath, {
+          const info = await resolveFileInfoWithSubtitles(mediaPath, {
             filenameRules: config.scrape,
             subtitleSidecars: sidecars,
           });
           return { file, sidecars, info };
         }),
+    );
+    const info = scans[0].info;
+    const chinese =
+      mapped.some((input) => /^zh(?:-|$)/iu.test(input.language)) ||
+      scans.some((scan) => scan.info.fileInfo.subtitleTag === "中文字幕");
+    if (chinese) {
+      info.fileInfo.isSubtitled = true;
+      info.fileInfo.subtitleTag = "中文字幕";
+    }
+    const xmls = await Promise.all(
+      nfos.map(async (nfoPath) => ({ path: nfoPath, xml: await readFile(nfoPath, "utf8") })),
+    );
+    const subtitlePaths = scans.flatMap(({ sidecars }) => sidecars.map((sidecar) => sidecar.path)).sort();
+    const subtitleHash = createHash("sha256");
+    for (const subtitlePath of subtitlePaths) subtitleHash.update(subtitlePath).update(await readFile(subtitlePath));
+    const subtitleFingerprint = subtitleHash.digest("hex");
+    const fingerprint = async () => {
+      const hash = createHash("sha256").update(
+        JSON.stringify({ download: config.download, chinese, subtitleFingerprint }),
       );
-      const info = scans[0].info;
-      const chinese =
-        mapped.some((input) => /^zh(?:-|$)/iu.test(input.language)) ||
-        scans.some((scan) => scan.info.fileInfo.subtitleTag === "中文字幕");
-      if (chinese) {
-        info.fileInfo.isSubtitled = true;
-        info.fileInfo.subtitleTag = "中文字幕";
-      }
-      const xmls = await Promise.all(
-        nfos.map(async (nfoPath) => ({ path: nfoPath, xml: await readFile(nfoPath, "utf8") })),
+      const current = await repositories.library.getEntryById(entry.id);
+      hash.update(
+        JSON.stringify(
+          current.assets
+            .filter((asset) => asset.kind === "subtitle")
+            .map((asset) => [asset.fileId, asset.rootId, asset.relativePath, asset.published])
+            .sort(),
+        ),
       );
-      const nfo = parseNfoSnapshot(xmls[0].xml);
-      const streams = nfo.localState?.fileinfo?.streamdetails as
-        | { video?: { width?: string | number; height?: string | number } }
-        | undefined;
-      const videoMeta = {
-        width: Number(streams?.video?.width) || undefined,
-        height: Number(streams?.video?.height) || undefined,
-      };
-      const generator = new NfoGenerator();
-      const artifacts: Array<{ targetPath: string; data: string | Buffer }> = xmls.map(({ path: targetPath, xml }) => ({
-        targetPath,
-        data: generator.mergeSubtitleTag(xml, chinese ? "中文字幕" : "字幕"),
-      }));
-      if (!config.download.tagBadges || !config.download.tagBadgeTypes.includes("subtitle")) {
-        warnings.push("中文字幕角标未启用");
-      } else if (!targets.length) {
-        warnings.push("没有已登记的角标目标图片");
-      } else {
-        const watermark = new ImageWatermarkService({
-          dataDir: this.deps.config.runtimePaths.dataDir,
-          builtinDirectory: path.join(path.dirname(resolveServerBundledMappingDirectory()), "watermark"),
+      const paths = [...nfos, ...targets.map((target) => target.path)];
+      if (config.download.tagBadgeImageOverrides) {
+        const directory =
+          config.download.tagBadgeDirectory || path.join(this.deps.config.runtimePaths.dataDir, "watermark");
+        const names = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT" && !config.download.tagBadgeDirectory) return [];
+          throw error;
         });
-        const badges = resolvePosterBadgeDefinitions(
-          nfo.crawlerData,
-          info.fileInfo,
-          nfo.localState,
-          config.download.tagBadgeTypes,
-          videoMeta,
+        paths.push(
+          ...names
+            .filter((name) => /\.(?:png|jpg|jpeg|webp|svg)$/iu.test(name))
+            .map((name) => path.join(directory, name)),
         );
-        let updated = 0;
-        let unchanged = 0;
-        const sources = new Map<string, Promise<Uint8Array>>();
-        for (const [index, target] of targets.entries()) {
-          progress("downloading", `下载 ${target.kind} 原图（${index + 1}/${targets.length}）`);
-          let base: Buffer;
-          try {
-            const data = nfo.crawlerData;
-            const url =
-              target.kind === "poster"
-                ? data.poster_source_url
-                : target.kind === "thumb"
-                  ? data.thumb_source_url
-                  : (data.fanart_source_url ?? data.thumb_source_url);
-            if (!url || !/^https?:\/\//iu.test(url)) throw new Error("缺少可用的原图来源");
-            let source = sources.get(url);
-            if (!source) {
-              source = this.deps.network.getContent(url);
-              sources.set(url, source);
-            }
-            const bytes = Buffer.from(await source);
-            progress("rendering", `自动裁剪 ${target.kind} 并准备角标`);
-            let image = sharp(bytes, { animated: false }).rotate();
-            if (target.kind === "poster" && url === data.thumb_source_url) {
-              const meta = await image.metadata();
-              if (!meta.width || !meta.height) throw new Error("无法读取原图尺寸");
-              const crop = resolveThumbToPosterCropRegion(meta.width, meta.height);
-              if (crop) image = image.extract(crop);
-            }
-            const ext = path.extname(target.path).toLowerCase();
-            if (![".jpg", ".jpeg", ".png", ".webp"].includes(ext)) throw new Error(`不支持的图片格式：${ext}`);
-            base = await (ext === ".png" ? image.png() : ext === ".webp" ? image.webp() : image.jpeg()).toBuffer();
-          } catch (error) {
-            warnings.push(`${target.kind} 角标跳过：${error instanceof Error ? error.message : String(error)}`);
-            continue;
-          }
-          progress("rendering", `裁剪并生成 ${target.kind} 角标`);
-          const rendered = await watermark.renderImage(base, badges, config.download, (warning) =>
-            warnings.push(warning),
-          );
-          if ((await readFile(target.path)).equals(rendered)) unchanged++;
-          else {
-            artifacts.push({ targetPath: target.path, data: rendered });
-            updated++;
-          }
-        }
-        badgeStatus = updated + unchanged === targets.length ? (updated ? "updated" : "unchanged") : "skipped";
       }
+      for (const filePath of [...new Set(paths)].sort()) {
+        const content = await readFile(filePath).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+          return null;
+        });
+        hash.update(JSON.stringify([filePath, content !== null])).update(content ?? "");
+      }
+      return hash.digest("hex");
+    };
+    const cached = database.sqlite
+      .prepare<[string], { fingerprint: string; subtitle_fingerprint: string; notify_pending: number }>(
+        "SELECT * FROM subtitle_update_state WHERE movie_id = ?",
+      )
+      .get(entry.id);
+    const notify = async (needed: boolean): Promise<boolean> => {
+      if (!needed && !cached?.notify_pending) return false;
+      progress("notifying", "通知媒体服务器刷新");
+      const notified = await notifyMediaServersOfPublish(
+        this.deps.network,
+        config,
+        [...new Set(mediaPaths.map((mediaPath) => path.dirname(mediaPath)))],
+        this.deps.logger,
+      );
+      warnings.push(...notified.warnings);
+      if (!notified.notified && !notified.warnings.length) warnings.push("没有启用媒体服务器刷新通知");
+      database.sqlite
+        .prepare("UPDATE subtitle_update_state SET notify_pending = ? WHERE movie_id = ?")
+        .run(notified.warnings.length > 0 ? 1 : 0, entry.id);
+      return notified.notified;
+    };
+    if (cached?.fingerprint === (await fingerprint())) {
+      return {
+        result: { metadataUpdated: false, badgeStatus: "unchanged", mediaServerNotified: await notify(false) },
+        warnings,
+      };
+    }
+    const nfo = parseNfoSnapshot(xmls[0].xml);
+    const streams = nfo.localState?.fileinfo?.streamdetails as
+      | { video?: { width?: string | number; height?: string | number } }
+      | undefined;
+    const videoMeta = {
+      width: Number(streams?.video?.width) || undefined,
+      height: Number(streams?.video?.height) || undefined,
+    };
+    const generator = new NfoGenerator();
+    const artifacts: Array<{ targetPath: string; data: string | Buffer }> = xmls.flatMap(
+      ({ path: targetPath, xml }) => {
+        const data = generator.mergeSubtitleTag(xml, chinese ? "中文字幕" : "字幕");
+        return data === xml ? [] : [{ targetPath, data }];
+      },
+    );
+    metadataUpdated = artifacts.length > 0;
+    if (!config.download.tagBadges || !config.download.tagBadgeTypes.includes("subtitle")) {
+      warnings.push("中文字幕角标未启用");
+    } else if (!targets.length) {
+      warnings.push("没有已登记的角标目标图片");
+    } else {
+      const watermark = new ImageWatermarkService({
+        dataDir: this.deps.config.runtimePaths.dataDir,
+        builtinDirectory: path.join(path.dirname(resolveServerBundledMappingDirectory()), "watermark"),
+      });
+      const badges = resolvePosterBadgeDefinitions(
+        nfo.crawlerData,
+        info.fileInfo,
+        nfo.localState,
+        config.download.tagBadgeTypes,
+        videoMeta,
+      );
+      let updated = 0;
+      let unchanged = 0;
+      const sources = new Map<string, Promise<Uint8Array>>();
+      for (const [index, target] of targets.entries()) {
+        progress("downloading", `下载 ${target.kind} 原图（${index + 1}/${targets.length}）`);
+        let base: Buffer;
+        try {
+          const data = nfo.crawlerData;
+          const url =
+            target.kind === "poster"
+              ? data.poster_source_url
+              : target.kind === "thumb"
+                ? data.thumb_source_url
+                : (data.fanart_source_url ?? data.thumb_source_url);
+          if (!url || !/^https?:\/\//iu.test(url)) throw new Error("缺少可用的原图来源");
+          let source = sources.get(url);
+          if (!source) {
+            source = this.deps.network.getContent(url);
+            sources.set(url, source);
+          }
+          const bytes = Buffer.from(await source);
+          progress("rendering", `自动裁剪 ${target.kind} 并准备角标`);
+          let image = sharp(bytes, { animated: false }).rotate();
+          if (target.kind === "poster" && url === data.thumb_source_url) {
+            const meta = await image.metadata();
+            if (!meta.width || !meta.height) throw new Error("无法读取原图尺寸");
+            const crop = resolveThumbToPosterCropRegion(meta.width, meta.height);
+            if (crop) image = image.extract(crop);
+          }
+          const ext = path.extname(target.path).toLowerCase();
+          if (![".jpg", ".jpeg", ".png", ".webp"].includes(ext)) throw new Error(`不支持的图片格式：${ext}`);
+          base = await (ext === ".png" ? image.png() : ext === ".webp" ? image.webp() : image.jpeg()).toBuffer();
+        } catch (error) {
+          warnings.push(`${target.kind} 角标跳过：${error instanceof Error ? error.message : String(error)}`);
+          continue;
+        }
+        progress("rendering", `裁剪并生成 ${target.kind} 角标`);
+        const rendered = await watermark.renderImage(base, badges, config.download, (warning) =>
+          warnings.push(warning),
+        );
+        const current = await readFile(target.path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT") throw error;
+          return null;
+        });
+        if (current?.equals(rendered)) unchanged++;
+        else {
+          artifacts.push({ targetPath: target.path, data: rendered });
+          updated++;
+        }
+      }
+      badgeStatus = updated + unchanged === targets.length ? (updated ? "updated" : "unchanged") : "skipped";
+    }
+    const members = scans.map(({ file, sidecars }) => ({
+      fileId: file.fileId,
+      rootId: file.rootId,
+      rootRelativePath: file.relativePath,
+      assets: sidecars.map((sidecar) => {
+        const ref = resolveRootFile(roots, sidecar.path);
+        return {
+          kind: "subtitle",
+          uri: ref.relativePath,
+          rootId: ref.root.id,
+          relativePath: ref.relativePath,
+          published: true,
+        };
+      }),
+    }));
+    const registered = entry.assets
+      .filter((asset) => asset.kind === "subtitle" && scans.some(({ file }) => file.fileId === asset.fileId))
+      .map((asset) => JSON.stringify([asset.fileId, asset.rootId, asset.relativePath, Boolean(asset.published)]))
+      .sort();
+    const desired = members
+      .flatMap((member) =>
+        member.assets.map((asset) => JSON.stringify([member.fileId, asset.rootId, asset.relativePath, true])),
+      )
+      .sort();
+    const registrationChanged = JSON.stringify(registered) !== JSON.stringify(desired);
+    metadataUpdated ||= registrationChanged;
+    const needsNotification =
+      artifacts.length > 0 || registrationChanged || cached?.subtitle_fingerprint !== subtitleFingerprint;
+    if (artifacts.length || registrationChanged) {
       progress("publishing", "写入 NFO、图片与字幕记录");
       await new WriteOutput().install(artifacts, {
         protectedMediaFiles: snapshot.files.map((item) => absolute(item.rootId, item.relativePath)),
-        commit: () =>
-          repositories.library.writeEntry(
-            { id: entry.id },
-            scans.map(({ file, sidecars }) => ({
-              fileId: file.fileId,
-              rootId: file.rootId,
-              rootRelativePath: file.relativePath,
-              assets: sidecars.map((sidecar) => {
-                const ref = resolveRootFile(roots, sidecar.path);
-                return {
-                  kind: "subtitle",
-                  uri: ref.relativePath,
-                  rootId: ref.root.id,
-                  relativePath: ref.relativePath,
-                  published: true,
-                };
-              }),
-            })),
-          ),
+        commit: () => repositories.library.writeEntry({ id: entry.id }, members),
       });
       this.deps.events.invalidate("library");
-    } finally {
-      release();
     }
-    progress("notifying", "通知媒体服务器刷新");
-    const notified = await notifyMediaServersOfPublish(
-      this.deps.network,
-      config,
-      [...new Set(inputs.map((input) => path.posix.dirname(input.mediaPath.replaceAll("\\", "/"))))],
-      this.deps.logger,
-    );
-    warnings.push(...notified.warnings);
-    if (!notified.notified && !notified.warnings.length) warnings.push("没有启用媒体服务器刷新通知");
-    return { result: { metadataUpdated: true, badgeStatus, mediaServerNotified: notified.notified }, warnings };
+    const complete =
+      badgeStatus !== "skipped" || !config.download.tagBadges || !config.download.tagBadgeTypes.includes("subtitle");
+    database.sqlite
+      .prepare(
+        "INSERT INTO subtitle_update_state (movie_id, fingerprint, subtitle_fingerprint, notify_pending) VALUES (?, ?, ?, ?) ON CONFLICT(movie_id) DO UPDATE SET fingerprint = excluded.fingerprint, subtitle_fingerprint = excluded.subtitle_fingerprint, notify_pending = excluded.notify_pending",
+      )
+      .run(
+        entry.id,
+        complete ? await fingerprint() : "",
+        subtitleFingerprint,
+        needsNotification || cached?.notify_pending ? 1 : 0,
+      );
+    return { result: { metadataUpdated, badgeStatus, mediaServerNotified: await notify(needsNotification) }, warnings };
   }
 }

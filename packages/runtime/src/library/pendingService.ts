@@ -33,6 +33,7 @@ import type { ScrapeStartInput } from "@mdcz/shared/serverDtos";
 import { z } from "@mdcz/shared/zod";
 import type { MaintenanceRuntime } from "../maintenance/MaintenanceRuntime";
 import { committedMovieRows } from "../publication/committedMovie";
+import { withMovieTask } from "../publication/mediaTasks";
 import type { NumberRecognitionService } from "../scrape/NumberRecognitionService";
 import { runtimeLoggerService } from "../shared";
 import { type MediaLibraryService, toPublicationTarget } from "./mediaLibraryService";
@@ -79,24 +80,32 @@ export class PendingService {
         const { pending } = await deps.repositories();
         const current = pending.list().find((item) => item.id === job.itemId);
         if (!current) return;
-        if (current.updatedAt.getTime() !== job.itemUpdatedAt) throw new Error("任务提交后条目已变化，请检查最新结果");
-        if (job.action === "delete") {
-          const input = JSON.parse(job.inputJson) as PendingDeleteInput;
-          if ("libraryFile" in input) {
-            await deps.deleteLibraryFile(job.itemId, input.libraryFile, progress);
-            return;
+        const root = await deps.mediaRoots.get(current.rootId);
+        const filePath = resolveRootRelativePath(root, current.relativePath);
+        const { library } = await deps.repositories();
+        const owner = library.publicationSnapshot({ paths: [filePath] }).files[0]?.itemId;
+        return await withMovieTask(owner ?? current.movieId ?? filePath, "文件处理当前影片", async () => {
+          const latest = pending.list().find((item) => item.id === job.itemId);
+          if (!latest) return;
+          if (latest.updatedAt.getTime() !== job.itemUpdatedAt) throw new Error("任务提交后条目已变化，请检查最新结果");
+          if (job.action === "delete") {
+            const input = JSON.parse(job.inputJson) as PendingDeleteInput;
+            if ("libraryFile" in input) {
+              await deps.deleteLibraryFile(job.itemId, input.libraryFile, progress);
+              return;
+            }
+            if (
+              !latest.deletionJson &&
+              input.fingerprint &&
+              (await deps.captureDelete(job.itemId)) !== input.fingerprint
+            )
+              throw new Error("任务提交后 STRM 文件已变化，请检查后重新提交");
+            await deps.deleteFile(job.itemId, progress);
+          } else {
+            progress("正在确认类型并更新文件、元数据及海报");
+            await this.performConfirmUncensored(pendingConfirmUncensoredInputSchema.parse(JSON.parse(job.inputJson)));
           }
-          if (
-            !current.deletionJson &&
-            input.fingerprint &&
-            (await deps.captureDelete(job.itemId)) !== input.fingerprint
-          )
-            throw new Error("任务提交后 STRM 文件已变化，请检查后重新提交");
-          await deps.deleteFile(job.itemId, progress);
-        } else {
-          progress("正在确认类型并更新文件、元数据及海报");
-          await this.performConfirmUncensored(pendingConfirmUncensoredInputSchema.parse(JSON.parse(job.inputJson)));
-        }
+        });
       },
     });
   }

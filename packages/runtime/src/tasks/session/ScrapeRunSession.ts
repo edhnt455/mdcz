@@ -77,6 +77,7 @@ export type ScrapePreparationResult<TPrepared> =
 export interface ScrapeRunExecution<TItem extends ScrapeRunItem = ScrapeRunItem, TPrepared = unknown> {
   concurrency: number;
   movieGroups: readonly MovieGroup<TItem>[];
+  acquireGroup?: (group: MovieGroup<TItem>, signal: AbortSignal) => Promise<{ release: () => void; revision: string }>;
   prepareGroup: (group: MovieGroup<TItem>, signal: AbortSignal) => Promise<ScrapePreparationResult<TPrepared>>;
   checkTargets: (groups: readonly { group: MovieGroup<TItem>; prepared: TPrepared }[]) => Promise<void>;
   executePreparedGroup: (
@@ -110,6 +111,7 @@ type MutableScrapeRunItem<TItem extends ScrapeRunItem> = ScrapeRunItemSnapshot<T
 type RuntimeMovieGroup<TItem extends ScrapeRunItem, TPrepared> = MovieGroup<MutableScrapeRunItem<TItem>> & {
   preparation?: ScrapePreparationResult<TPrepared>;
   targetsChecked?: boolean;
+  preparationRevision?: string;
 };
 type ScrapeGroupExecution<TItem extends ScrapeRunItem> = {
   output?: PreparedMovieOutput;
@@ -446,113 +448,132 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
         beforeResult: async () => this.assertActive(["running", "paused", "stopping"]),
       },
       runItem: async (group, context) => {
-        if (!group.preparation) {
-          this.recordStage({ stage: "prepare", itemId: group.members[0].id });
-          group.preparation = group.error
-            ? { status: "failed", result: createFailedResult(group.members[0], group.error) }
-            : await runWithScrapeItem(
-                { caseId: group.members[0].caseId, execution: group },
-                async () => await this.execution.prepareGroup(group, context.signal),
-              );
-        }
-        context.signal.throwIfAborted();
-        this.assertActive(["running", "paused"]);
-        if (group.preparation.status === "prepared" && this.status === "running" && !group.targetsChecked) {
-          // Reserve output paths in order before downloads can race, including paths of already committed movies.
-          const previous = this.targetCheck;
-          let releaseCheck!: () => void;
-          this.targetCheck = new Promise<void>((resolve) => {
-            releaseCheck = resolve;
-          });
-          await previous;
-          try {
-            context.signal.throwIfAborted();
-            this.recordStage({ stage: "check-output", itemId: group.members[0].id });
-            await this.execution.checkTargets([
-              ...this.movieGroups.flatMap((checked) =>
-                checked.targetsChecked && checked.preparation?.status === "prepared"
-                  ? [{ group: checked, prepared: checked.preparation.prepared }]
-                  : [],
-              ),
-              { group, prepared: group.preparation.prepared },
-            ]);
-            group.targetsChecked = true;
-          } catch (error) {
-            if (isAbortError(error) || context.signal.aborted) throw error;
-            const conflicts =
-              error instanceof ScrapeTargetConflictError
-                ? error.conflicts.filter((conflict) => group.members.some((item) => item.id === conflict.itemId))
-                : [];
-            const message = conflicts.length ? new ScrapeTargetConflictError(conflicts).message : toErrorMessage(error);
-            this.error = [this.error, message].filter(Boolean).join("\n\n");
-            const conflict = conflicts.length === 1 && group.members.length === 1 ? conflicts[0] : undefined;
-            group.preparation = {
-              status: "failed",
-              result: {
-                ...createFailedResult(group.members[0], message),
-                ...(conflict?.existingMovie
-                  ? { conflict: { sourcePath: conflict.sourcePath, targetPath: conflict.targetPath } }
-                  : {}),
-              },
-            };
-          } finally {
-            releaseCheck();
-          }
-        }
-        if (group.preparation.status !== "prepared") {
-          const result = group.preparation.result;
-          return {
-            results: group.members.map((item) => ({ item, result: retargetPreparedResult(result, item) })),
-            release: async () => undefined,
-          };
-        }
-        if (this.status === "paused") {
-          for (const item of group.members) if (item.status === "processing") item.status = "pending";
-          this.emitSnapshot();
-          return null;
-        }
-        const entry = { group, prepared: group.preparation.prepared };
-        this.recordStage({ stage: "execute", itemId: group.members[0].id });
-        let release: (() => void | Promise<void>) | undefined;
-        const releaseResources = async () => {
-          const cleanup = release;
-          release = undefined;
-          if (cleanup) await cleanup();
-        };
+        const admission = await this.execution.acquireGroup?.(group, context.signal);
+        const releaseTask = admission?.release;
         try {
+          if (admission && group.preparation && group.preparationRevision !== admission.revision) {
+            group.preparation = undefined;
+            group.targetsChecked = false;
+          }
+          if (!group.preparation) {
+            this.recordStage({ stage: "prepare", itemId: group.members[0].id });
+            group.preparation = group.error
+              ? { status: "failed", result: createFailedResult(group.members[0], group.error) }
+              : await runWithScrapeItem(
+                  { caseId: group.members[0].caseId, execution: group },
+                  async () => await this.execution.prepareGroup(group, context.signal),
+                );
+          }
+          group.preparationRevision = admission?.revision;
+          context.signal.throwIfAborted();
           this.assertActive(["running", "paused"]);
-          const execution = await runWithScrapeItem(
-            { caseId: entry.group.members[0].caseId, execution: entry.group },
-            async () => await this.execution.executePreparedGroup(entry, context.signal),
-          );
-          release = execution.release;
-          const groupedResults = new Map(execution.results.map(({ itemId, result }) => [itemId, result]));
-          const eligibleIds = new Set(execution.output?.files.map((file) => file.scrape?.itemId) ?? []);
-          const pendingItems = entry.group.members.filter((m) => m.status === "processing" || m.status === "pending");
-          if (
-            execution.results.length + eligibleIds.size !== pendingItems.length ||
-            groupedResults.size !== execution.results.length
-          ) {
-            throw new Error("刮削组执行返回的结果不完整");
+          if (group.preparation.status === "prepared" && this.status === "running" && !group.targetsChecked) {
+            // Reserve output paths in order before downloads can race, including paths of already committed movies.
+            const previous = this.targetCheck;
+            let releaseCheck!: () => void;
+            this.targetCheck = new Promise<void>((resolve) => {
+              releaseCheck = resolve;
+            });
+            await previous;
+            try {
+              context.signal.throwIfAborted();
+              this.recordStage({ stage: "check-output", itemId: group.members[0].id });
+              await this.execution.checkTargets([
+                ...this.movieGroups.flatMap((checked) =>
+                  checked.targetsChecked && checked.preparation?.status === "prepared"
+                    ? [{ group: checked, prepared: checked.preparation.prepared }]
+                    : [],
+                ),
+                { group, prepared: group.preparation.prepared },
+              ]);
+              group.targetsChecked = true;
+            } catch (error) {
+              if (isAbortError(error) || context.signal.aborted) throw error;
+              const conflicts =
+                error instanceof ScrapeTargetConflictError
+                  ? error.conflicts.filter((conflict) => group.members.some((item) => item.id === conflict.itemId))
+                  : [];
+              const message = conflicts.length
+                ? new ScrapeTargetConflictError(conflicts).message
+                : toErrorMessage(error);
+              this.error = [this.error, message].filter(Boolean).join("\n\n");
+              const conflict = conflicts.length === 1 && group.members.length === 1 ? conflicts[0] : undefined;
+              group.preparation = {
+                status: "failed",
+                result: {
+                  ...createFailedResult(group.members[0], message),
+                  ...(conflict?.existingMovie
+                    ? { conflict: { sourcePath: conflict.sourcePath, targetPath: conflict.targetPath } }
+                    : {}),
+                },
+              };
+            } finally {
+              releaseCheck();
+            }
           }
-          const results = pendingItems.map((item) => {
-            const executed = groupedResults.get(item.id);
-            if (!executed && !eligibleIds.has(item.id)) throw new Error(`刮削组执行遗漏了条目：${item.id}`);
-            return { item, result: executed };
-          });
-          return {
-            output: execution.output,
-            results,
-            release: releaseResources,
+          if (group.preparation.status !== "prepared") {
+            const result = group.preparation.result;
+            return {
+              results: group.members.map((item) => ({ item, result: retargetPreparedResult(result, item) })),
+              release: async () => releaseTask?.(),
+            };
+          }
+          if (this.status === "paused") {
+            for (const item of group.members) if (item.status === "processing") item.status = "pending";
+            this.emitSnapshot();
+            releaseTask?.();
+            return null;
+          }
+          const entry = { group, prepared: group.preparation.prepared };
+          this.recordStage({ stage: "execute", itemId: group.members[0].id });
+          let release: (() => void | Promise<void>) | undefined;
+          const releaseResources = async () => {
+            const cleanup = release;
+            release = undefined;
+            try {
+              if (cleanup) await cleanup();
+            } finally {
+              releaseTask?.();
+            }
           };
-        } catch (error) {
           try {
-            await releaseResources();
-          } catch (cleanupError) {
-            const message = error instanceof Error ? error.message : String(error);
-            const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
-            throw new AggregateError([error, cleanupError], `${message}；清理资源失败：${cleanupMessage}`);
+            this.assertActive(["running", "paused"]);
+            const execution = await runWithScrapeItem(
+              { caseId: entry.group.members[0].caseId, execution: entry.group },
+              async () => await this.execution.executePreparedGroup(entry, context.signal),
+            );
+            release = execution.release;
+            const groupedResults = new Map(execution.results.map(({ itemId, result }) => [itemId, result]));
+            const eligibleIds = new Set(execution.output?.files.map((file) => file.scrape?.itemId) ?? []);
+            const pendingItems = entry.group.members.filter((m) => m.status === "processing" || m.status === "pending");
+            if (
+              execution.results.length + eligibleIds.size !== pendingItems.length ||
+              groupedResults.size !== execution.results.length
+            ) {
+              throw new Error("刮削组执行返回的结果不完整");
+            }
+            const results = pendingItems.map((item) => {
+              const executed = groupedResults.get(item.id);
+              if (!executed && !eligibleIds.has(item.id)) throw new Error(`刮削组执行遗漏了条目：${item.id}`);
+              return { item, result: executed };
+            });
+            return {
+              output: execution.output,
+              results,
+              release: releaseResources,
+            };
+          } catch (error) {
+            try {
+              await releaseResources();
+            } catch (cleanupError) {
+              const message = error instanceof Error ? error.message : String(error);
+              const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+              throw new AggregateError([error, cleanupError], `${message}；清理资源失败：${cleanupMessage}`);
+            }
+            throw error;
           }
+        } catch (error) {
+          releaseTask?.();
           throw error;
         }
       },
