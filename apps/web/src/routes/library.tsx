@@ -33,7 +33,7 @@ export function LibraryPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const scope = toLibraryListScope(search);
-  const { libraryId, actor, studio, tag } = scope;
+  const { libraryId, actor, studio, tag, missingSubtitles } = scope;
   const libraryView = useLibraryView();
   const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
   const isScraping = useScrapeStore(selectIsScraping);
@@ -176,11 +176,11 @@ export function LibraryPage() {
             void navigate({ to: "/workbench", search: { intent: "maintenance" } });
           },
           onIgnore: async (health) => {
-            await api.library.ignoreHealth({ libraryId, actor, studio, tag, query, health });
+            await api.library.ignoreHealth({ libraryId, actor, studio, tag, missingSubtitles, query, health });
             await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
           },
           onRestore: async () => {
-            await api.library.restoreIgnored({ libraryId, actor, studio, tag, query });
+            await api.library.restoreIgnored({ libraryId, actor, studio, tag, missingSubtitles, query });
             await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
           },
         })}

@@ -1,9 +1,141 @@
+import { DEFAULT_FILENAME_KEYWORDS } from "@mdcz/shared/filenameKeywords";
 import { LIBRARY_PAGE_SIZES } from "@mdcz/shared/libraryPagination";
 import type { LibraryEntryDto, LibraryListResponse, LibraryMatchesInput } from "@mdcz/shared/serverDtos";
 import { afterEach, expect, it } from "vitest";
 import { closeTestServers, createTempRoot, createTestLibrary, createTestServer, loginAsAdmin } from "./app.testSupport";
 
 afterEach(closeTestServers);
+
+it("filters movies with any unsubtitled file using filename rules and file-scoped subtitle registrations", async () => {
+  const { fastify, services } = await createTestServer();
+  const token = await loginAsAdmin(fastify);
+  const headers = { authorization: `Bearer ${token}` };
+  const directory = await createTempRoot("library-subtitle-filter");
+  const { libraryId, rootId } = await createTestLibrary(fastify, token, directory);
+  const other = await createTempRoot("other-subtitle-filter");
+  const { rootId: otherRootId } = await createTestLibrary(fastify, token, other);
+  const { repositories } = await services.persistence.getState();
+  const cases = [
+    { id: "plain", paths: ["ABC-101.mp4"], missing: true },
+    { id: "marked", paths: ["ABC-102-C.mp4"], missing: false },
+    { id: "umr", paths: ["ABC-103-C-U.mp4"], missing: true },
+    { id: "umr-subtitled", paths: ["ABC-104-C-U-C.mp4"], missing: false },
+    { id: "english", paths: ["ABC-105.mp4"], sidecars: [0], missing: false },
+    { id: "partial", paths: ["ABC-106-CD1.mp4", "ABC-106-CD2.mp4"], sidecars: [0], missing: true },
+    { id: "complete", paths: ["ABC-107-CD1-C.mp4", "ABC-107-CD2.mp4"], sidecars: [1], missing: false },
+    { id: "versions", paths: ["ABC-108-C.mp4", "ABC-108-4K.mp4"], missing: true },
+    { id: "directory-marker", paths: ["中文字幕/ABC-109.mp4"], missing: false },
+    { id: "custom", paths: ["ABC-110-SUB.mp4"], missing: true },
+  ];
+  for (const fixture of cases) {
+    repositories.library.writeEntry(
+      {
+        id: fixture.id,
+        number: fixture.id,
+        title: "Subtitle fixture",
+        actors: ["Alice"],
+        crawlerDataJson: JSON.stringify({ studio: "Studio", genres: ["Drama"] }),
+      },
+      fixture.paths.map((rootRelativePath, index) => ({
+        fileId: `${fixture.id}-${index}`,
+        rootId,
+        rootRelativePath,
+        size: 1,
+        assets: fixture.sidecars?.includes(index)
+          ? [
+              {
+                kind: "subtitle",
+                uri: `${rootRelativePath}.en.srt`,
+                rootId,
+                relativePath: `${rootRelativePath}.en.srt`,
+              },
+            ]
+          : [],
+      })),
+    );
+  }
+  repositories.library.writeEntry({ id: "other-library", title: "Subtitle fixture", actors: ["Alice"] }, [
+    { fileId: "other-file", rootId: otherRootId, rootRelativePath: "XYZ-123.mp4" },
+  ]);
+  const scope: LibraryMatchesInput = {
+    libraryId,
+    query: "Subtitle fixture",
+    actor: "Alice",
+    studio: "Studio",
+    tag: "Drama",
+    missingSubtitles: true,
+  };
+  const read = async (input: LibraryMatchesInput = scope, page = 1): Promise<LibraryListResponse> => {
+    const response = await fastify.inject({
+      method: "POST",
+      url: "/trpc/library.list",
+      headers,
+      payload: { ...input, page },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json().result.data;
+  };
+  const expectedIds = cases
+    .filter(({ missing }) => missing)
+    .map(({ id }) => id)
+    .sort();
+  const result = await read();
+  expect(result.entries.map(({ id }) => id).sort()).toEqual(expectedIds);
+  expect(result).toMatchObject({ total: 5, fileCount: 7, totalBytes: 7 });
+  expect(result.entries.every(({ available }) => available === "unchecked")).toBe(true);
+  expect(await read({ ...scope, health: "missingSynopsis" })).toMatchObject({ total: 5 });
+  expect(await read({ ...scope, actor: "Bob" })).toMatchObject({ total: 0, fileCount: 0, totalBytes: 0 });
+  expect(await read({ ...scope, missingSubtitles: false })).toMatchObject({ total: 10 });
+  const snapshot = await fastify.inject({ method: "POST", url: "/trpc/library.matches", headers, payload: scope });
+  expect(snapshot.statusCode, snapshot.body).toBe(200);
+  expect(
+    snapshot
+      .json()
+      .result.data.entries.map(({ id }: LibraryEntryDto) => id)
+      .sort(),
+  ).toEqual(expectedIds);
+
+  await services.config.update({
+    scrape: { subtitleKeywords: [...DEFAULT_FILENAME_KEYWORDS.subtitleKeywords, "SUB"] },
+  });
+  expect((await read()).entries.map(({ id }) => id).sort()).toEqual(expectedIds.filter((id) => id !== "custom"));
+  await services.config.update({ scrape: { subtitleKeywords: [] } });
+  expect(await read()).toMatchObject({ total: 9 });
+  await services.config.update({ scrape: { subtitleKeywords: [...DEFAULT_FILENAME_KEYWORDS.subtitleKeywords] } });
+
+  repositories.library.writeEntry({ id: "partial" }, [
+    {
+      fileId: "partial-1",
+      rootId,
+      rootRelativePath: "ABC-106-CD2.mp4",
+      assets: [{ kind: "subtitle", uri: "ABC-106-CD2.srt", rootId, relativePath: "ABC-106-CD2.srt" }],
+    },
+  ]);
+  expect((await read()).entries.map(({ id }) => id).sort()).toEqual(expectedIds.filter((id) => id !== "partial"));
+  repositories.library.writeEntry({ id: "partial" }, [
+    {
+      fileId: "partial-1",
+      rootId,
+      rootRelativePath: "ABC-106-CD2.mp4",
+      assets: [],
+    },
+  ]);
+  expect((await read()).entries.map(({ id }) => id).sort()).toEqual(expectedIds);
+
+  for (let index = 0; index < 12; index += 1) {
+    repositories.library.writeEntry({ id: `extra-${index}` }, [
+      { fileId: `extra-${index}`, rootId, rootRelativePath: `EXTRA-${index}.mp4`, size: 2 },
+    ]);
+  }
+  const paginatedScope = { libraryId, missingSubtitles: true };
+  const first = await read(paginatedScope);
+  const second = await read(paginatedScope, 2);
+  expect(first).toMatchObject({ total: 17, fileCount: 19, totalBytes: 31, page: 1 });
+  expect(second).toMatchObject({ total: 17, fileCount: 19, totalBytes: 31, page: 2 });
+  expect(first.entries).toHaveLength(10);
+  expect(second.entries).toHaveLength(7);
+  expect(new Set([...first.entries, ...second.entries].map(({ id }) => id)).size).toBe(17);
+});
 
 it("pages filtered movies and snapshots every match using the same scope without checking disk files", async () => {
   const { fastify, services } = await createTestServer();

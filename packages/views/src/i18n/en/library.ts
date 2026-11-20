@@ -45,6 +45,7 @@ export const library = {
   allLibraries: "All libraries",
   libraryAriaLabel: "Library",
   view: { list: "List", wall: "Poster wall" },
+  subtitles: { label: "Subtitle filter", all: "All subtitle statuses", missing: "Has files without subtitles" },
   health: {
     title: "Health",
     issues: {

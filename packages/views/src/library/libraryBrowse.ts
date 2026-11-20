@@ -12,6 +12,7 @@ export interface LibraryBrowseSearch {
   actor?: string;
   studio?: string;
   tag?: string;
+  missingSubtitles?: true;
 }
 
 const text = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
@@ -23,15 +24,25 @@ export const parseLibraryBrowseSearch = (search: Record<string, unknown>): Libra
   actor: text(search.actor),
   studio: text(search.studio),
   tag: text(search.tag),
+  missingSubtitles: search.missingSubtitles === true ? true : undefined,
 });
 
-export const toLibraryListScope = ({ libraryId, health, ignored, actor, studio, tag }: LibraryBrowseSearch) => ({
+export const toLibraryListScope = ({
   libraryId,
   health,
   ignored,
   actor,
   studio,
   tag,
+  missingSubtitles,
+}: LibraryBrowseSearch) => ({
+  libraryId,
+  health,
+  ignored,
+  actor,
+  studio,
+  tag,
+  missingSubtitles,
 });
 
 const facetFromSearch = (search: LibraryBrowseSearch): LibraryFacetSelection | undefined =>
@@ -79,16 +90,20 @@ export const createLibraryBrowseControls = (input: {
     health: search.health,
     ignored: search.ignored === true,
     facet: facetFromSearch(search),
+    missingSubtitles: search.missingSubtitles === true,
     view: input.view,
     // Another library has other actors and issues, so its filters start over.
     onLibraryChange: (libraryId) => update({ libraryId }),
     onHealthChange: (health) => update({ ...search, health, ignored: undefined }),
     onIgnoredChange: (ignored) => update({ ...search, health: undefined, ignored: ignored || undefined }),
+    onMissingSubtitlesChange: (missingSubtitles) =>
+      update({ ...search, missingSubtitles: missingSubtitles || undefined }),
     onFacetChange: (facet) =>
       update({
         libraryId: search.libraryId,
         health: search.health,
         ignored: search.ignored,
+        missingSubtitles: search.missingSubtitles,
         ...(facet ? { [facet.kind]: facet.name } : {}),
       }),
     onClear: () => update({ libraryId: search.libraryId }),

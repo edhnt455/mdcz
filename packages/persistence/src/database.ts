@@ -26,6 +26,13 @@ export const createPersistenceDatabase = (config: PersistenceDatabaseConfig): Pe
     sqlite.pragma("foreign_keys = ON");
     sqlite.pragma("busy_timeout = 5000");
     sqlite.pragma("synchronous = FULL");
+    let matchPattern = /(?!)/iu;
+    let excludedPattern = /(?!)/giu;
+    sqlite.function("regexp_excluding", { deterministic: true }, (value: string, pattern: string, excluded: string) => {
+      if (matchPattern.source !== pattern) matchPattern = new RegExp(pattern, "iu");
+      if (excludedPattern.source !== excluded) excludedPattern = new RegExp(excluded, "giu");
+      return Number(matchPattern.test(value.normalize("NFC").replace(excludedPattern, "")));
+    });
     return { sqlite, db: drizzle(sqlite, { schema }), close: () => sqlite.close() };
   } catch (error) {
     sqlite.close();

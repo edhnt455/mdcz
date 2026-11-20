@@ -425,6 +425,7 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
     subtitlePath: "/media/259LUXU-1573.srt",
     language: "zh-CN",
   };
+  expect(await services.library.list({ missingSubtitles: true })).toMatchObject({ total: 1 });
   expect(
     (await fastify.inject({ method: "POST", url: "/api/automation/subtitles/updated", payload: input })).statusCode,
   ).toBe(401);
@@ -454,6 +455,7 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
   expect((await state.repositories.library.getEntryById("movie-1")).assets).toContainEqual(
     expect.objectContaining({ kind: "subtitle", fileId: "file-1" }),
   );
+  expect(await services.library.list({ missingSubtitles: true })).toMatchObject({ total: 1 });
   const firstPoster = await readFile(join(root, "poster.jpg"));
   let releaseDownload!: () => void;
   let downloadStarted!: () => void;
@@ -556,6 +558,7 @@ it("publishes and tracks subtitle updates by path with durable idempotency and c
     await expect
       .poll(async () => (await services.subtitleUpdates.get(followupId))?.status, { timeout: 10_000 })
       .toBe("completed");
+    expect(await services.library.list({ missingSubtitles: true })).toMatchObject({ total: 0 });
     await expect
       .poll(async () => (await services.subtitleUpdates.list({ offset: 0, limit: 1 })).counts.failed, {
         timeout: 10_000,

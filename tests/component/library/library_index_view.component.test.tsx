@@ -149,11 +149,13 @@ test("a health filter offers to ignore its movies, and the ignored view only res
       facets: { actors: [], studios: [], tags: [] },
     },
     ignored: false,
+    missingSubtitles: false,
     view: "list",
     onLibraryChange: vi.fn(),
     onHealthChange: vi.fn(),
     onIgnoredChange: vi.fn(),
     onFacetChange: vi.fn(),
+    onMissingSubtitlesChange: vi.fn(),
     onClear: vi.fn(),
     onViewChange: vi.fn(),
     onFix: vi.fn(async () => undefined),
@@ -181,6 +183,12 @@ test("a health filter offers to ignore its movies, and the ignored view only res
   await expect.element(ignore).not.toBeInTheDocument();
   await restore.click();
   expect(browse.onRestore).toHaveBeenCalledOnce();
+  await screen.rerender(
+    <LibraryIndexView {...baseProps} entries={[]} total={0} browse={{ ...browse, missingSubtitles: true }} />,
+  );
+  await expect.element(screen.getByText("暂无匹配条目")).toBeVisible();
+  await expect.element(ignore).not.toBeInTheDocument();
+  await expect.element(restore).not.toBeInTheDocument();
 });
 
 test("library view preference survives remounts", async () => {

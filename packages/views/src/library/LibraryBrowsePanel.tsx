@@ -1,6 +1,6 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryHealthIssue, LibrarySummaryResponse } from "@mdcz/shared/serverDtos";
-import { Button, cn } from "@mdcz/ui";
+import { Button, cn, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@mdcz/ui";
 import { ChevronDown, EyeOff, LoaderCircle, Pencil, RotateCcw, Wrench, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -21,6 +21,8 @@ export interface LibraryBrowseControls {
   /** Lists the ignored movies in place of one issue. */
   ignored: boolean;
   facet?: LibraryFacetSelection;
+  missingSubtitles: boolean;
+  onMissingSubtitlesChange: (missing: boolean) => void;
   view: "list" | "wall";
   onLibraryChange: (libraryId: string | undefined) => void;
   onHealthChange: (issue: LibraryHealthIssue | undefined) => void;
@@ -61,7 +63,7 @@ export function LibraryBrowsePanel({
   const ignoredCount = summary?.ignored ?? 0;
   const showIgnored = ignoredCount > 0 || ignored;
   const fixable = health !== undefined && HEALTH_FIX_PRESETS[health] !== undefined;
-  const filtered = health !== undefined || ignored || facet !== undefined;
+  const filtered = health !== undefined || ignored || facet !== undefined || browse.missingSubtitles === true;
   const run = async (action: NonNullable<typeof running>, task: () => Promise<void>) => {
     setRunning(action);
     try {
@@ -79,6 +81,18 @@ export function LibraryBrowsePanel({
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={browse.missingSubtitles ? "missing" : "all"}
+            onValueChange={(value) => browse.onMissingSubtitlesChange(value === "missing")}
+          >
+            <SelectTrigger aria-label={t.library.subtitles.label} className="h-7 w-auto gap-2 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t.library.subtitles.all}</SelectItem>
+              <SelectItem value="missing">{t.library.subtitles.missing}</SelectItem>
+            </SelectContent>
+          </Select>
           {shownIssues.length > 0 || showIgnored ? (
             <span className="text-xs font-bold tracking-wide text-muted-foreground uppercase">
               {t.library.health.title}

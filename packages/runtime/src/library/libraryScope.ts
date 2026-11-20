@@ -1,5 +1,6 @@
 import type { LibraryEntryFilter } from "@mdcz/persistence";
 import type { Configuration } from "@mdcz/shared/config";
+import { filenameKeywordPattern } from "@mdcz/shared/filenameKeywords";
 import type { LibraryMatchesInput } from "@mdcz/shared/serverDtos";
 import type { MediaLibraryService } from "./mediaLibraryService";
 
@@ -7,9 +8,9 @@ import type { MediaLibraryService } from "./mediaLibraryService";
 export const toLibraryEntryFilter = async (
   input: LibraryMatchesInput | undefined,
   libraries: Pick<MediaLibraryService, "get">,
-  configuration: Pick<Configuration, "download">,
+  configuration: Pick<Configuration, "download" | "scrape">,
 ): Promise<LibraryEntryFilter> => {
-  const { query, rootId, libraryId, health, ignored, actor, studio, tag } = input ?? {};
+  const { query, rootId, libraryId, health, ignored, actor, studio, tag, missingSubtitles } = input ?? {};
   const library = libraryId ? await libraries.get(libraryId) : undefined;
   return {
     query,
@@ -20,6 +21,12 @@ export const toLibraryEntryFilter = async (
     actor,
     studio,
     tag,
+    missingSubtitles: missingSubtitles
+      ? {
+          pattern: filenameKeywordPattern(configuration.scrape.subtitleKeywords).source,
+          excludedPattern: filenameKeywordPattern(configuration.scrape.umrKeywords).source,
+        }
+      : undefined,
     pathPrefixes: library ? [library.sourcePath, library.outputPath].filter(Boolean) : undefined,
   };
 };

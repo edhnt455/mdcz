@@ -757,7 +757,7 @@ export const LIBRARY_HEALTH_ISSUES = [
 export const libraryHealthIssueSchema = z.enum(LIBRARY_HEALTH_ISSUES);
 export type LibraryHealthIssue = z.infer<typeof libraryHealthIssueSchema>;
 
-/** Narrows a listing or a summary to one library, and within it to one issue or one actor, studio or tag. */
+/** Filters compose so bulk actions can use the same scope as the listing. */
 const libraryScopeFields = {
   libraryId: z.string().trim().min(1).optional(),
   health: libraryHealthIssueSchema.optional(),
@@ -766,6 +766,7 @@ const libraryScopeFields = {
   actor: z.string().trim().min(1).optional(),
   studio: z.string().trim().min(1).optional(),
   tag: z.string().trim().min(1).optional(),
+  missingSubtitles: z.boolean().optional(),
 };
 
 export const libraryMatchesInputSchema = z.object({

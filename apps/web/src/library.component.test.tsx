@@ -202,7 +202,7 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     total: 630,
     issues: { missingSynopsis: 120, missingPoster: 0, missingBackdrop: 0, noNfo: 0, duplicate: 0 },
     ignored: 0,
-    facets: { actors: [], studios: [], tags: [] },
+    facets: { actors: [{ name: "Alice", count: 630 }], studios: [], tags: [] },
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
   const root = createRootRoute({ component: Outlet });
@@ -262,6 +262,36 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     await expect.element(search).toHaveFocus();
     await expect.element(screen.getByText("Movie 51", { exact: true })).toBeVisible();
     expect(selectAll).toHaveBeenCalledOnce();
+    await search.fill("");
+    await screen.getByRole("button", { name: "第 7 页", exact: true }).click();
+    const subtitles = screen.getByRole("combobox", { name: "字幕筛选" });
+    await subtitles.click();
+    await screen.getByRole("option", { name: "存在无字幕文件" }).click();
+    await expect.element(screen.getByText("共 121 部 · 第 1 / 7 页")).toBeVisible();
+    expect(router.state.location.search).toMatchObject({ health: "missingSynopsis", missingSubtitles: true });
+    expect(list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, health: "missingSynopsis", missingSubtitles: true }),
+    );
+    selectAll.mockResolvedValue({ entries: [...matches] });
+    await screen.getByRole("button", { name: "多选" }).click();
+    await screen.getByRole("checkbox", { name: "全选筛选结果" }).click();
+    await expect.element(screen.getByText("已选 121 部影片")).toBeVisible();
+    expect(selectAll).toHaveBeenLastCalledWith(
+      expect.objectContaining({ health: "missingSynopsis", missingSubtitles: true }),
+    );
+    await subtitles.click();
+    await screen.getByRole("option", { name: "全部字幕状态" }).click();
+    await expect.poll(() => router.state.location.search.missingSubtitles).toBeUndefined();
+    await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+    await subtitles.click();
+    await screen.getByRole("option", { name: "存在无字幕文件" }).click();
+    await screen.getByRole("button", { name: "按条件浏览" }).click();
+    await screen.getByRole("button", { name: /^Alice\s*630$/u }).click();
+    await expect.poll(() => router.state.location.search.actor).toBe("Alice");
+    expect(router.state.location.search).toMatchObject({ health: "missingSynopsis", missingSubtitles: true });
+    await screen.getByRole("button", { name: "清除筛选" }).click();
+    await expect.element(screen.getByText("共 630 部 · 第 1 / 32 页")).toBeVisible();
+    expect(router.state.location.search).toEqual({});
   } finally {
     await screen.unmount();
     client.clear();

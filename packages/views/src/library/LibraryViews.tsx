@@ -328,7 +328,12 @@ export function LibraryIndexView({
                   </div>
                 ) : (
                   <p className="text-sm">
-                    {total === 0 && !query.trim() && !browse?.health && !browse?.facet && !browse?.ignored
+                    {total === 0 &&
+                    !query.trim() &&
+                    !browse?.health &&
+                    !browse?.facet &&
+                    !browse?.ignored &&
+                    !browse?.missingSubtitles
                       ? t.library.nothingIndexed
                       : t.library.noMatchingEntries}
                   </p>

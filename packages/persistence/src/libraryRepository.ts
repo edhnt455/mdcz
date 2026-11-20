@@ -97,6 +97,7 @@ export interface LibraryEntryFilter {
   actor?: string;
   studio?: string;
   tag?: string;
+  missingSubtitles?: { pattern: string; excludedPattern: string };
 }
 
 export interface ListLibraryEntriesInput extends LibraryEntryFilter {
@@ -947,6 +948,22 @@ const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
   if (input.pathPrefixes) filters.push(pathPrefixCondition(input.pathPrefixes, sql`${libraryItems.id}`));
   if (input.health) filters.push(healthCondition(input.health, input));
   if (input.healthIgnored) filters.push(healthIgnoredCondition(input));
+  if (input.missingSubtitles) {
+    filters.push(sql`EXISTS (
+      SELECT 1 FROM library_item_files AS subtitle_file
+      INNER JOIN media_roots AS subtitle_root ON subtitle_root.id = subtitle_file.root_id
+      WHERE subtitle_file.item_id = ${libraryItems.id}
+        AND NOT regexp_excluding(
+          rtrim(subtitle_root.host_path, '/') || '/' || subtitle_file.root_relative_path,
+          ${input.missingSubtitles.pattern}, ${input.missingSubtitles.excludedPattern}
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM library_item_assets AS subtitle_asset
+          WHERE subtitle_asset.item_id = ${libraryItems.id}
+            AND subtitle_asset.file_id = subtitle_file.id AND subtitle_asset.kind = 'subtitle'
+        )
+    )`);
+  }
   if (input.actor)
     filters.push(sql`EXISTS (SELECT 1 FROM json_each(${libraryItems.actorsJson}) WHERE value = ${input.actor})`);
   if (input.studio) filters.push(sql`${STUDIO} = ${input.studio}`);

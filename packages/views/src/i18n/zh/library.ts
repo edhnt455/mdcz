@@ -45,6 +45,7 @@ export const library: Messages["library"] = {
   allLibraries: "全部媒体库",
   libraryAriaLabel: "媒体库",
   view: { list: "列表", wall: "海报墙" },
+  subtitles: { label: "字幕筛选", all: "全部字幕状态", missing: "存在无字幕文件" },
   health: {
     title: "健康状况",
     issues: {
