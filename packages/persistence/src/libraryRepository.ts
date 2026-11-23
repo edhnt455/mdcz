@@ -91,13 +91,15 @@ export interface LibraryEntryFilter {
   /** Host directories; a movie matches when one of its files is inside one of them. */
   pathPrefixes?: readonly string[];
   health?: LibraryHealthIssue;
+  issues?: Partial<Record<LibraryHealthIssue, boolean>>;
   /** Movies with an issue that still applies but was ignored; ignored issues never match `health`. */
   healthIgnored?: boolean;
   includeBackdrop?: boolean;
-  actor?: string;
-  studio?: string;
-  tag?: string;
-  missingSubtitles?: { pattern: string; excludedPattern: string };
+  actors?: string[];
+  studios?: string[];
+  tags?: string[];
+  missingActors?: boolean;
+  missingSubtitles?: { missing: boolean; pattern: string; excludedPattern: string };
 }
 
 export interface ListLibraryEntriesInput extends LibraryEntryFilter {
@@ -109,6 +111,8 @@ export interface LibraryFacetCount {
   name: string;
   count: number;
 }
+
+type LibraryFacetKind = keyof LibrarySummary["facets"];
 
 export interface LibrarySummary {
   total: number;
@@ -699,11 +703,6 @@ export class LibraryRepository {
         coalesce(sum(CASE WHEN ${healthIgnoredCondition(filter)} THEN 1 ELSE 0 END), 0) AS ignored
         FROM library_items WHERE ${scope}`,
     );
-    const jsonFacet = (values: SQL): LibraryFacetCount[] =>
-      this.database.db.all<LibraryFacetCount>(
-        sql`SELECT facet.value AS name, count(*) AS count FROM library_items, json_each(${values}) AS facet
-          WHERE ${scope} AND facet.value <> '' GROUP BY facet.value ORDER BY count(*) DESC, facet.value LIMIT ${facetLimit}`,
-      );
     return {
       total: counts.total,
       issues: Object.fromEntries(
@@ -711,14 +710,30 @@ export class LibraryRepository {
       ) as LibrarySummary["issues"],
       ignored: counts.ignored,
       facets: {
-        actors: jsonFacet(sql`${libraryItems.actorsJson}`),
-        studios: this.database.db.all<LibraryFacetCount>(
-          sql`SELECT ${STUDIO} AS name, count(*) AS count FROM library_items
-            WHERE ${scope} AND ${STUDIO} <> '' GROUP BY ${STUDIO} ORDER BY count(*) DESC, ${STUDIO} LIMIT ${facetLimit}`,
-        ),
-        tags: jsonFacet(sql`json_extract(${libraryItems.crawlerDataJson}, '$.genres')`),
+        actors: this.listFacet(filter, "actors", "", facetLimit),
+        studios: this.listFacet(filter, "studios", "", facetLimit),
+        tags: this.listFacet(filter, "tags", "", facetLimit),
       },
     };
+  }
+
+  listFacet(
+    filter: Pick<LibraryEntryFilter, "pathPrefixes">,
+    kind: LibraryFacetKind,
+    query = "",
+    limit = 30,
+  ): LibraryFacetCount[] {
+    const scope = buildLibraryListWhere(filter) ?? sql`1`;
+    const value = kind === "studios" ? STUDIO : sql`facet.value`;
+    const source = kind === "studios" ? sql`` : sql`, json_each(${FACET_ARRAYS[kind]}) AS facet`;
+    const pattern = `%${escapeLikePattern(query.toLowerCase())}%`;
+    const matching = query ? sql`AND lower(${value}) LIKE ${pattern} ESCAPE '\\'` : sql``;
+    return this.database.db.all<LibraryFacetCount>(
+      sql`SELECT ${value} AS name, count(DISTINCT ${libraryItems.id}) AS count
+        FROM library_items ${source}
+        WHERE ${scope} AND is_nonblank_text(${value}) ${matching}
+        GROUP BY ${value} ORDER BY count DESC, name LIMIT ${limit}`,
+    );
   }
 
   /** Stops counting `filter.health` for every movie the filter lists. */
@@ -730,10 +745,12 @@ export class LibraryRepository {
   }
 
   /** Counts every issue again for the ignored movies the filter lists. */
-  restoreIgnored(filter: Omit<LibraryEntryFilter, "health" | "healthIgnored">): void {
+  restoreIgnored(filter: Omit<LibraryEntryFilter, "health" | "healthIgnored">, ids?: string[]): void {
+    const scope = buildLibraryListWhere({ ...filter, healthIgnored: true });
+    const selected = ids ? sql`AND ${libraryItems.id} IN (SELECT value FROM json_each(${JSON.stringify(ids)}))` : sql``;
     this.database.db.run(
       sql`DELETE FROM library_health_ignores WHERE item_id IN (
-        SELECT ${libraryItems.id} FROM library_items WHERE ${buildLibraryListWhere({ ...filter, healthIgnored: true })}
+        SELECT ${libraryItems.id} FROM library_items WHERE ${scope} ${selected}
       )`,
     );
   }
@@ -884,6 +901,10 @@ export class LibraryRepository {
 }
 
 const STUDIO = sql`json_extract(${libraryItems.crawlerDataJson}, '$.studio')`;
+const FACET_ARRAYS = {
+  actors: sql`${libraryItems.actorsJson}`,
+  tags: sql`json_extract(${libraryItems.crawlerDataJson}, '$.genres')`,
+};
 
 const hasLocalAsset = (kind: string): SQL =>
   sql`EXISTS (SELECT 1 FROM library_item_assets AS asset WHERE asset.item_id = ${libraryItems.id} AND asset.kind = ${kind} AND asset.root_id IS NOT NULL)`;
@@ -948,8 +969,20 @@ const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
   if (input.pathPrefixes) filters.push(pathPrefixCondition(input.pathPrefixes, sql`${libraryItems.id}`));
   if (input.health) filters.push(healthCondition(input.health, input));
   if (input.healthIgnored) filters.push(healthIgnoredCondition(input));
+  for (const issue of LIBRARY_HEALTH_ISSUES) {
+    const missing = input.issues?.[issue];
+    if (missing === undefined) continue;
+    const condition = unresolvedCondition(issue, { pathPrefixes: input.pathPrefixes });
+    filters.push(missing ? condition : sql`NOT (${condition})`);
+  }
+  if (input.missingActors !== undefined) {
+    const condition = sql`EXISTS (
+      SELECT 1 FROM json_each(${libraryItems.actorsJson}) AS actor WHERE is_nonblank_text(actor.atom)
+    )`;
+    filters.push(input.missingActors ? sql`NOT ${condition}` : condition);
+  }
   if (input.missingSubtitles) {
-    filters.push(sql`EXISTS (
+    const condition = sql`EXISTS (
       SELECT 1 FROM library_item_files AS subtitle_file
       INNER JOIN media_roots AS subtitle_root ON subtitle_root.id = subtitle_file.root_id
       WHERE subtitle_file.item_id = ${libraryItems.id}
@@ -962,15 +995,15 @@ const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
           WHERE subtitle_asset.item_id = ${libraryItems.id}
             AND subtitle_asset.file_id = subtitle_file.id AND subtitle_asset.kind = 'subtitle'
         )
-    )`);
+    )`;
+    filters.push(input.missingSubtitles.missing ? condition : sql`NOT ${condition}`);
   }
-  if (input.actor)
-    filters.push(sql`EXISTS (SELECT 1 FROM json_each(${libraryItems.actorsJson}) WHERE value = ${input.actor})`);
-  if (input.studio) filters.push(sql`${STUDIO} = ${input.studio}`);
-  if (input.tag)
-    filters.push(
-      sql`EXISTS (SELECT 1 FROM json_each(json_extract(${libraryItems.crawlerDataJson}, '$.genres')) WHERE value = ${input.tag})`,
-    );
+  if (input.studios?.length) filters.push(inArray(STUDIO, input.studios));
+  for (const kind of ["actors", "tags"] as const) {
+    const values = input[kind];
+    if (!values?.length) continue;
+    filters.push(sql`EXISTS (SELECT 1 FROM json_each(${FACET_ARRAYS[kind]}) WHERE ${inArray(sql`value`, values)})`);
+  }
   const rootId = input.rootId?.trim();
   if (rootId) {
     filters.push(

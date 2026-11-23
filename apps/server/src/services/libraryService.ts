@@ -17,6 +17,8 @@ import type {
   LibraryAvailabilityResponse,
   LibraryDetailResponse,
   LibraryEntryDto,
+  LibraryFacetInput,
+  LibraryFacetOption,
   LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
@@ -65,6 +67,11 @@ export class LibraryService {
     );
   }
 
+  async facet({ libraryId, kind, query }: LibraryFacetInput): Promise<LibraryFacetOption[]> {
+    const filter = await toLibraryEntryFilter({ libraryId }, this.libraries, await this.getConfiguration());
+    return (await this.persistence.getState()).repositories.library.listFacet(filter, kind, query);
+  }
+
   async ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }> {
     const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
     (await this.persistence.getState()).repositories.library.ignoreHealth({ ...filter, health: input.health });
@@ -73,7 +80,7 @@ export class LibraryService {
 
   async restoreIgnored(input: LibraryRestoreIgnoredInput): Promise<{ success: true }> {
     const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
-    (await this.persistence.getState()).repositories.library.restoreIgnored(filter);
+    (await this.persistence.getState()).repositories.library.restoreIgnored(filter, input.ids);
     return { success: true };
   }
 

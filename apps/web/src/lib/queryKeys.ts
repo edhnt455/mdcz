@@ -29,6 +29,7 @@ export const queryKeys = {
     all: ["library"] as const,
     list: (filters: object) => ["library", "list", filters] as const,
     summary: (libraryId: string | undefined) => ["library", "summary", libraryId ?? ""] as const,
+    facet: (input: object) => ["library", "facet", input] as const,
   },
   libraries: {
     all: ["libraries"] as const,

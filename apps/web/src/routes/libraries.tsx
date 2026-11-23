@@ -44,7 +44,9 @@ export function LibrariesPage() {
         prepareMaintenanceSetup({ scanDir: library.sourcePath, libraryId: library.id, presetId: "import_local" });
         void navigate({ to: "/workbench", search: { intent: "maintenance" } });
       }}
-      onViewIssue={(library, health) => void navigate({ to: "/library", search: { libraryId: library.id, health } })}
+      onViewIssue={(library, issue) =>
+        void navigate({ to: "/library", search: { libraryId: library.id, issues: { [issue]: true } } })
+      }
       onViewPending={() => void navigate({ to: "/pending" })}
       loading={librariesQ.isLoading}
       errorMessage={librariesQ.error ? toErrorMessage(librariesQ.error) : null}

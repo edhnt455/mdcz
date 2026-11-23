@@ -757,15 +757,20 @@ export const LIBRARY_HEALTH_ISSUES = [
 export const libraryHealthIssueSchema = z.enum(LIBRARY_HEALTH_ISSUES);
 export type LibraryHealthIssue = z.infer<typeof libraryHealthIssueSchema>;
 
+export const libraryFacetKindSchema = z.enum(["actors", "studios", "tags"]);
+export type LibraryFacetKind = z.infer<typeof libraryFacetKindSchema>;
+const libraryFacetValues = z.array(z.string().trim().min(1)).min(1).optional();
+
 /** Filters compose so bulk actions can use the same scope as the listing. */
 const libraryScopeFields = {
   libraryId: z.string().trim().min(1).optional(),
   health: libraryHealthIssueSchema.optional(),
-  /** The movies whose ignored issues still apply, in place of one issue. */
+  issues: z.partialRecord(libraryHealthIssueSchema, z.boolean()).optional(),
   ignored: z.boolean().optional(),
-  actor: z.string().trim().min(1).optional(),
-  studio: z.string().trim().min(1).optional(),
-  tag: z.string().trim().min(1).optional(),
+  actors: libraryFacetValues,
+  studios: libraryFacetValues,
+  tags: libraryFacetValues,
+  missingActors: z.boolean().optional(),
   missingSubtitles: z.boolean().optional(),
 };
 
@@ -789,6 +794,13 @@ export const librarySummaryInputSchema = z.object({ libraryId: libraryScopeField
 export type LibrarySummaryInput = z.infer<typeof librarySummaryInputSchema>;
 
 const libraryFacetSchema = z.array(z.object({ name: z.string(), count: z.number().int() }));
+export const libraryFacetInputSchema = z.object({
+  libraryId: libraryScopeFields.libraryId,
+  kind: libraryFacetKindSchema,
+  query: z.string().trim().optional(),
+});
+export type LibraryFacetInput = z.infer<typeof libraryFacetInputSchema>;
+export type LibraryFacetOption = z.infer<typeof libraryFacetSchema>[number];
 
 export const librarySummaryResponseSchema = z.object({
   total: z.number().int(),
@@ -799,12 +811,15 @@ export const librarySummaryResponseSchema = z.object({
 export type LibrarySummaryResponse = z.infer<typeof librarySummaryResponseSchema>;
 
 /** Restoring and ignoring act on what the list shows, so they take the list's scope and search. */
-export const libraryRestoreIgnoredInputSchema = z
+const libraryHealthActionScopeSchema = z
   .object({ ...libraryScopeFields, query: z.string().optional() })
   .omit({ health: true, ignored: true });
+export const libraryRestoreIgnoredInputSchema = libraryHealthActionScopeSchema.extend({
+  ids: z.array(z.string().trim().min(1)).min(1).optional(),
+});
 export type LibraryRestoreIgnoredInput = z.infer<typeof libraryRestoreIgnoredInputSchema>;
 
-export const libraryIgnoreHealthInputSchema = libraryRestoreIgnoredInputSchema.extend({
+export const libraryIgnoreHealthInputSchema = libraryHealthActionScopeSchema.extend({
   health: libraryHealthIssueSchema,
 });
 export type LibraryIgnoreHealthInput = z.infer<typeof libraryIgnoreHealthInputSchema>;

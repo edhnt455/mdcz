@@ -737,9 +737,9 @@ describe("LibraryRepository", () => {
     // The other copy lives in a different library, so neither side counts it.
     await expect(ids({ health: "duplicate", pathPrefixes: [resolve("/root-1")] })).resolves.toEqual([]);
     await expect(ids({ health: "duplicate" })).resolves.toEqual(["bare", "healthy"]);
-    await expect(ids({ actor: "Bob" })).resolves.toEqual(["bare", "translated"]);
-    await expect(ids({ studio: "S2", tag: "drama" })).resolves.toEqual([]);
-    await expect(ids({ tag: "3p" })).resolves.toEqual(["bare"]);
+    await expect(ids({ actors: ["Bob", "Not found"] })).resolves.toEqual(["bare", "translated"]);
+    await expect(ids({ studios: ["S2"], tags: ["drama"] })).resolves.toEqual([]);
+    await expect(ids({ tags: ["3p"] })).resolves.toEqual(["bare"]);
 
     // An ignored issue stops counting for that movie only; its other issues still list it.
     repository.ignoreHealth({ health: "missingSynopsis" });
@@ -750,6 +750,10 @@ describe("LibraryRepository", () => {
       ignored: 1,
     });
     await expect(ids({ health: "missingSynopsis" })).resolves.toEqual([]);
+    await expect(ids({ issues: { missingSynopsis: true, noNfo: true } })).resolves.toEqual(["bare"]);
+    await expect(ids({ issues: { missingBackdrop: true, noNfo: false }, includeBackdrop: false })).resolves.toEqual([
+      "translated",
+    ]);
     await expect(ids({ health: "noNfo" })).resolves.toEqual(["bare"]);
     await expect(ids({ healthIgnored: true })).resolves.toEqual(["bare"]);
     repository.restoreIgnored({});

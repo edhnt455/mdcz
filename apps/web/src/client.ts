@@ -227,6 +227,7 @@ export const api: ServerApiContract = {
     list: (input) => trpcQuery("library.list", input),
     matches: (input) => trpcQuery("library.matches", input),
     summary: (input) => trpcQuery("library.summary", input),
+    facet: (input) => trpcQuery("library.facet", input),
     detail: (input) => trpcQuery("library.detail", input),
     refresh: (input) => trpcMutation("library.refresh", input),
     rescan: (input) => trpcMutation("library.rescan", input),

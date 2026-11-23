@@ -210,9 +210,12 @@ it("ignores and restores scoped health issues and deep deletes a batch", async (
   expect((await services.library.list({ libraryId, ignored: true })).entries.map((entry) => entry.id)).toEqual([
     "First",
   ]);
-  expect((await post("restoreIgnored", { libraryId, query: "First" })).statusCode).toBe(200);
-  expect(await summary()).toMatchObject({ issues: { noNfo: 2 }, ignored: 0 });
-  await post("ignoreHealth", { libraryId, health: "noNfo" });
+  expect((await post("ignoreHealth", { libraryId, health: "noNfo" })).statusCode).toBe(200);
+  expect((await post("restoreIgnored", { libraryId, ids: ["First"] })).statusCode).toBe(200);
+  expect(await summary()).toMatchObject({ issues: { noNfo: 1 }, ignored: 1 });
+  expect((await services.library.list({ libraryId, ignored: true })).entries.map((entry) => entry.id)).toEqual([
+    "Second",
+  ]);
   expect((await post("delete", { ids: ["First", "Second", "already-gone", "First"] })).statusCode).toBe(200);
   await services.pending.waitForIdle();
   expect(await summary()).toMatchObject({ total: 0, ignored: 0 });

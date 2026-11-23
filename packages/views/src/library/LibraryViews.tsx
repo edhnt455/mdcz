@@ -18,12 +18,6 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-  quietPanelSurfaceClass,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -38,12 +32,11 @@ import {
   LayoutGrid,
   Link2,
   List,
-  ListChecks,
   LoaderCircle,
   MoreHorizontal,
   Pencil,
   RefreshCw,
-  Search,
+  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useRef, useState } from "react";
@@ -51,8 +44,6 @@ import { toast } from "sonner";
 import { useT } from "../i18n";
 import { type LibraryBrowseControls, LibraryBrowsePanel } from "./LibraryBrowsePanel";
 import { LibraryPosterWall } from "./LibraryPosterWall";
-
-const ALL_LIBRARIES = "__all__";
 
 export interface LibraryIndexViewProps {
   className?: string;
@@ -63,21 +54,21 @@ export interface LibraryIndexViewProps {
   page: number;
   pageSize: LibraryPageSize;
   selectionKey: string;
-  query: string;
   total: number;
   fileCount?: number;
   totalBytes?: number;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
-  browse?: LibraryBrowseControls;
+  browse: LibraryBrowseControls;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: LibraryPageSize) => void;
   onSelectAll: () => Promise<LibraryEntryDto[]>;
   onEditEntries?: (entries: LibraryEntryDto[]) => void;
-  onEditAll?: () => Promise<void>;
+  onRefreshEntries?: (entries: LibraryEntryDto[]) => Promise<void>;
+  refreshBlockedReason?: string;
+  onRestoreEntries?: (entries: LibraryEntryDto[]) => Promise<void>;
   onDeleteEntries: (entries: LibraryEntryDto[]) => void;
   onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
   onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
-  onQueryChange: (value: string) => void;
   onRefresh: () => void;
 }
 
@@ -97,7 +88,6 @@ export function LibraryIndexView({
   page,
   pageSize,
   selectionKey,
-  query,
   total,
   fileCount,
   totalBytes,
@@ -108,32 +98,37 @@ export function LibraryIndexView({
   onSelectAll,
   onDeleteEntries,
   onEditEntries,
-  onEditAll,
+  onRefreshEntries,
+  refreshBlockedReason,
+  onRestoreEntries,
   onRemoveFile,
   onRelinkFile,
-  onQueryChange,
   onRefresh,
 }: LibraryIndexViewProps) {
   const t = useT();
   const mainRef = useRef<HTMLElement>(null);
   const [selection, setSelection] = useState({
     key: selectionKey,
-    selecting: false,
     entries: new Map<string, LibraryEntryDto>(),
   });
   const [selectingAll, setSelectingAll] = useState(false);
+  const [acting, setActing] = useState(false);
   const selectionRequest = useRef(0);
   if (selection.key !== selectionKey) {
     selectionRequest.current += 1;
-    setSelection({ key: selectionKey, selecting: false, entries: new Map() });
+    setSelection({ key: selectionKey, entries: new Map() });
     setSelectingAll(false);
   }
   const totalSize = entries.reduce((size, entry) => size + (Number.isFinite(entry.size) ? entry.size : 0), 0);
   const resolvedFileCount = fileCount ?? entries.reduce((count, entry) => count + entry.fileRefs.length, 0);
   const summaryText = `${t.library.metrics.movies} ${total} · ${t.library.metrics.files} ${resolvedFileCount} · ${formatBytes(totalBytes ?? totalSize)}`;
-  const listView = browse?.view !== "wall";
-  const selectionMode = selection.selecting && listView;
+  const listView = browse.view === "list";
   const selected = [...selection.entries.values()];
+  const selectedOnPage = entries.filter((entry) => selection.entries.has(entry.id)).length;
+  const allOnPageSelected = entries.length > 0 && selectedOnPage === entries.length;
+  const selectionDisabled = selectingAll || acting;
+  const actionsDisabled = !selected.length || selectionDisabled;
+  const hasFilters = Object.values(browse.search).some((value) => value !== undefined);
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageNumbers = [...new Set([1, pageCount, page - 2, page - 1, page, page + 1, page + 2])]
     .filter((value) => value >= 1 && value <= pageCount)
@@ -144,11 +139,16 @@ export function LibraryIndexView({
       if (!next.delete(entry.id)) next.set(entry.id, entry);
       return { ...current, entries: next };
     });
-  const toggleAll = async () => {
-    if (selected.length > 0 && selected.length === total) {
-      setSelection({ ...selection, entries: new Map() });
-      return;
-    }
+  const togglePage = (checked: boolean) =>
+    setSelection((current) => {
+      const next = new Map(current.entries);
+      for (const entry of entries) {
+        if (checked) next.set(entry.id, entry);
+        else next.delete(entry.id);
+      }
+      return { ...current, entries: next };
+    });
+  const selectAll = async () => {
     const request = ++selectionRequest.current;
     setSelectingAll(true);
     try {
@@ -160,6 +160,16 @@ export function LibraryIndexView({
       if (request === selectionRequest.current) toast.error(toErrorMessage(error));
     } finally {
       if (request === selectionRequest.current) setSelectingAll(false);
+    }
+  };
+  const runSelectionAction = async (action: (entries: LibraryEntryDto[]) => Promise<void>) => {
+    setActing(true);
+    try {
+      await action(selected);
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setActing(false);
     }
   };
   useEffect(() => {
@@ -177,147 +187,163 @@ export function LibraryIndexView({
             </div>
           )}
 
-          <section className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-              {browse && browse.libraries.length > 1 ? (
-                <Select
-                  value={browse.libraryId ?? ALL_LIBRARIES}
-                  onValueChange={(value) => browse.onLibraryChange(value === ALL_LIBRARIES ? undefined : value)}
-                >
-                  <SelectTrigger aria-label={t.library.libraryAriaLabel} className="h-9 w-full sm:w-48">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL_LIBRARIES}>{t.library.allLibraries}</SelectItem>
-                    {browse.libraries.map((library) => (
-                      <SelectItem key={library.id} value={library.id}>
-                        {library.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : null}
+          <LibraryBrowsePanel browse={browse} />
 
-              <div className="inline-flex shrink-0 flex-wrap rounded-quiet bg-surface-low p-1 shadow-inner">
-                <span className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-quiet-sm)] bg-surface px-3 text-xs font-bold shadow-sm">
-                  {t.library.all}
-                  <span className="font-numeric text-[11px] opacity-60">{total}</span>
-                </span>
-              </div>
-
-              {listView ? (
-                <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {listView && (
+              <fieldset className="flex min-w-0 flex-wrap items-center gap-2">
+                <legend className="sr-only">{t.library.bulk.label}</legend>
+                {onRefreshEntries && (
+                  <span title={refreshBlockedReason}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={actionsDisabled || !!refreshBlockedReason}
+                      onClick={() => void runSelectionAction(onRefreshEntries)}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      {t.library.bulk.rescrape}
+                    </Button>
+                  </span>
+                )}
+                {onEditEntries && (
                   <Button
-                    aria-pressed={selection.selecting}
-                    disabled={selectingAll}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={actionsDisabled}
+                    onClick={() => onEditEntries(selected)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    {t.library.edit.action}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={actionsDisabled}
+                  onClick={() => onDeleteEntries(selected)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t.library.removeFromLibrary}
+                </Button>
+                {browse.search.ignored && onRestoreEntries && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={actionsDisabled}
+                    onClick={() => void runSelectionAction(onRestoreEntries)}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {t.library.bulk.restore}
+                  </Button>
+                )}
+              </fieldset>
+            )}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Button
+                aria-pressed={!!browse.search.ignored}
+                type="button"
+                size="sm"
+                variant={browse.search.ignored ? "secondary" : "ghost"}
+                onClick={() => browse.onApply({ ...browse.search, ignored: !browse.search.ignored || undefined })}
+              >
+                {t.library.bulk.ignored}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={onRefresh}>
+                <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
+                {t.library.refresh}
+              </Button>
+              <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
+                {(["list", "wall"] as const).map((view) => (
+                  <Button
+                    aria-pressed={browse.view === view}
                     className={cn(
-                      "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
-                      selection.selecting && "bg-surface text-foreground shadow-sm",
+                      "h-7 gap-1.5 px-3 text-xs text-muted-foreground",
+                      browse.view === view && "bg-surface text-foreground shadow-sm",
                     )}
-                    onClick={() => {
-                      setSelection({ key: selectionKey, selecting: !selection.selecting, entries: new Map() });
-                    }}
+                    key={view}
+                    onClick={() => browse.onViewChange(view)}
                     size="sm"
                     type="button"
                     variant="ghost"
                   >
-                    <ListChecks className="h-3.5 w-3.5" />
-                    {t.library.multiSelect}
+                    {view === "list" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
+                    {t.library.view[view]}
                   </Button>
-                </div>
-              ) : null}
-
-              {selectionMode ? (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Checkbox
-                    id="library-select-all"
-                    checked={
-                      selected.length > 0 && selected.length === total
-                        ? true
-                        : selected.length > 0
-                          ? "indeterminate"
-                          : false
-                    }
-                    disabled={total === 0 || isLoading || selectingAll}
-                    onCheckedChange={() => void toggleAll()}
-                  />
-                  <label htmlFor="library-select-all" className="cursor-pointer select-none">
-                    {t.library.selectAllMatches}
-                  </label>
-                  {selectingAll ? (
-                    <LoaderCircle aria-label={t.library.selectingAll} className="h-4 w-4 animate-spin" />
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="flex flex-1 items-center gap-2.5 sm:justify-end">
-              <div className="relative min-w-[200px] flex-1 sm:max-w-[380px]">
-                <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-                <Input
-                  aria-label={t.library.searchAriaLabel}
-                  className="h-9 border-transparent bg-surface-low pl-9 text-sm shadow-inner focus-visible:bg-surface focus-visible:ring-1"
-                  onChange={(event) => onQueryChange(event.target.value)}
-                  placeholder={t.library.searchPlaceholder}
-                  value={query}
-                />
+                ))}
               </div>
-              <Button className="h-9 shrink-0 px-3.5" onClick={onRefresh} size="sm" type="button" variant="secondary">
-                <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
-                {t.library.refresh}
-              </Button>
-              {browse ? (
-                <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
-                  {(["list", "wall"] as const).map((view) => (
+            </div>
+          </div>
+
+          <section
+            aria-busy={isLoading}
+            aria-label={t.library.listAriaLabel}
+            className={cn(listView && "overflow-hidden rounded-quiet-lg border border-border/50 bg-surface")}
+          >
+            {listView && (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-border/50 bg-surface-low px-3 py-1.5 text-xs lg:gap-x-6">
+                <Checkbox
+                  aria-label={t.library.bulk.selectPage}
+                  checked={allOnPageSelected || (selectedOnPage > 0 ? "indeterminate" : false)}
+                  disabled={!entries.length || isLoading || selectionDisabled}
+                  onCheckedChange={(checked) => togglePage(checked === true)}
+                />
+                <div className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="font-semibold">{t.library.filters.entries}</span>
+                  <span className="font-numeric text-muted-foreground" role="status">
+                    {t.library.selectedCount(selected.length)}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    disabled={!total || isLoading || selectionDisabled}
+                    onClick={() => void selectAll()}
+                  >
+                    {selectingAll ? t.library.selectingAll : t.library.selectAllMatches(total)}
+                  </Button>
+                  {selected.length > 0 && (
                     <Button
-                      aria-pressed={browse.view === view}
-                      className={cn(
-                        "h-7 gap-1.5 rounded-[var(--radius-quiet-sm)] px-3 text-xs font-bold text-muted-foreground",
-                        browse.view === view && "bg-surface text-foreground shadow-sm",
-                      )}
-                      key={view}
-                      onClick={() => browse.onViewChange(view)}
-                      size="sm"
                       type="button"
+                      size="sm"
                       variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      disabled={selectionDisabled}
+                      onClick={() => setSelection({ key: selectionKey, entries: new Map() })}
                     >
-                      {view === "list" ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
-                      {t.library.view[view]}
+                      {t.library.bulk.clear}
                     </Button>
-                  ))}
+                  )}
                 </div>
-              ) : null}
-            </div>
-          </section>
-
-          {browse ? (
-            <LibraryBrowsePanel onEditAll={onEditAll} browse={browse} matchCount={total} summaryText={summaryText} />
-          ) : (
-            <div className="flex items-center justify-end font-numeric text-xs text-muted-foreground">
-              {summaryText}
-            </div>
-          )}
-
-          <section aria-busy={isLoading} aria-label={t.library.listAriaLabel} className="flex flex-col gap-3">
-            {entries.length > 0 && browse?.view === "wall" && (
+                <span className="font-numeric text-muted-foreground">{summaryText}</span>
+              </div>
+            )}
+            {entries.length > 0 && !listView && (
               <LibraryPosterWall entries={entries} getImageSrc={getImageSrc} linkComponent={LinkComponent} />
             )}
-            {listView &&
-              entries.map((entry) => (
-                <LibraryEntryRow
-                  key={entry.id}
-                  entry={entry}
-                  getImageSrc={getImageSrc}
-                  linkComponent={LinkComponent}
-                  selectable={selectionMode}
-                  selectionDisabled={selectingAll}
-                  selected={selection.entries.has(entry.id)}
-                  onDeleteEntries={onDeleteEntries}
-                  onToggleSelected={() => toggleSelected(entry)}
-                  onRemoveFile={onRemoveFile}
-                  onRelinkFile={onRelinkFile}
-                />
-              ))}
+            {listView && (
+              <div className="divide-y divide-border/40">
+                {entries.map((entry) => (
+                  <LibraryEntryRow
+                    key={entry.id}
+                    entry={entry}
+                    getImageSrc={getImageSrc}
+                    linkComponent={LinkComponent}
+                    selectionDisabled={selectionDisabled || isLoading}
+                    selected={selection.entries.has(entry.id)}
+                    onDeleteEntries={onDeleteEntries}
+                    onToggleSelected={() => toggleSelected(entry)}
+                    onRemoveFile={onRemoveFile}
+                    onRelinkFile={onRelinkFile}
+                  />
+                ))}
+              </div>
+            )}
             {entries.length === 0 && !errorMessage && (
               <div className="flex min-h-[300px] flex-col items-center justify-center rounded-quiet-xl border border-dashed border-border/60 bg-surface-low/30 text-center text-muted-foreground">
                 <Database className="mb-3 h-10 w-10 text-muted-foreground/40" />
@@ -327,16 +353,7 @@ export function LibraryIndexView({
                     {t.common.loading}
                   </div>
                 ) : (
-                  <p className="text-sm">
-                    {total === 0 &&
-                    !query.trim() &&
-                    !browse?.health &&
-                    !browse?.facet &&
-                    !browse?.ignored &&
-                    !browse?.missingSubtitles
-                      ? t.library.nothingIndexed
-                      : t.library.noMatchingEntries}
-                  </p>
+                  <p className="text-sm">{hasFilters ? t.library.noMatchingEntries : t.library.nothingIndexed}</p>
                 )}
               </div>
             )}
@@ -420,40 +437,6 @@ export function LibraryIndexView({
               </form>
             </div>
           </nav>
-
-          {selectionMode && selected.length > 0 ? (
-            // Pinned below the list: the action stays in reach while scrolling, and showing it moves no row.
-            <div
-              className={cn(
-                quietPanelSurfaceClass,
-                "sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 rounded-quiet-lg px-4 py-2.5",
-              )}
-            >
-              <span className="text-sm font-semibold">{t.library.selectedCount(selected.length)}</span>
-              {onEditEntries && (
-                <Button
-                  disabled={selectingAll}
-                  onClick={() => onEditEntries(selected)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  {t.library.edit.action}
-                </Button>
-              )}
-              <Button
-                disabled={selectingAll}
-                onClick={() => onDeleteEntries(selected)}
-                size="sm"
-                type="button"
-                variant="destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t.library.removeFromLibrary}
-              </Button>
-            </div>
-          ) : null}
         </div>
       </main>
     </TooltipProvider>
@@ -501,7 +484,6 @@ function LibraryEntryRow({
   entry,
   getImageSrc,
   linkComponent: LinkComponent,
-  selectable,
   selectionDisabled,
   selected,
   onDeleteEntries,
@@ -512,7 +494,6 @@ function LibraryEntryRow({
   entry: LibraryEntryDto;
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
-  selectable: boolean;
   selectionDisabled: boolean;
   selected: boolean;
   onDeleteEntries: LibraryIndexViewProps["onDeleteEntries"];
@@ -534,16 +515,14 @@ function LibraryEntryRow({
   const fileActionProps = { entry, onRemoveFile, onRelinkFile };
 
   return (
-    <div className="group rounded-quiet-lg border border-border/40 bg-surface p-3 shadow-[0_2px_8px_rgba(0,0,0,0.02)] transition-all hover:border-border/80 hover:bg-surface-floating hover:shadow-[0_12px_24px_rgba(0,0,0,0.06)]">
+    <div className={cn("group px-3 py-2.5 hover:bg-surface-low/50", selected && "bg-primary/5")}>
       <div className="relative flex flex-wrap items-center gap-x-5 gap-y-3 lg:flex-nowrap lg:gap-6">
-        {selectable ? (
-          <Checkbox
-            aria-label={t.library.selectEntry(id)}
-            disabled={selectionDisabled}
-            checked={selected}
-            onCheckedChange={onToggleSelected}
-          />
-        ) : null}
+        <Checkbox
+          aria-label={t.library.selectEntry(id)}
+          disabled={selectionDisabled}
+          checked={selected}
+          onCheckedChange={onToggleSelected}
+        />
         <div className="relative h-[68px] w-12 shrink-0 overflow-hidden rounded-[var(--radius-quiet-sm)] bg-surface-low shadow-sm">
           {imageSrc ? (
             <img
@@ -619,12 +598,7 @@ function LibraryEntryRow({
         </div>
       </div>
       {isMultiFile && filesOpen && (
-        <div
-          className={cn(
-            "mt-3 flex flex-col border-t border-border/40 pt-2",
-            selectable ? "ml-[106px] lg:ml-[114px]" : "ml-[68px] lg:ml-[72px]",
-          )}
-        >
+        <div className="ml-[106px] mt-3 flex flex-col border-t border-border/40 pt-2 lg:ml-[114px]">
           {entry.fileRefs.map((file) => (
             <LibraryFileRow file={file} key={file.id} {...fileActionProps} />
           ))}

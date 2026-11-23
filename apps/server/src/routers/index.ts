@@ -35,6 +35,7 @@ import {
   libraryAvailabilityInputSchema,
   libraryDeleteInputSchema,
   libraryDetailInputSchema,
+  libraryFacetInputSchema,
   libraryFileRemoveInputSchema,
   libraryIgnoreHealthInputSchema,
   libraryListInputSchema,
@@ -243,6 +244,9 @@ export const appRouter = t.router({
     summary: protectedProcedure
       .input(librarySummaryInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.summary(input)),
+    facet: protectedProcedure
+      .input(libraryFacetInputSchema)
+      .query(async ({ ctx, input }) => await ctx.services.library.facet(input)),
     detail: protectedProcedure
       .input(libraryDetailInputSchema)
       .query(async ({ ctx, input }) => await ctx.services.library.detail(input.id)),

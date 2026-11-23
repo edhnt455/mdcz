@@ -56,6 +56,8 @@ import type {
   LibraryDeleteInput,
   LibraryDetailInput,
   LibraryDetailResponse,
+  LibraryFacetInput,
+  LibraryFacetOption,
   LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
@@ -213,6 +215,7 @@ export interface ServerApiContract {
     list(input?: LibraryListInput): Promise<LibraryListResponse>;
     matches(input: LibraryMatchesInput): Promise<LibraryMatchesResponse>;
     summary(input?: LibrarySummaryInput): Promise<LibrarySummaryResponse>;
+    facet(input: LibraryFacetInput): Promise<LibraryFacetOption[]>;
     detail(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     refresh(input: LibraryDetailInput): Promise<LibraryDetailResponse>;
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;

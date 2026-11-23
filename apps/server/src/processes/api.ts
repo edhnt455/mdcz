@@ -30,6 +30,7 @@ const localQueries = new Set([
   "tools.catalog",
   "library.list",
   "library.summary",
+  "library.facet",
   "library.detail",
   "library.availability",
   "overview.summary",

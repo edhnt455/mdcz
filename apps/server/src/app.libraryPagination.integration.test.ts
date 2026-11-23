@@ -6,6 +6,60 @@ import { closeTestServers, createTempRoot, createTestLibrary, createTestServer, 
 
 afterEach(closeTestServers);
 
+it("filters movies without a nonblank actor name before counting, paging, and selecting matches", async () => {
+  const { fastify, services } = await createTestServer();
+  const token = await loginAsAdmin(fastify);
+  const headers = { authorization: `Bearer ${token}` };
+  const directory = await createTempRoot("library-actor-filter");
+  const { libraryId, rootId } = await createTestLibrary(fastify, token, directory);
+  const { repositories } = await services.persistence.getState();
+  const actorLists = [undefined, [], ["", " \t\n", "\u3000"], ...Array.from({ length: 9 }, () => [])];
+  const expectedIds = actorLists.map((_, index) => `missing-${index}`);
+  const fixtures = [
+    ...actorLists.map((actors, index) => ({ id: expectedIds[index], actors, subtitled: false })),
+    { id: "with-actor", actors: ["", "Alice"], subtitled: false },
+    { id: "subtitled", actors: [], subtitled: true },
+  ];
+  for (const { id, actors, subtitled } of fixtures) {
+    repositories.library.writeEntry({ id, actors }, [
+      { fileId: id, rootId, rootRelativePath: `${id}${subtitled ? "-C" : ""}.mp4`, size: 2 },
+    ]);
+  }
+
+  const scope = { libraryId, missingActors: true, missingSubtitles: true, health: "missingSynopsis" } as const;
+  const read = async (procedure: "list" | "matches", input: LibraryMatchesInput & { page?: number }) => {
+    const response = await fastify.inject({
+      method: "POST",
+      url: `/trpc/library.${procedure}`,
+      headers,
+      payload: input,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    return response.json().result.data;
+  };
+  const first = (await read("list", { ...scope, page: 1 })) as LibraryListResponse;
+  const second = (await read("list", { ...scope, page: 2 })) as LibraryListResponse;
+  expect(first).toMatchObject({ page: 1, total: 12, fileCount: 12, totalBytes: 24 });
+  expect(first.entries).toHaveLength(10);
+  expect(second).toMatchObject({ page: 2, total: 12 });
+  expect([...first.entries, ...second.entries].map(({ id }) => id).sort()).toEqual(expectedIds.toSorted());
+  const snapshot = await read("matches", scope);
+  expect(snapshot.entries.map(({ id }: LibraryEntryDto) => id).sort()).toEqual(expectedIds.toSorted());
+  expect(await read("list", { ...scope, missingActors: undefined })).toMatchObject({ total: 13 });
+  expect(await read("list", { ...scope, missingActors: false })).toMatchObject({ total: 1 });
+
+  const ignoreScope = { libraryId, missingActors: true, missingSubtitles: true };
+  await services.library.ignoreHealth({ ...ignoreScope, health: "missingSynopsis" });
+  expect(await read("list", scope)).toMatchObject({ total: 0 });
+  expect(await read("list", { libraryId, health: "missingSynopsis" })).toMatchObject({ total: 2 });
+  await services.library.restoreIgnored(ignoreScope);
+  expect(await read("list", scope)).toMatchObject({ total: 12 });
+  repositories.library.writeEntry({ id: "missing-0", actors: ["Alice"] }, [
+    { fileId: "missing-0", rootId, rootRelativePath: "missing-0.mp4" },
+  ]);
+  expect(await read("list", scope)).toMatchObject({ total: 11 });
+});
+
 it("filters movies with any unsubtitled file using filename rules and file-scoped subtitle registrations", async () => {
   const { fastify, services } = await createTestServer();
   const token = await loginAsAdmin(fastify);
@@ -60,9 +114,9 @@ it("filters movies with any unsubtitled file using filename rules and file-scope
   const scope: LibraryMatchesInput = {
     libraryId,
     query: "Subtitle fixture",
-    actor: "Alice",
-    studio: "Studio",
-    tag: "Drama",
+    actors: ["Alice"],
+    studios: ["Studio"],
+    tags: ["Drama"],
     missingSubtitles: true,
   };
   const read = async (input: LibraryMatchesInput = scope, page = 1): Promise<LibraryListResponse> => {
@@ -84,8 +138,9 @@ it("filters movies with any unsubtitled file using filename rules and file-scope
   expect(result).toMatchObject({ total: 5, fileCount: 7, totalBytes: 7 });
   expect(result.entries.every(({ available }) => available === "unchecked")).toBe(true);
   expect(await read({ ...scope, health: "missingSynopsis" })).toMatchObject({ total: 5 });
-  expect(await read({ ...scope, actor: "Bob" })).toMatchObject({ total: 0, fileCount: 0, totalBytes: 0 });
-  expect(await read({ ...scope, missingSubtitles: false })).toMatchObject({ total: 10 });
+  expect(await read({ ...scope, actors: ["Bob"] })).toMatchObject({ total: 0, fileCount: 0, totalBytes: 0 });
+  expect(await read({ ...scope, missingSubtitles: undefined })).toMatchObject({ total: 10 });
+  expect(await read({ ...scope, missingSubtitles: false })).toMatchObject({ total: 5 });
   const snapshot = await fastify.inject({ method: "POST", url: "/trpc/library.matches", headers, payload: scope });
   expect(snapshot.statusCode, snapshot.body).toBe(200);
   expect(
@@ -152,14 +207,14 @@ it("pages filtered movies and snapshots every match using the same scope without
         id,
         title: `Matching ${id}`,
         number: id,
-        actors: [index === 122 ? "Bob" : "Alice"],
+        actors: [index === 122 ? "Other actor" : index === 123 ? "Bob" : "Alice"],
         createdAt: new Date("2026-11-17T00:00:00Z"),
         crawlerDataJson: JSON.stringify({
           title: `Matching ${id}`,
           number: id,
           actors: ["Alice"],
-          genres: ["Drama"],
-          studio: "Studio",
+          genres: [index === 123 ? "Comedy" : "Drama"],
+          studio: index === 123 ? "Another studio" : "Studio",
           scene_images: [],
           ...(index === 120 ? { plot: "Synopsis" } : {}),
         }),
@@ -171,10 +226,10 @@ it("pages filtered movies and snapshots every match using the same scope without
   const scope: LibraryMatchesInput = {
     libraryId,
     query: "Matching",
-    health: "missingSynopsis",
-    actor: "Alice",
-    studio: "Studio",
-    tag: "Drama",
+    issues: { missingSynopsis: true, noNfo: true, duplicate: false },
+    actors: ["Alice", "Bob"],
+    studios: ["Studio", "Another studio"],
+    tags: ["Comedy", "Drama"],
   };
   const headers = { authorization: `Bearer ${token}` };
   const read = async (
@@ -190,12 +245,15 @@ it("pages filtered movies and snapshots every match using the same scope without
     expect(response.statusCode, response.body).toBe(200);
     return response.json().result.data;
   };
-  const expectedIds = Array.from({ length: 120 }, (_, index) => `movie-${String(119 - index).padStart(3, "0")}`);
+  const expectedIds = [
+    "movie-123",
+    ...Array.from({ length: 120 }, (_, index) => `movie-${String(119 - index).padStart(3, "0")}`),
+  ];
   const pagedIds: string[] = [];
-  for (let page = 1; page <= 12; page += 1) {
+  for (let page = 1; page <= 13; page += 1) {
     const result = await read(page);
-    expect(result).toMatchObject({ total: 120, page, pageSize: 10, fileCount: 120, totalBytes: 120 });
-    expect(result.entries).toHaveLength(10);
+    expect(result).toMatchObject({ total: 121, page, pageSize: 10, fileCount: 121, totalBytes: 121 });
+    expect(result.entries).toHaveLength(page === 13 ? 1 : 10);
     expect(result.entries.every((entry) => entry.available === "unchecked")).toBe(true);
     pagedIds.push(...result.entries.map((entry) => entry.id));
   }
@@ -203,9 +261,9 @@ it("pages filtered movies and snapshots every match using the same scope without
   for (const pageSize of LIBRARY_PAGE_SIZES) {
     const result = await read(1, pageSize);
     expect(result.entries).toHaveLength(pageSize);
-    expect(result.total).toBe(120);
+    expect(result.total).toBe(121);
   }
-  expect(await read(999)).toMatchObject({ page: 12, total: 120 });
+  expect(await read(999)).toMatchObject({ page: 13, total: 121 });
   const snapshotResponse = await fastify.inject({
     method: "POST",
     url: "/trpc/library.matches",
@@ -232,12 +290,20 @@ it("pages filtered movies and snapshots every match using the same scope without
     },
     [{ fileId: "new-match", rootId, rootRelativePath: "new.mp4" }],
   );
-  expect((await read(1)).total).toBe(121);
-  expect(snapshot).toHaveLength(120);
+  expect((await read(1)).total).toBe(122);
+  expect(snapshot).toHaveLength(121);
   for (const payload of [{ page: 0 }, { page: 1.5 }, { pageSize: 15 }]) {
     const response = await fastify.inject({ method: "POST", url: "/trpc/library.list", headers, payload });
     expect(response.statusCode).toBe(400);
   }
+  const options = await fastify.inject({
+    method: "GET",
+    url: "/trpc/library.facet",
+    headers,
+    query: { input: JSON.stringify({ libraryId, kind: "actors", query: "BO" }) },
+  });
+  expect(options.statusCode, options.body).toBe(200);
+  expect(options.json().result.data).toEqual([{ name: "Bob", count: 1 }]);
   const unauthorized = await fastify.inject({ method: "POST", url: "/trpc/library.matches", payload: scope });
   expect(unauthorized.statusCode).toBe(401);
 });

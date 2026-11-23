@@ -10,23 +10,28 @@ export const toLibraryEntryFilter = async (
   libraries: Pick<MediaLibraryService, "get">,
   configuration: Pick<Configuration, "download" | "scrape">,
 ): Promise<LibraryEntryFilter> => {
-  const { query, rootId, libraryId, health, ignored, actor, studio, tag, missingSubtitles } = input ?? {};
+  const { query, rootId, libraryId, health, issues, ignored, actors, studios, tags, missingActors, missingSubtitles } =
+    input ?? {};
   const library = libraryId ? await libraries.get(libraryId) : undefined;
   return {
     query,
     rootId,
     health,
+    issues,
     healthIgnored: ignored,
     includeBackdrop: configuration.download.downloadFanart,
-    actor,
-    studio,
-    tag,
-    missingSubtitles: missingSubtitles
-      ? {
-          pattern: filenameKeywordPattern(configuration.scrape.subtitleKeywords).source,
-          excludedPattern: filenameKeywordPattern(configuration.scrape.umrKeywords).source,
-        }
-      : undefined,
+    actors,
+    studios,
+    tags,
+    missingActors,
+    missingSubtitles:
+      missingSubtitles !== undefined
+        ? {
+            missing: missingSubtitles,
+            pattern: filenameKeywordPattern(configuration.scrape.subtitleKeywords).source,
+            excludedPattern: filenameKeywordPattern(configuration.scrape.umrKeywords).source,
+          }
+        : undefined,
     pathPrefixes: library ? [library.sourcePath, library.outputPath].filter(Boolean) : undefined,
   };
 };

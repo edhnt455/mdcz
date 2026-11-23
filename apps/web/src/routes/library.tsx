@@ -1,18 +1,17 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEditJobDto, LibraryEditStartInput } from "@mdcz/shared/libraryEdit";
 import type { LibraryPageSize } from "@mdcz/shared/libraryPagination";
-import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
-import { startHealthFix } from "@mdcz/views/adapters";
+import type { LibraryEntryDto, LibraryFacetInput } from "@mdcz/shared/serverDtos";
+import { startLibraryRefresh } from "@mdcz/views/adapters";
 import { useT } from "@mdcz/views/i18n";
 import {
   chunkLibraryEntryIds,
-  createLibraryBrowseControls,
+  type LibraryBrowseSearch,
   LibraryDeleteDialog,
   LibraryEditDialog,
   LibraryIndexView,
   mergeLibraryAvailability,
   parseLibraryBrowseSearch,
-  toLibraryListScope,
   useLibraryView,
 } from "@mdcz/views/library";
 import { selectMaintenanceExecutionStatus, useMaintenanceStore } from "@mdcz/views/state/maintenanceStore";
@@ -20,7 +19,7 @@ import { selectIsScraping, useScrapeStore } from "@mdcz/views/state/scrapeStore"
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { createWebWorkbenchPorts } from "../adapters/ports";
 import { api, getLibraryAssetSrc } from "../client";
@@ -32,15 +31,12 @@ export function LibraryPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const scope = toLibraryListScope(search);
-  const { libraryId, actor, studio, tag, missingSubtitles } = scope;
   const libraryView = useLibraryView();
   const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
   const isScraping = useScrapeStore(selectIsScraping);
   const ports = useMemo(() => createWebWorkbenchPorts(), []);
-  const [query, setQuery] = useState("");
-  const filterKey = JSON.stringify({ query, ...scope });
-  const [pagination, setPagination] = useState({ filterKey, page: 1, pageSize: 10 as LibraryPageSize });
+  const filterKey = JSON.stringify(search);
+  const [pagination, setPagination] = useState({ filterKey, page: 1, pageSize: 20 as LibraryPageSize });
   const [selectionVersion, setSelectionVersion] = useState(0);
   if (pagination.filterKey !== filterKey) setPagination({ ...pagination, filterKey, page: 1 });
   const page = pagination.filterKey === filterKey ? pagination.page : 1;
@@ -50,7 +46,6 @@ export function LibraryPage() {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [showEditJob, setShowEditJob] = useState(true);
-  const editSource = useRef<{ selected?: LibraryEntryDto[]; scope: typeof scope; query: string }>(null);
   const readEditStatus = async () => {
     const before = queryClient.getQueryData<LibraryEditJobDto | null>(queryKeys.libraryEdit);
     const response = await api.library.edit.status();
@@ -64,25 +59,18 @@ export function LibraryPage() {
     refetchInterval: (query) => (query.state.data?.status === "running" ? 2_000 : false),
   });
   const configQ = useQuery({ queryKey: queryKeys.config.current, queryFn: () => api.config.read(), enabled: editOpen });
-  const collectEditTargets = async () => {
-    const source = editSource.current;
-    if (!source) return;
-    setEditTargets(source.selected ?? (await api.library.matches({ query: source.query, ...source.scope })).entries);
-  };
-  const openEdit = async (selected?: LibraryEntryDto[]) => {
-    editSource.current = { selected, scope, query };
+  const openEdit = async (selected: LibraryEntryDto[]) => {
     setEditOpen(true);
     setEditLoading(true);
     setEditError(null);
-    setEditTargets([]);
+    setEditTargets(selected);
     setShowEditJob(true);
     try {
-      const job = await queryClient.fetchQuery({
+      await queryClient.fetchQuery({
         queryKey: queryKeys.libraryEdit,
         queryFn: readEditStatus,
         staleTime: 0,
       });
-      if (!job) await collectEditTargets();
     } catch (error) {
       setEditError(toErrorMessage(error));
     } finally {
@@ -99,8 +87,8 @@ export function LibraryPage() {
     onError: (error) => setEditError(toErrorMessage(error)),
   });
   const libraryQ = useQuery({
-    queryKey: [...queryKeys.library.list({ query, ...scope }), { page, pageSize: pagination.pageSize }],
-    queryFn: () => api.library.list({ query, ...scope, page, pageSize: pagination.pageSize }),
+    queryKey: [...queryKeys.library.list(search), { page, pageSize: pagination.pageSize }],
+    queryFn: () => api.library.list({ ...search, page, pageSize: pagination.pageSize }),
     placeholderData: (previous, previousQuery) =>
       JSON.stringify(previousQuery?.queryKey[2]) === filterKey ? previous : undefined,
     retry: false,
@@ -141,11 +129,24 @@ export function LibraryPage() {
     })),
   });
   const librariesQ = useQuery({ queryKey: queryKeys.libraries.all, queryFn: () => api.libraries.list(), retry: false });
-  const summaryQ = useQuery({
-    queryKey: queryKeys.library.summary(search.libraryId),
-    queryFn: () => api.library.summary({ libraryId: search.libraryId }),
-    retry: false,
-  });
+  const loadFacet = useCallback(
+    (input: LibraryFacetInput) =>
+      queryClient.fetchQuery({
+        queryKey: queryKeys.library.facet(input),
+        queryFn: () => api.library.facet(input),
+        staleTime: 30_000,
+      }),
+    [queryClient],
+  );
+  const applyFilters = (next: LibraryBrowseSearch) => {
+    setPagination((current) => ({ ...current, page: 1 }));
+    void navigate({ to: "/library", search: parseLibraryBrowseSearch(next) });
+  };
+  const blockedReason = isScraping
+    ? t.workbench.taskConflict.scrape
+    : maintenanceStatus !== "idle"
+      ? t.workbench.taskConflict.maintenance
+      : undefined;
   const entries = mergeLibraryAvailability(
     pageEntries,
     availabilityQs.flatMap((availabilityQ) => availabilityQ.data ?? []),
@@ -155,35 +156,31 @@ export function LibraryPage() {
     <>
       <LibraryIndexView
         selectionKey={`${filterKey}:${selectionVersion}`}
-        browse={createLibraryBrowseControls({
+        browse={{
           search,
           libraries: librariesQ.data?.libraries ?? [],
-          summary: summaryQ.data,
-          update: (next) => void navigate({ to: "/library", search: next }),
+          loadFacet,
+          onApply: applyFilters,
           ...libraryView,
-          fixBlockedReason: isScraping ? t.workbench.taskConflict.scrape : undefined,
-          onFix: async (issue) => {
-            const matches = await api.library.matches({ query, ...scope, health: issue });
-            await startHealthFix({
-              issue,
-              libraryId: search.libraryId,
-              entries: matches.entries,
-              port: ports.maintenance,
-              isScraping,
-              toast,
-              toErrorMessage,
-            });
-            void navigate({ to: "/workbench", search: { intent: "maintenance" } });
-          },
-          onIgnore: async (health) => {
-            await api.library.ignoreHealth({ libraryId, actor, studio, tag, missingSubtitles, query, health });
-            await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
-          },
-          onRestore: async () => {
-            await api.library.restoreIgnored({ libraryId, actor, studio, tag, missingSubtitles, query });
-            await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
-          },
-        })}
+        }}
+        refreshBlockedReason={blockedReason}
+        onRefreshEntries={async (selected) => {
+          await startLibraryRefresh({
+            libraryId: search.libraryId,
+            entries: selected,
+            port: ports.maintenance,
+            isScraping,
+            toast,
+            toErrorMessage,
+          });
+          void navigate({ to: "/workbench", search: { intent: "maintenance" } });
+        }}
+        onRestoreEntries={async (selected) => {
+          const { ignored: _ignored, ...scope } = search;
+          await api.library.restoreIgnored({ ...scope, ids: selected.map((entry) => entry.id) });
+          setSelectionVersion((version) => version + 1);
+          await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
+        }}
         entries={entries}
         errorMessage={libraryQ.error ? toErrorMessage(libraryQ.error) : null}
         getImageSrc={(path, entry) =>
@@ -201,10 +198,9 @@ export function LibraryPage() {
         pageSize={pagination.pageSize}
         onPageChange={(page) => setPagination({ ...pagination, page })}
         onPageSizeChange={(pageSize) => setPagination({ ...pagination, page: 1, pageSize })}
-        onSelectAll={async () => (await api.library.matches({ query, ...scope })).entries}
+        onSelectAll={async () => (await api.library.matches(search)).entries}
         onDeleteEntries={setDeleteTargets}
         onEditEntries={(entries) => void openEdit(entries)}
-        onEditAll={() => openEdit()}
         onRemoveFile={async (input) => {
           const result = await api.library.removeFile(input);
           notifyDeletionQueued(result.taskIds);
@@ -214,11 +210,9 @@ export function LibraryPage() {
           await api.library.relink(input);
           await queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
         }}
-        onQueryChange={setQuery}
         onRefresh={() => {
           void queryClient.invalidateQueries({ queryKey: queryKeys.library.all });
         }}
-        query={query}
         total={libraryQ.data?.total ?? 0}
         fileCount={libraryQ.data?.fileCount ?? 0}
         totalBytes={libraryQ.data?.totalBytes ?? 0}
@@ -235,24 +229,12 @@ export function LibraryPage() {
           (configQ.error ? toErrorMessage(configQ.error) : null) ||
           (editStatusQ.error ? toErrorMessage(editStatusQ.error) : null)
         }
-        blockedReason={
-          isScraping
-            ? t.workbench.taskConflict.scrape
-            : maintenanceStatus !== "idle"
-              ? t.workbench.taskConflict.maintenance
-              : configQ.error
-                ? toErrorMessage(configQ.error)
-                : undefined
-        }
+        blockedReason={blockedReason ?? (configQ.error ? toErrorMessage(configQ.error) : undefined)}
         job={editStatusQ.data?.status === "running" || showEditJob ? (editStatusQ.data ?? null) : null}
         onSubmit={(input) => editM.mutate(input)}
         onNewEdit={() => {
-          setEditLoading(true);
           setEditError(null);
-          void collectEditTargets()
-            .then(() => setShowEditJob(false))
-            .catch((error) => setEditError(toErrorMessage(error)))
-            .finally(() => setEditLoading(false));
+          setShowEditJob(false);
         }}
       />
       <LibraryDeleteDialog

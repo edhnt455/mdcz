@@ -22,6 +22,15 @@ const createEntry = (id: string, available: LibraryEntryDto["available"]): Libra
   title: `${id} title`,
 });
 
+const browse = {
+  libraries: [],
+  search: {},
+  loadFacet: vi.fn(async () => []),
+  view: "list",
+  onApply: vi.fn(),
+  onViewChange: vi.fn(),
+} satisfies LibraryBrowseControls;
+
 const baseProps = {
   entries: [
     createEntry("AVAILABLE", "available"),
@@ -35,9 +44,8 @@ const baseProps = {
   onPageSizeChange: vi.fn(),
   onSelectAll: vi.fn(async () => baseProps.entries),
   onDeleteEntries: vi.fn(),
-  onQueryChange: vi.fn(),
+  browse,
   onRefresh: vi.fn(),
-  query: "",
   total: 3,
 };
 
@@ -64,7 +72,15 @@ test("numbered pagination shows matching totals, supported sizes, boundaries, an
   expect(onPageChange).toHaveBeenLastCalledWith(12);
   await screen.rerender(<LibraryIndexView {...props} page={63} />);
   await expect.element(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
-  await screen.rerender(<LibraryIndexView {...props} page={1} total={0} entries={[]} query="no match" />);
+  await screen.rerender(
+    <LibraryIndexView
+      {...props}
+      page={1}
+      total={0}
+      entries={[]}
+      browse={{ ...browse, search: { query: "no match" } }}
+    />,
+  );
   await expect.element(screen.getByText("共 0 部 · 第 1 / 1 页")).toBeVisible();
   await expect.element(screen.getByText("暂无匹配条目")).toBeVisible();
   await expect.element(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
@@ -84,39 +100,38 @@ test("selection spans every matching page, excludes unchecked movies, and resets
     onEditEntries,
   };
   const screen = await render(<LibraryIndexView {...props} />);
-  const multiSelect = screen.getByRole("button", { name: "多选" });
-  const selectAll = screen.getByRole("checkbox", { name: "全选筛选结果" });
-  await expect.element(selectAll).not.toBeInTheDocument();
-  await multiSelect.click();
+  const selectPage = screen.getByRole("checkbox", { name: "选择当前页" });
+  const selectAll = screen.getByRole("button", { name: "选择全部 120 条匹配结果" });
+  const row = (number: number) => screen.getByRole("checkbox", { name: `选择 MOVIE-${number}`, exact: true });
+  await row(1).click();
+  await expect.element(selectPage).toHaveAttribute("data-state", "indeterminate");
+  await selectPage.click();
+  await expect.element(selectPage).toBeChecked();
+  await expect.element(screen.getByText("已选 10 部影片")).toBeVisible();
+
+  await screen.rerender(<LibraryIndexView {...props} page={2} entries={matches.slice(10, 20)} />);
+  await expect.element(selectPage).not.toBeChecked();
+  await selectPage.click();
+  await expect.element(screen.getByText("已选 20 部影片")).toBeVisible();
+  await selectPage.click();
+  await expect.element(screen.getByText("已选 10 部影片")).toBeVisible();
+
   await selectAll.click();
   await expect.element(screen.getByText("已选 120 部影片")).toBeVisible();
-  await expect.element(selectAll).toBeChecked();
-  await screen.rerender(<LibraryIndexView {...props} page={2} entries={matches.slice(10, 20)} />);
-  await expect.element(screen.getByRole("checkbox", { name: "选择 MOVIE-11", exact: true })).toBeChecked();
-  await screen.getByRole("checkbox", { name: "选择 MOVIE-11", exact: true }).click();
-  await expect.element(screen.getByText("已选 119 部影片")).toBeVisible();
-  await expect.element(selectAll).toHaveAttribute("data-state", "indeterminate");
-  await screen.getByRole("button", { name: "深度删除", exact: true }).last().click();
+  await expect.element(row(11)).toBeChecked();
+  await row(11).click();
+  await expect.element(selectPage).toHaveAttribute("data-state", "indeterminate");
+  await screen.getByRole("group", { name: "批量操作" }).getByRole("button", { name: "深度删除" }).click();
   expect(onDeleteEntries.mock.lastCall?.[0].map((entry: LibraryEntryDto) => entry.id)).toEqual(
     matches.filter((entry) => entry.id !== "MOVIE-11").map((entry) => entry.id),
   );
   await screen.getByRole("button", { name: "编辑", exact: true }).click();
   expect(onEditEntries).toHaveBeenLastCalledWith(onDeleteEntries.mock.lastCall?.[0]);
-  const added = createEntry("NEW", "available");
-  await screen.rerender(
-    <LibraryIndexView {...props} pageSize={20} entries={[added, ...matches.slice(0, 19)]} total={121} />,
-  );
-  await expect.element(screen.getByText("已选 119 部影片")).toBeVisible();
-  await expect.element(screen.getByRole("checkbox", { name: "选择 NEW", exact: true })).not.toBeChecked();
   expect(onSelectAll).toHaveBeenCalledOnce();
+
   await screen.rerender(<LibraryIndexView {...props} selectionKey="missingSynopsis" />);
-  await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
-  await multiSelect.click();
-  await expect.element(screen.getByRole("checkbox", { name: "选择 MOVIE-1", exact: true })).not.toBeChecked();
-  await selectAll.click();
-  await expect.element(screen.getByText("已选 120 部影片")).toBeVisible();
-  await selectAll.click();
-  await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+  await expect.element(row(1)).not.toBeChecked();
+  await expect.element(screen.getByText("已选 0 部影片")).toBeVisible();
 });
 
 test("an unfinished select-all cannot select movies in a different filter", async () => {
@@ -129,66 +144,36 @@ test("an unfinished select-all cannot select movies in a different filter", asyn
   );
   const props = { ...baseProps, onSelectAll };
   const screen = await render(<LibraryIndexView {...props} />);
-  await screen.getByRole("button", { name: "多选" }).click();
-  await screen.getByRole("checkbox", { name: "全选筛选结果" }).click();
-  await expect.element(screen.getByRole("checkbox", { name: "全选筛选结果" })).toBeDisabled();
+  await screen.getByRole("button", { name: "选择全部 3 条匹配结果" }).click();
+  await expect.element(screen.getByRole("button", { name: "正在选择全部筛选结果…" })).toBeDisabled();
   await screen.rerender(<LibraryIndexView {...props} selectionKey="new-filter" />);
   resolve(baseProps.entries);
-  await screen.getByRole("button", { name: "多选" }).click();
   await expect.element(screen.getByRole("checkbox", { name: "选择 AVAILABLE" })).not.toBeChecked();
-  await expect.element(screen.getByText(/^已选/u)).not.toBeInTheDocument();
+  await expect.element(screen.getByText("已选 0 部影片")).toBeVisible();
 });
 
-test("a health filter offers to ignore its movies, and the ignored view only restores them", async () => {
-  const browse = {
-    libraries: [],
-    summary: {
-      total: 3,
-      issues: { missingPoster: 0, missingBackdrop: 0, missingSynopsis: 3, noNfo: 0, duplicate: 3 },
-      ignored: 1,
-      facets: { actors: [], studios: [], tags: [] },
-    },
-    ignored: false,
-    missingSubtitles: false,
-    view: "list",
-    onLibraryChange: vi.fn(),
-    onHealthChange: vi.fn(),
-    onIgnoredChange: vi.fn(),
-    onFacetChange: vi.fn(),
-    onMissingSubtitlesChange: vi.fn(),
-    onClear: vi.fn(),
-    onViewChange: vi.fn(),
-    onFix: vi.fn(async () => undefined),
-    onIgnore: vi.fn(async () => undefined),
-    onRestore: vi.fn(async () => undefined),
-  } satisfies LibraryBrowseControls;
-  const view = (controls: Partial<LibraryBrowseControls>) => (
-    <LibraryIndexView {...baseProps} browse={{ ...browse, ...controls }} />
-  );
-  const screen = await render(view({ health: "missingSynopsis" }));
-  const refresh = screen.getByRole("button", { name: "从站点刷新 3 部" });
-  const ignore = screen.getByRole("button", { name: "忽略这 3 部" });
-  const restore = screen.getByRole("button", { name: "取消忽略 3 部" });
-
-  await expect.element(refresh).toBeVisible();
-  await ignore.click();
-  expect(browse.onIgnore).toHaveBeenCalledWith("missingSynopsis");
-
-  await screen.rerender(view({ health: "duplicate" }));
-  await expect.element(refresh).not.toBeInTheDocument();
-  await expect.element(ignore).toBeVisible();
-
-  await screen.rerender(view({ ignored: true }));
-  await expect.element(screen.getByRole("button", { name: /^已忽略\s*1$/u })).toHaveAttribute("aria-pressed", "true");
-  await expect.element(ignore).not.toBeInTheDocument();
-  await restore.click();
-  expect(browse.onRestore).toHaveBeenCalledOnce();
-  await screen.rerender(
-    <LibraryIndexView {...baseProps} entries={[]} total={0} browse={{ ...browse, missingSubtitles: true }} />,
-  );
-  await expect.element(screen.getByText("暂无匹配条目")).toBeVisible();
-  await expect.element(ignore).not.toBeInTheDocument();
+test("batch refresh uses the selection and restoring previous ignores is available in the ignored view", async () => {
+  const onRefreshEntries = vi.fn(async () => undefined);
+  const onRestoreEntries = vi.fn(async () => undefined);
+  const props = { ...baseProps, onRefreshEntries, onRestoreEntries };
+  const screen = await render(<LibraryIndexView {...props} />);
+  const refresh = screen.getByRole("button", { name: "重新刮削" });
+  const restore = screen.getByRole("button", { name: "取消忽略" });
+  await expect.element(refresh).toBeDisabled();
   await expect.element(restore).not.toBeInTheDocument();
+  await screen.getByRole("checkbox", { name: "选择 AVAILABLE" }).click();
+  await refresh.click();
+  expect(onRefreshEntries).toHaveBeenCalledExactlyOnceWith([props.entries[0]]);
+
+  await screen.getByRole("button", { name: "已忽略" }).click();
+  expect(browse.onApply).toHaveBeenLastCalledWith({ ignored: true });
+  await screen.rerender(
+    <LibraryIndexView {...props} selectionKey="ignored" browse={{ ...browse, search: { ignored: true } }} />,
+  );
+  await expect.element(restore).toBeDisabled();
+  await screen.getByRole("checkbox", { name: "选择 UNKNOWN" }).click();
+  await restore.click();
+  expect(onRestoreEntries).toHaveBeenCalledExactlyOnceWith([props.entries[1]]);
 });
 
 test("library view preference survives remounts", async () => {

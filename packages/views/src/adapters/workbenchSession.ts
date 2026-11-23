@@ -1,5 +1,5 @@
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import type { LibraryEntryDto, LibraryHealthIssue } from "@mdcz/shared/serverDtos";
+import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
 import {
   changeMaintenancePreset,
@@ -18,7 +18,6 @@ import { useWorkbenchSetupStore } from "@mdcz/views/state/workbenchSetupStore";
 import { useWorkbenchTaskStore } from "@mdcz/views/state/workbenchTaskStore";
 import { useEffect, useRef } from "react";
 import { getT } from "../i18n";
-import { HEALTH_FIX_PRESETS } from "../library/healthIssues";
 import type { MaintenanceActionPort } from "./ports";
 
 export type WorkbenchMode = "scrape" | "maintenance";
@@ -217,9 +216,7 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
   }
 };
 
-/** Previews a site refresh of the movies that have `issue`; the user reviews and applies it in the workbench. */
-export const startHealthFix = async (options: {
-  issue: LibraryHealthIssue;
+export const startLibraryRefresh = async (options: {
   libraryId?: string;
   entries: LibraryEntryDto[];
   port: MaintenanceActionPort;
@@ -228,16 +225,14 @@ export const startHealthFix = async (options: {
   toErrorMessage(error: unknown): string;
 }): Promise<void> => {
   const t = getT();
-  const presetId = HEALTH_FIX_PRESETS[options.issue];
-  if (!presetId) throw new Error(`没有针对 ${options.issue} 的修复操作`);
   const refs = options.entries.flatMap((entry) =>
     entry.fileRefs.map((file) => ({ rootId: file.rootId, relativePath: file.relativePath })),
   );
   // A maintenance session works inside one media root.
-  if (new Set(refs.map((ref) => ref.rootId)).size > 1) throw new Error(t.library.health.mixedRoots);
+  if (new Set(refs.map((ref) => ref.rootId)).size > 1) throw new Error(t.library.bulk.mixedRoots);
   await startMaintenanceFlow({
     refs,
-    presetId,
+    presetId: "refresh_metadata",
     libraryId: options.libraryId,
     port: options.port,
     isScraping: options.isScraping,
