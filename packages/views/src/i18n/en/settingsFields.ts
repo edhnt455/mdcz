@@ -504,7 +504,7 @@ const fields: Record<FieldKey, FieldText> = {
   "translate.untranslatedJapaneseRunLength": {
     label: "Consecutive Japanese characters for untranslated detection",
     description:
-      "Untranslated-only NFO scans require this many consecutive hiragana or katakana characters, including half-width kana and long vowel marks (default: 5). Kanji, spaces and punctuation break the run. Recorded failures are always retried; English and Chinese script conversion alone do not qualify.",
+      "Untranslated-only NFO scans count consecutive hiragana or katakana characters, including half-width kana and long vowel marks (default: 5). Kanji, spaces and punctuation break the run. Scans also include recorded failures, except when English text was returned unchanged.",
     aliases: ["untranslated", "Japanese", "kana", "threshold", "batch translation"],
   },
   "personSync.personOverviewSources": { label: "Person overview source order" },

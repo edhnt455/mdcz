@@ -200,7 +200,7 @@ describe("BatchNfoTranslator", () => {
   it("uses the configured consecutive kana threshold consistently when scanning and applying untranslated fields", async () => {
     const root = await mkdtemp(join(tmpdir(), "mdcz-batch-threshold-"));
     tempDirs.push(root);
-    for (const { text, threshold = 5, expected, failed = false, field = "title" } of [
+    for (const { text, threshold = 5, expected, failure, field = "title" } of [
       { text: "中文标题 アリス", expected: false },
       { text: "あいうえ", expected: false },
       { text: "あいうえお", expected: true },
@@ -228,9 +228,15 @@ describe("BatchNfoTranslator", () => {
       { text: "中文アリス", threshold: 3, expected: true },
       { text: "あいうえお", threshold: 6, expected: false },
       { text: "中文あいうえお", field: "plot", expected: true },
-      { text: "中文アリス", failed: true, expected: true },
-      { text: "English title", failed: true, expected: true },
-    ] satisfies { text: string; threshold?: number; expected: boolean; failed?: boolean; field?: "title" | "plot" }[]) {
+      { text: "中文アリス", failure: "title 翻译失败：翻译服务返回了原文", expected: true },
+      { text: "FIRST IMPRESSION 44", failure: "provider unavailable", expected: true },
+      {
+        text: "FIRST IMPRESSION 44",
+        failure: "翻译引擎未能翻译 title（ABC-123），将返回原文：返回了原文",
+        expected: false,
+      },
+      { text: "FIRST IMPRESSION 44", failure: "title 翻译失败：翻译服务返回了原文", expected: false },
+    ] satisfies { text: string; threshold?: number; expected: boolean; failure?: string; field?: "title" | "plot" }[]) {
       const entry = createEntry({
         nfoPath: join(root, "ABC-123.nfo"),
         crawlerData: {
@@ -238,7 +244,7 @@ describe("BatchNfoTranslator", () => {
           title_zh: undefined,
           plot: field === "plot" ? text : "中文简介",
           plot_zh: undefined,
-          translation_failures: failed ? { [field]: "provider unavailable" } : undefined,
+          translation_failures: failure ? { [field]: failure } : undefined,
         },
       });
       if (!entry.nfoPath || !entry.crawlerData) throw new Error("Missing fixture NFO metadata");
@@ -252,9 +258,9 @@ describe("BatchNfoTranslator", () => {
       const config = createConfig();
       config.translate.untranslatedJapaneseRunLength = threshold;
       const scanned = await service.scan("/library", "untranslated", config);
-      expect(scanned, JSON.stringify({ text, threshold, failed })).toHaveLength(expected ? 1 : 0);
+      expect(scanned, JSON.stringify({ text, threshold, failure })).toHaveLength(expected ? 1 : 0);
       if (expected)
-        expect(scanned[0]).toMatchObject({ pendingFields: [field], reason: failed ? "task_failed" : "content" });
+        expect(scanned[0]).toMatchObject({ pendingFields: [field], reason: failure ? "task_failed" : "content" });
       const [result] = await service.apply(
         [
           {
@@ -509,22 +515,27 @@ describe("BatchNfoTranslator", () => {
       const repaired = await service.apply(items, config, { mode: "all" });
       expect(repaired.every(({ success }) => success)).toBe(true);
     }
-    const successfulWriteCount = mergeNfo.mock.calls.length;
     const savedNfo = await readFile(items[0].nfoPath, "utf8");
     localScanService.scanVideo.mockImplementation(async (_root, videoPath) => {
       const entry = entriesByPath.get(videoPath);
       if (!entry?.nfoPath) throw new Error(`Missing fixture: ${videoPath}`);
       return { ...entry, crawlerData: parseNfoSnapshot(await readFile(entry.nfoPath, "utf8")).crawlerData };
     });
+    postJsonDetailed.mockResolvedValue({
+      ...emptyResponse,
+      data: { output_text: '{"translations":["Same English Title","Plot 1"]}' },
+    });
+    const retained = await service.apply(items, config, { mode: "all" });
+    expect(retained.every(({ success }) => success)).toBe(true);
+    const retainedData = parseNfoSnapshot(await readFile(items[0].nfoPath, "utf8")).crawlerData;
+    expect(retainedData).toMatchObject({ title_zh: "相同标题", plot_zh: "剧情一" });
+    expect(retainedData.translation_failures).toBeUndefined();
+    const successfulWriteCount = mergeNfo.mock.calls.length;
     const failureResponses = {
       empty: { data: emptyResponse.data, error: "响应不包含文本" },
       invalid: { data: { output_text: '{"translations":["缺少简介"]}' }, error: "批量翻译数量" },
       unauthorized: { data: { error: { message: "invalid API key" } }, error: "HTTP 401" },
       refusal: { data: { output_text: "抱歉，我无法翻译或处理" }, error: "is not valid JSON" },
-      echo: {
-        data: { output_text: '{"translations":["Same English Title","Plot 1"]}' },
-        error: "翻译服务返回了原文",
-      },
       truncated: { data: { output_text: '[N] {"translations":["标题"' }, error: "JSON" },
       multiple: {
         data: { output_text: '[N] {"translations":["标题","简介"]}\n{"translations":["另一标题","另一简介"]}' },

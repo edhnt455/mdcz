@@ -220,13 +220,15 @@ describe("TranslateService term consistency", () => {
 
   it.each([
     [null, "引擎未返回译文"],
-    [" English plot\r\n", "返回了原文"],
+    [" あいうえおのあらすじ\r\n", "返回了原文"],
     [" ", "引擎未返回译文"],
   ])("logs field fallback without response content (%s)", async (plot, reason) => {
+    const title = "FIRST IMPRESSION 44";
+    const sourcePlot = "あいうえおのあらすじ";
     const generateText =
       plot === null
         ? vi.fn().mockRejectedValue(new Error("provider failed"))
-        : vi.fn().mockResolvedValue(JSON.stringify({ title: "中文标题", plot, genres: ["剧情"] }));
+        : vi.fn().mockResolvedValue(JSON.stringify({ title, plot, genres: ["剧情"] }));
     const logger = createLogger();
     const network = new NetworkClient({});
     const getJson = vi.spyOn(network, "getJson").mockRejectedValue(new Error("unexpected Google fallback"));
@@ -236,8 +238,8 @@ describe("TranslateService term consistency", () => {
 
     const result = await service.translateCrawlerData(
       {
-        title: "English title",
-        plot: "English plot",
+        title,
+        plot: sourcePlot,
         number: "HMN-869",
         actors: [],
         genres: ["Drama"],
@@ -257,9 +259,12 @@ describe("TranslateService term consistency", () => {
     if (plot === null || !plot.trim()) {
       expect(result.error).toContain(plot === null ? "provider failed" : "结构化输出无效");
     } else {
+      expect(result.data.title).toBe(title);
+      expect(result.data.title_zh).toBeUndefined();
+      expect(result.data.translation_failures).toEqual({ plot: expect.stringContaining(reason) });
       expect(logger.warn).toHaveBeenCalledWith(`翻译引擎未能翻译 plot（HMN-869），将返回原文：${reason}`);
     }
-    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain("English plot");
+    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain(sourcePlot);
   });
 
   it.each([

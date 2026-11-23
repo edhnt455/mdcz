@@ -17,7 +17,12 @@ import { LlmApiClient, type RuntimeNetworkJsonResponse } from "./translate/engin
 import { LlmRequestService } from "./translate/engines/LlmRequestService";
 import { type LlmMetadataTranslationInput, OpenAiTranslator } from "./translate/engines/OpenAiTranslator";
 import { GenreTranslator } from "./translate/GenreTranslator";
-import { ensureTargetChinese, normalizeNewlines } from "./translate/shared";
+import {
+  canKeepOriginalTranslation,
+  ensureTargetChinese,
+  normalizeNewlines,
+  UNCHANGED_TRANSLATION_REASON,
+} from "./translate/shared";
 import { type LanguageTarget, type MachineTranslator, type TranslationMappingStore, toTarget } from "./translate/types";
 import { isAbortError, throwIfAborted } from "./utils/abort";
 
@@ -148,12 +153,12 @@ export class TranslateService {
       const prepared = fields[field];
       if (!prepared.source || !metadataTranslation) continue;
       const returned = normalizeNewlines(metadataTranslation[field] ?? "").trim();
-      if (returned && returned !== prepared.source) {
-        prepared.translated = ensureTargetChinese(returned, target);
+      if (returned && (returned !== prepared.source || canKeepOriginalTranslation(prepared.source))) {
+        if (returned !== prepared.source) prepared.translated = ensureTargetChinese(returned, target);
         delete failures[field];
         continue;
       }
-      const message = `翻译引擎未能翻译 ${field}（${data.number}），将返回原文：${returned ? "返回了原文" : "引擎未返回译文"}`;
+      const message = `翻译引擎未能翻译 ${field}（${data.number}），将返回原文：${returned ? UNCHANGED_TRANSLATION_REASON : "引擎未返回译文"}`;
       this.logger.warn(message);
       failures[field] = message;
     }

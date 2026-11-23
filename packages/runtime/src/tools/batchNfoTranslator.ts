@@ -39,6 +39,7 @@ import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import { NfoGenerator, nfoIgnoreFieldsToEnabledFields } from "../scrape/nfo";
 import { LlmRequestService } from "../scrape/translate/engines/LlmRequestService";
 import { buildLlmTranslatePrompt } from "../scrape/translate/engines/OpenAiTranslator";
+import { canKeepOriginalTranslation, UNCHANGED_TRANSLATION_REASON } from "../scrape/translate/shared";
 import { detectLanguage, type RuntimeLogger, runtimeLoggerService, toErrorMessage } from "../shared";
 
 type BatchTranslateLocalScanService = {
@@ -88,6 +89,14 @@ export interface BatchNfoTranslatorApplyOptions {
 }
 
 const normalizeText = (value: string | undefined): string => normalizeNewlines(value ?? "").trim();
+
+const hasTranslationFailure = (data: CrawlerData, field: BatchTranslateField): boolean => {
+  const failure = data.translation_failures?.[field];
+  if (!failure) return false;
+  if (field === "genres" || !failure.endsWith(UNCHANGED_TRANSLATION_REASON)) return true;
+  const source = normalizeText(data[field]) || normalizeText(data[field === "title" ? "title_zh" : "plot_zh"]);
+  return !canKeepOriginalTranslation(source);
+};
 
 const fieldFingerprint = (data: CrawlerData, field: BatchTranslateField): string =>
   createHash("sha256")
@@ -175,13 +184,14 @@ const toScanItem = (
   if (!entry.nfoPath || !entry.crawlerData) return null;
 
   const pendingFields: BatchTranslateField[] = [];
-  const failures = entry.crawlerData.translation_failures;
+  let reason: BatchTranslateScanItem["reason"] = "content";
   for (const field of ["title", "plot", "genres"] as const) {
     if (
       mode === "untranslated" &&
       entry.crawlerData.translation_ignored?.[field] === fieldFingerprint(entry.crawlerData, field)
     )
       continue;
+    const failed = hasTranslationFailure(entry.crawlerData, field);
     const action =
       field === "genres"
         ? undefined
@@ -191,9 +201,12 @@ const toScanItem = (
             entry.crawlerData[field === "title" ? "title_zh" : "plot_zh"],
             translate,
             mode,
-            Boolean(failures?.[field]),
+            failed,
           );
-    if ((mode !== "restore" && failures?.[field]) || action) pendingFields.push(field);
+    if ((mode !== "restore" && failed) || action) {
+      pendingFields.push(field);
+      if (failed) reason = "task_failed";
+    }
   }
   if (pendingFields.length === 0) return null;
 
@@ -205,7 +218,7 @@ const toScanItem = (
     title: entry.crawlerData.title_zh?.trim() || entry.crawlerData.title,
     plot: entry.crawlerData.plot_zh?.trim() || entry.crawlerData.plot || "",
     pendingFields,
-    reason: pendingFields.some((field) => failures?.[field]) ? "task_failed" : "content",
+    reason,
   };
 };
 
@@ -354,7 +367,7 @@ export const applyBatchNfoTranslations = async (
         entry.crawlerData[field === "title" ? "title_zh" : "plot_zh"],
         config.translate,
         options.mode,
-        Boolean(entry.crawlerData.translation_failures?.[field]),
+        hasTranslationFailure(entry.crawlerData, field),
       );
       if (action) actions.push(action);
     }
@@ -418,6 +431,7 @@ export const applyBatchNfoTranslations = async (
     const failures = { ...entry.crawlerData.translation_failures };
     const ignored = { ...entry.crawlerData.translation_ignored };
     const translatedFields: BatchTranslateField[] = [];
+    const updatedFields = new Set<BatchTranslateField>();
     const errors: string[] = [];
 
     const failedFields = new Set<BatchTranslateField>();
@@ -432,18 +446,26 @@ export const applyBatchNfoTranslations = async (
 
       if (action.kind !== "translate") {
         nextCrawlerData[translatedKey] = action.kind === "convert" ? action.value : undefined;
+        updatedFields.add(action.field);
         if (!translatedFields.includes(action.field)) translatedFields.push(action.field);
         continue;
       }
 
       const translated = translatedByKey.get(action.key);
-      if (translated && (action.field === "genres" || translated !== action.text)) {
-        if (action.field === "genres" && action.genreIndex !== undefined)
+      if (
+        translated &&
+        (action.field === "genres" || translated !== action.text || canKeepOriginalTranslation(action.text))
+      ) {
+        if (action.field === "genres" && action.genreIndex !== undefined) {
           nextCrawlerData.genres[action.genreIndex] = translated;
-        else nextCrawlerData[translatedKey] = translated;
+          updatedFields.add(action.field);
+        } else if (translated !== action.text) {
+          nextCrawlerData[translatedKey] = translated;
+          updatedFields.add(action.field);
+        }
         if (!translatedFields.includes(action.field)) translatedFields.push(action.field);
       } else {
-        const reason = translated ? "翻译服务返回了原文" : failedReasonByKey.get(action.key);
+        const reason = translated ? `翻译服务${UNCHANGED_TRANSLATION_REASON}` : failedReasonByKey.get(action.key);
         const message = `${action.field} 翻译失败${reason ? `：${reason}` : ""}`;
         failures[action.field] = message;
         failedFields.add(action.field);
@@ -481,7 +503,7 @@ export const applyBatchNfoTranslations = async (
         : undefined;
       const targets = registered?.paths ?? entry.nfoPaths;
       if (!targets.length) throw new Error("未找到可写入的 NFO 副本");
-      const changedFields = options.mode === "ignore" ? [] : [...new Set(translatedFields)];
+      const changedFields = [...updatedFields];
       const statusFields = [...new Set(plan.actions.map((action) => action.field))];
       const editorFields = changedFields.flatMap((field): NfoEditorField[] =>
         field === "title" ? ["title", "title_zh"] : field === "plot" ? ["plot", "plot_zh"] : ["genres"],

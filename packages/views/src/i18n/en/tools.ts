@@ -188,7 +188,7 @@ export const tools = {
   batchTranslateModeHelp: {
     untranslated:
       "Retry fields with recorded failures; otherwise use the consecutive Japanese character threshold in settings to detect untranslated titles and plots.",
-    all: "Use after switching translation models; existing translations are replaced.",
+    all: "Use after switching translation models. New translations replace existing ones.",
     restore:
       "Remove translations so titles and plots show the source text. With translation on, the next refresh translates again.",
   },

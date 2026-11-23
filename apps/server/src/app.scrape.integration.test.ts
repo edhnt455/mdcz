@@ -344,9 +344,17 @@ describe("buildServer scrape integration", () => {
       .spyOn(TranslateService.prototype, "translateMetadata")
       .mockRejectedValue(new Error("Translation provider unavailable"));
     const generateText = vi.spyOn(LlmApiClient.prototype, "generateText");
+    const aggregation = createTestAggregation("https://unused.example/image.png");
+    const sourceTitle = "FIRST IMPRESSION 44";
+    const sourcePlot = "あいうえおのあらすじ";
     try {
       const { fastify, services } = await createTestServer({
-        scrapeAggregation: createTestAggregation("https://unused.example/image.png"),
+        scrapeAggregation: {
+          async aggregate(number) {
+            const result = await aggregation.aggregate(number);
+            return { ...result, data: { ...result.data, title: sourceTitle, plot: sourcePlot } };
+          },
+        },
       });
       await services.config.update({
         translate: { enableTranslation: true, llmModelName: "test-model", llmApiKey: "test-key" },
@@ -421,7 +429,7 @@ describe("buildServer scrape integration", () => {
         }),
       ]);
       const batchNfoPath = items[0].nfoPath;
-      generateText.mockResolvedValueOnce(JSON.stringify({ translations: ["补译标题", "Runtime plot", "剧情"] }));
+      generateText.mockResolvedValueOnce(JSON.stringify({ translations: [sourceTitle, sourcePlot, "剧情"] }));
       const partial = await fastify.inject({
         method: "POST",
         url: "/trpc/tools.execute",
@@ -430,25 +438,41 @@ describe("buildServer scrape integration", () => {
       });
       expect(partial.statusCode).toBe(200);
       expect(partial.json().result.data.ok).toBe(false);
-      expect(parseNfoSnapshot(await readFile(batchNfoPath, "utf8")).crawlerData.translation_failures).toEqual({
-        plot: expect.stringContaining("翻译服务返回了原文"),
+      expect(partial.json().result.data.data.results[0]).toMatchObject({
+        title: sourceTitle,
+        success: false,
+        translatedFields: ["title", "genres"],
+      });
+      expect(parseNfoSnapshot(await readFile(batchNfoPath, "utf8")).crawlerData).toMatchObject({
+        title: sourceTitle,
+        translation_failures: { plot: expect.stringContaining("翻译服务返回了原文") },
       });
       expect((await services.scrape.snapshot({ taskId })).task).toMatchObject({
         status: "completed",
         successCount: 1,
         failedCount: 0,
       });
+      const pending = await fastify.inject({
+        method: "POST",
+        url: "/trpc/tools.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { toolId: "batch-nfo-translator", action: "scan", mode: "untranslated", directory: root },
+      });
+      expect(pending.statusCode).toBe(200);
+      const pendingItems = pending.json().result.data.data.items;
+      expect(pendingItems).toEqual([expect.objectContaining({ reason: "task_failed", pendingFields: ["plot"] })]);
       generateText.mockResolvedValueOnce(JSON.stringify({ translations: ["补译简介"] }));
       const repairedResponse = await fastify.inject({
         method: "POST",
         url: "/trpc/tools.execute",
         headers: { authorization: `Bearer ${token}` },
-        payload: { toolId: "batch-nfo-translator", action: "apply", mode: "untranslated", items },
+        payload: { toolId: "batch-nfo-translator", action: "apply", mode: "untranslated", items: pendingItems },
       });
       expect(repairedResponse.statusCode).toBe(200);
       expect(repairedResponse.json().result.data.ok).toBe(true);
       const repaired = parseNfoSnapshot(await readFile(batchNfoPath, "utf8")).crawlerData;
-      expect(repaired.title_zh).toBe("补译标题");
+      expect(repaired.title).toBe(sourceTitle);
+      expect(repaired.title_zh).toBeUndefined();
       expect(repaired.plot_zh).toBe("补译简介");
       expect(repaired.translation_failures).toBeUndefined();
       const [updated] = await state.repositories.library.listEntries();

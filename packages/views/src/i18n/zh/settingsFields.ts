@@ -405,7 +405,7 @@ export const settingsFields: Messages["settingsFields"] = {
     "translate.untranslatedJapaneseRunLength": {
       label: "未翻译判定连续日文字符数",
       description:
-        "批量 NFO「仅未翻译」扫描：标题或简介连续达到此数量的平假名、片假名才判定需翻译，默认 5，含半角假名和长音符。汉字、空格和标点会中断计数；有失败记录的字段始终可补译，纯英文或仅需简繁转换不命中。",
+        "批量 NFO「仅未翻译」扫描按连续平假名、片假名数量判断标题和简介，默认 5，含半角假名和长音符。汉字、空格和标点会中断计数。扫描也会列出有失败记录的字段，原样保留英文产生的旧记录会跳过。",
       aliases: ["未翻译", "日文", "假名", "阈值", "批量翻译"],
     },
     "personSync.personOverviewSources": { label: "人物简介来源顺序" },
