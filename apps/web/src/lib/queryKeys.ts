@@ -27,7 +27,9 @@ export const queryKeys = {
   },
   library: {
     all: ["library"] as const,
-    list: (filters: object) => ["library", "list", filters] as const,
+    list: (filters: object, page: number, pageSize: number) =>
+      ["library", "list", filters, { page, pageSize }] as const,
+    availability: ["library", "availability"] as const,
     summary: (libraryId: string | undefined) => ["library", "summary", libraryId ?? ""] as const,
     facet: (input: object) => ["library", "facet", input] as const,
   },

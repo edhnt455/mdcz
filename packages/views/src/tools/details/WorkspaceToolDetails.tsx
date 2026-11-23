@@ -1,4 +1,5 @@
 import { toErrorMessage } from "@mdcz/shared/error";
+import type { MediaLibraryDto } from "@mdcz/shared/mediaLibrary";
 import type {
   BatchTranslateApplyMode,
   BatchTranslateApplyResultItem,
@@ -40,6 +41,7 @@ const DEFAULT_BATCH_TRANSLATE_SIZE = 20;
 const MIN_BATCH_TRANSLATE_SIZE = 1;
 const MAX_BATCH_TRANSLATE_SIZE = 20;
 const STORAGE_KEY_BATCH_TRANSLATE_DIR = "mdcz:tool:batch-translate-dir";
+const EMPTY_BATCH_TRANSLATE_ITEMS: BatchTranslateScanItem[] = [];
 
 const readStoredBatchTranslateDirectory = (): string => {
   if (typeof localStorage === "undefined") return "";
@@ -155,16 +157,14 @@ export function SingleFilePathScraperDetail({
 }
 
 export interface BatchNfoTranslatorWorkspaceDetailProps {
-  items: BatchTranslateScanItem[];
-  scanning?: boolean;
+  libraries: readonly Pick<MediaLibraryDto, "id" | "name" | "placement" | "outputPath">[];
   onApply: (
     items: BatchTranslateScanItem[],
     batchSize: number,
     mode: BatchTranslateApplyMode,
   ) => Promise<BatchTranslateApplyResultItem[]>;
   onApplyComplete?: (summary: BatchNfoTranslatorApplySummary) => void;
-  onBrowseDirectory?: () => Promise<string | null | undefined>;
-  onScan: (directory: string, mode: BatchTranslateMode) => void | Promise<void>;
+  onScan: (directory: string, mode: BatchTranslateMode) => Promise<BatchTranslateScanItem[]>;
 }
 
 const getBatchTranslateStatusBadgeClass = (status: BatchTranslateItemApplyStatus): string => {
@@ -184,19 +184,24 @@ const getBatchTranslateStatusBadgeClass = (status: BatchTranslateItemApplyStatus
 };
 
 export function BatchNfoTranslatorWorkspaceDetail({
-  items,
-  scanning = false,
+  libraries,
   onApply,
   onApplyComplete,
-  onBrowseDirectory,
   onScan,
 }: BatchNfoTranslatorWorkspaceDetailProps) {
   const t = useT();
-  const [directory, setDirectory] = useState(readStoredBatchTranslateDirectory);
+  const [manualDirectory, setManualDirectory] = useState(readStoredBatchTranslateDirectory);
+  const [chosenLibraryId, setChosenLibraryId] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const [scan, setScan] = useState<{
+    libraryId: string | undefined;
+    directory: string;
+    mode: BatchTranslateMode;
+    items: BatchTranslateScanItem[];
+  } | null>(null);
   const [batchSizeInput, setBatchSizeInput] = useState(String(DEFAULT_BATCH_TRANSLATE_SIZE));
   const [mode, setMode] = useState<BatchTranslateMode>("untranslated");
-  // Apply must translate with the mode that produced the listed items.
-  const [scannedMode, setScannedMode] = useState<BatchTranslateMode>("untranslated");
   const [reasonFilter, setReasonFilter] = useState<"all" | BatchTranslateScanItem["reason"]>("all");
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
@@ -211,6 +216,12 @@ export function BatchNfoTranslatorWorkspaceDetail({
   } | null>(null);
   const [results, setResults] = useState<BatchTranslateApplyResultItem[]>([]);
   const [itemStatusByPath, setItemStatusByPath] = useState<Record<string, BatchTranslateItemApplyStatus>>({});
+  const outputs = libraries.filter((library) => library.placement !== "inPlace" && library.outputPath);
+  const library = outputs.find((entry) => entry.id === chosenLibraryId) ?? outputs[0];
+  const directory = library?.outputPath ?? manualDirectory.trim();
+  const currentScan = scan && scan.libraryId === library?.id && scan.directory === directory ? scan : null;
+  const items = currentScan?.items ?? EMPTY_BATCH_TRANSLATE_ITEMS;
+  const scannedMode = currentScan?.mode ?? mode;
   const filteredItems = items.filter((item) => reasonFilter === "all" || item.reason === reasonFilter);
   const previewRows = filteredItems.slice(0, 300);
   const resultByPath = useMemo(() => new Map(results.map((result) => [result.filePath, result])), [results]);
@@ -280,14 +291,19 @@ export function BatchNfoTranslatorWorkspaceDetail({
   };
 
   const handleScan = async () => {
-    setReasonFilter("all");
-    setResults([]);
-    setItemStatusByPath({});
-    setApplyProgress(null);
-    setApplyPaused(false);
-    persistBatchTranslateDirectory(directory);
-    setScannedMode(mode);
-    await onScan(directory, mode);
+    if (!directory || scanning || applying) return;
+    setScan(null);
+    setScanError("");
+    setScanning(true);
+    if (!library) persistBatchTranslateDirectory(directory);
+    try {
+      const items = await onScan(directory, mode);
+      setScan({ libraryId: library?.id, directory, mode, items });
+    } catch (error) {
+      setScanError(toErrorMessage(error));
+    } finally {
+      setScanning(false);
+    }
   };
 
   const handleApply = async (actionItems = selectedItems, actionMode: BatchTranslateApplyMode = scannedMode) => {
@@ -383,13 +399,6 @@ export function BatchNfoTranslatorWorkspaceDetail({
       });
   };
 
-  const browseDirectory = async () => {
-    const selected = await onBrowseDirectory?.();
-    if (!selected) return;
-    setDirectory(selected);
-    persistBatchTranslateDirectory(selected);
-  };
-
   const batchSizePresets = [
     { label: t.tools.presetItemSingle, value: 1 },
     { label: t.tools.presetItems(5), value: 5 },
@@ -406,27 +415,41 @@ export function BatchNfoTranslatorWorkspaceDetail({
         >
           {t.tools.targetDirectory}
         </Label>
-        <div className="flex flex-col gap-3 sm:flex-row">
+        {library ? (
+          <select
+            id="batch-translate-dir"
+            value={library.id}
+            disabled={scanning || applying}
+            onChange={(event) => {
+              setChosenLibraryId(event.target.value);
+              setScan(null);
+              setScanError("");
+            }}
+            className={cn(TOOL_INPUT_CLASS, "block w-full text-sm text-foreground disabled:opacity-50")}
+          >
+            {outputs.map((output) => (
+              <option key={output.id} value={output.id}>
+                {output.name} · {output.outputPath}
+              </option>
+            ))}
+          </select>
+        ) : (
           <Input
             id="batch-translate-dir"
-            value={directory}
-            onChange={(event) => setDirectory(event.target.value)}
-            onBlur={(event) => persistBatchTranslateDirectory(event.target.value)}
+            value={manualDirectory}
+            disabled={scanning || applying}
+            onChange={(event) => {
+              const value = event.target.value;
+              setManualDirectory(value);
+              if (value.trim() === directory) return;
+              setScan(null);
+              setScanError("");
+            }}
+            onBlur={(event) => persistBatchTranslateDirectory(event.target.value.trim())}
             placeholder={t.tools.batchTranslateDirPlaceholder}
-            className={cn(TOOL_INPUT_CLASS, "flex-1")}
+            className={TOOL_INPUT_CLASS}
           />
-          {onBrowseDirectory ? (
-            <Button
-              type="button"
-              variant="secondary"
-              className={cn(TOOL_SECONDARY_BUTTON_CLASS, "sm:w-auto px-4")}
-              onClick={browseDirectory}
-            >
-              <FolderOpen className="h-4 w-4" />
-              <span>{t.tools.browseDirectory}</span>
-            </Button>
-          ) : null}
-        </div>
+        )}
       </div>
 
       <div className={TOOL_SUBSECTION_CLASS}>
@@ -522,7 +545,7 @@ export function BatchNfoTranslatorWorkspaceDetail({
         <Button
           variant="secondary"
           onClick={() => void handleScan()}
-          disabled={scanning || applying}
+          disabled={!directory || scanning || applying}
           className={cn(TOOL_SECONDARY_BUTTON_CLASS, "flex-1")}
         >
           {scanning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -575,6 +598,11 @@ export function BatchNfoTranslatorWorkspaceDetail({
         ) : null}
       </div>
 
+      {scanError && (
+        <p role="alert" className="text-sm text-destructive">
+          {scanError}
+        </p>
+      )}
       {scannedMode !== "restore" ? <p className={TOOL_NOTE_CLASS}>{t.tools.ignoreTranslationHelp}</p> : null}
 
       {items.length > 0 && scannedMode !== "restore" ? (

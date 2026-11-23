@@ -12,7 +12,7 @@ interface ScrapeState {
   retiredTaskIds: string[];
   pending: boolean;
   error: string | null;
-  setSnapshot(snapshot: ScrapeRunSnapshotDto | null): void;
+  setSnapshot(snapshot: ScrapeRunSnapshotDto | null, focus?: boolean): void;
   setPending(pending: boolean): void;
   setError(error: string | null): void;
   reset(): void;
@@ -28,10 +28,10 @@ const initialState = () => ({
 
 export const useScrapeStore = create<ScrapeState>()((set) => ({
   ...initialState(),
-  setSnapshot: (snapshot) => {
+  setSnapshot: (snapshot, focus = false) => {
     if (!snapshot) return;
     set((state) => {
-      if (state.retiredTaskIds.includes(snapshot.task.id)) return state;
+      if (!focus && state.retiredTaskIds.includes(snapshot.task.id)) return state;
       const previous = state.snapshot;
       if (!previous || previous.task.id !== snapshot.task.id) {
         return {
@@ -40,7 +40,11 @@ export const useScrapeStore = create<ScrapeState>()((set) => ({
             previous && !snapshot.directorySource && snapshot.task.previousTaskId === previous.task.id
               ? [...state.ancestors, previous]
               : [],
-          retiredTaskIds: previous ? [...state.retiredTaskIds, previous.task.id] : state.retiredTaskIds,
+          retiredTaskIds: focus
+            ? state.retiredTaskIds.filter((id) => id !== snapshot.task.id)
+            : previous
+              ? [...state.retiredTaskIds, previous.task.id]
+              : state.retiredTaskIds,
           error: null,
         };
       }

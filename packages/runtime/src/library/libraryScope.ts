@@ -8,22 +8,20 @@ import type { MediaLibraryService } from "./mediaLibraryService";
 export const toLibraryEntryFilter = async (
   input: LibraryMatchesInput | undefined,
   libraries: Pick<MediaLibraryService, "get">,
-  configuration: Pick<Configuration, "download" | "scrape">,
+  configuration: Pick<Configuration, "scrape">,
 ): Promise<LibraryEntryFilter> => {
-  const { query, rootId, libraryId, health, issues, ignored, actors, studios, tags, missingActors, missingSubtitles } =
+  const { query, rootId, libraryId, issues, actors, studios, tags, missingActors, missingSubtitles, hasTranslation } =
     input ?? {};
   const library = libraryId ? await libraries.get(libraryId) : undefined;
   return {
     query,
     rootId,
-    health,
     issues,
-    healthIgnored: ignored,
-    includeBackdrop: configuration.download.downloadFanart,
     actors,
     studios,
     tags,
     missingActors,
+    hasTranslation,
     missingSubtitles:
       missingSubtitles !== undefined
         ? {

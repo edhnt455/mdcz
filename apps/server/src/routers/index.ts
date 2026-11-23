@@ -1,4 +1,5 @@
 import { MediaDirectoryUnavailableError, MediaLibrarySettingsError, toMediaLibraryDto } from "@mdcz/runtime/library";
+import { ScrapeRunnerError } from "@mdcz/runtime/scrape";
 import { containsStrmFiles } from "@mdcz/runtime/scrape/utils/strm";
 import { notificationsSchema } from "@mdcz/shared/config";
 import { deletionJobInputSchema } from "@mdcz/shared/deletions";
@@ -37,11 +38,9 @@ import {
   libraryDetailInputSchema,
   libraryFacetInputSchema,
   libraryFileRemoveInputSchema,
-  libraryIgnoreHealthInputSchema,
   libraryListInputSchema,
   libraryMatchesInputSchema,
   libraryRelinkInputSchema,
-  libraryRestoreIgnoredInputSchema,
   librarySummaryInputSchema,
   logListInputSchema,
   maintenanceApplyInputSchema,
@@ -259,12 +258,6 @@ export const appRouter = t.router({
     delete: protectedProcedure
       .input(libraryDeleteInputSchema)
       .mutation(async ({ ctx, input }) => await ctx.services.library.deleteEntries(input.ids)),
-    ignoreHealth: protectedProcedure
-      .input(libraryIgnoreHealthInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.library.ignoreHealth(input)),
-    restoreIgnored: protectedProcedure
-      .input(libraryRestoreIgnoredInputSchema)
-      .mutation(async ({ ctx, input }) => await ctx.services.library.restoreIgnored(input)),
     rescan: protectedProcedure.input(libraryDetailInputSchema).mutation(async ({ ctx, input }) => {
       const detail = await ctx.services.library.detail(input.id);
       const file = detail.entry.fileRefs.find((file) => file.id === detail.entry.displayFileId);
@@ -515,7 +508,10 @@ export const appRouter = t.router({
       try {
         return { runId: (await ctx.services.scrape.start(input)).task.id };
       } catch (error) {
-        if (error instanceof MediaDirectoryUnavailableError)
+        if (
+          error instanceof MediaDirectoryUnavailableError ||
+          ("refreshMovieIds" in input && error instanceof ScrapeRunnerError)
+        )
           throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
         throw error;
       }

@@ -36,7 +36,6 @@ import {
   MoreHorizontal,
   Pencil,
   RefreshCw,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useRef, useState } from "react";
@@ -65,11 +64,9 @@ export interface LibraryIndexViewProps {
   onEditEntries?: (entries: LibraryEntryDto[]) => void;
   onRefreshEntries?: (entries: LibraryEntryDto[]) => Promise<void>;
   refreshBlockedReason?: string;
-  onRestoreEntries?: (entries: LibraryEntryDto[]) => Promise<void>;
   onDeleteEntries: (entries: LibraryEntryDto[]) => void;
   onRemoveFile?: (input: LibraryFileRemoveInput) => Promise<void>;
   onRelinkFile?: (input: LibraryRelinkInput) => Promise<void>;
-  onRefresh: () => void;
 }
 
 export interface LibraryDeleteDialogProps {
@@ -100,10 +97,8 @@ export function LibraryIndexView({
   onEditEntries,
   onRefreshEntries,
   refreshBlockedReason,
-  onRestoreEntries,
   onRemoveFile,
   onRelinkFile,
-  onRefresh,
 }: LibraryIndexViewProps) {
   const t = useT();
   const mainRef = useRef<HTMLElement>(null);
@@ -229,34 +224,9 @@ export function LibraryIndexView({
                   <Trash2 className="h-4 w-4" />
                   {t.library.removeFromLibrary}
                 </Button>
-                {browse.search.ignored && onRestoreEntries && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={actionsDisabled}
-                    onClick={() => void runSelectionAction(onRestoreEntries)}
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    {t.library.bulk.restore}
-                  </Button>
-                )}
               </fieldset>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
-              <Button
-                aria-pressed={!!browse.search.ignored}
-                type="button"
-                size="sm"
-                variant={browse.search.ignored ? "secondary" : "ghost"}
-                onClick={() => browse.onApply({ ...browse.search, ignored: !browse.search.ignored || undefined })}
-              >
-                {t.library.bulk.ignored}
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={onRefresh}>
-                <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-                {t.library.refresh}
-              </Button>
               <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
                 {(["list", "wall"] as const).map((view) => (
                   <Button

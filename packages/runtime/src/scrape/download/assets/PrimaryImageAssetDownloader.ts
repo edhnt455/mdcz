@@ -143,6 +143,7 @@ export class PrimaryImageAssetDownloader implements AssetDownloader {
     if (!plan.config.download.downloadPoster) {
       return;
     }
+    if (!assets.poster && plan.callbacks?.preserveExistingPosterOnFailure) return;
     if (
       assets.poster &&
       !assets.downloaded.includes(assets.poster) &&

@@ -15,7 +15,7 @@ const controlClass =
   "h-9 w-full rounded-quiet border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 const FACETS = ["actors", "studios", "tags"] as const;
-const FLAGS = ["missingActors", "missingSubtitles", ...LIBRARY_HEALTH_ISSUES] as const;
+const FLAGS = ["missingActors", "missingSubtitles", "hasTranslation", ...LIBRARY_HEALTH_ISSUES] as const;
 
 export interface LibraryBrowseControls {
   libraries: Array<{ id: string; name: string }>;
@@ -83,7 +83,7 @@ export function LibraryBrowsePanel({ browse }: { browse: LibraryBrowseControls }
         />
       ))}
       {FLAGS.map((flag) => {
-        const isStatus = flag === "missingActors" || flag === "missingSubtitles";
+        const isStatus = flag === "missingActors" || flag === "missingSubtitles" || flag === "hasTranslation";
         const value = isStatus ? draft[flag] : draft.issues?.[flag];
         return (
           <FilterSelect
@@ -98,8 +98,12 @@ export function LibraryBrowsePanel({ browse }: { browse: LibraryBrowseControls }
             }}
           >
             <option value="">{t.library.all}</option>
-            <option value="true">{t.library.filters.yes}</option>
-            <option value="false">{t.library.filters.no}</option>
+            <option value="true">
+              {flag === "hasTranslation" ? t.library.filters.withTranslation : t.library.filters.yes}
+            </option>
+            <option value="false">
+              {flag === "hasTranslation" ? t.library.filters.withoutTranslation : t.library.filters.no}
+            </option>
           </FilterSelect>
         );
       })}

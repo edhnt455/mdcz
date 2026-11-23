@@ -20,6 +20,8 @@ export interface DownloadCallbacks {
   onDerivedPosterSource?: (url: string) => void;
   /** Force a primary image to refresh even when its keep flag is enabled. */
   forceReplace?: Partial<Record<RefreshableAssetKey, boolean>>;
+  /** Keep the old poster when no direct replacement was downloaded, even if a new cover could be cropped. */
+  preserveExistingPosterOnFailure?: boolean;
   /** Preserve or replace selected maintenance-managed assets regardless of preset keep flags. */
   assetDecisions?: MaintenanceAssetDecisions;
   /** Cancels in-flight work when the current scrape is stopped. */

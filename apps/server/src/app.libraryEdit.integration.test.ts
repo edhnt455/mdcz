@@ -169,7 +169,7 @@ it("edits each locked NFO and its record atomically, survives reattachment, and 
   expect(excluded.body).toContain("已在 NFO 设置中禁用");
 });
 
-it("ignores and restores scoped health issues and deep deletes a batch", async () => {
+it("includes all matching health issues and deep deletes a batch", async () => {
   const { fastify, services } = await createTestServer();
   const token = await loginAsAdmin(fastify);
   const headers = { authorization: `Bearer ${token}` };
@@ -178,7 +178,7 @@ it("ignores and restores scoped health issues and deep deletes a batch", async (
     placement: "inPlace",
     outputPath: "",
   });
-  const { repositories } = await services.persistence.getState();
+  const { database, repositories } = await services.persistence.getState();
   for (const id of ["First", "Second"]) {
     await writeFile(join(directory, `${id}.mp4`), id);
     repositories.library.writeEntry({ id, title: id, number: id }, [
@@ -197,28 +197,19 @@ it("ignores and restores scoped health issues and deep deletes a batch", async (
     expect(response.statusCode).toBe(200);
     return response.json().result.data;
   };
-  for (const action of ["ignoreHealth", "delete", "edit.start"]) {
+  for (const action of ["delete", "edit.start"]) {
     const response = await fastify.inject({ method: "POST", url: `/trpc/library.${action}`, payload: {} });
     expect(response.statusCode).toBe(401);
   }
-  expect(await summary()).toMatchObject({ total: 2, issues: { noNfo: 2 }, ignored: 0 });
-  expect((await post("ignoreHealth", { libraryId, query: "First", health: "noNfo" })).statusCode).toBe(200);
-  expect(await summary()).toMatchObject({ issues: { noNfo: 1, missingSynopsis: 2 }, ignored: 1 });
-  const list = await services.library.list({ libraryId, health: "noNfo" });
-  expect(list.entries.map((entry) => entry.id)).toEqual(["Second"]);
-  await repositories.library.touchEntry("First");
-  expect((await services.library.list({ libraryId, ignored: true })).entries.map((entry) => entry.id)).toEqual([
-    "First",
-  ]);
-  expect((await post("ignoreHealth", { libraryId, health: "noNfo" })).statusCode).toBe(200);
-  expect((await post("restoreIgnored", { libraryId, ids: ["First"] })).statusCode).toBe(200);
-  expect(await summary()).toMatchObject({ issues: { noNfo: 1 }, ignored: 1 });
-  expect((await services.library.list({ libraryId, ignored: true })).entries.map((entry) => entry.id)).toEqual([
-    "Second",
-  ]);
+  database.sqlite.prepare("INSERT INTO library_health_ignores (item_id, issue) VALUES (?, ?)").run("First", "noNfo");
+  const health = await summary();
+  expect(health).toMatchObject({ total: 2, issues: { noNfo: 2, missingSynopsis: 2 } });
+  expect(health).not.toHaveProperty("ignored");
+  const list = await services.library.list({ libraryId, issues: { noNfo: true } });
+  expect(list.entries.map((entry) => entry.id).sort()).toEqual(["First", "Second"]);
   expect((await post("delete", { ids: ["First", "Second", "already-gone", "First"] })).statusCode).toBe(200);
   await services.pending.waitForIdle();
-  expect(await summary()).toMatchObject({ total: 0, ignored: 0 });
+  expect(await summary()).toMatchObject({ total: 0, issues: { noNfo: 0 } });
   await expect(readFile(join(directory, "First.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
   await expect(readFile(join(directory, "Second.mp4"))).rejects.toMatchObject({ code: "ENOENT" });
 });

@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import type {
   DownloaderRepository,
+  LibraryEntryRecord,
   LibraryRepository,
   PendingRepository,
   ScrapeRunManifest,
@@ -35,9 +36,10 @@ import type {
 } from "@mdcz/shared/types";
 import { type MediaLibrary, type MediaLibraryService, toPublicationTarget } from "../library/mediaLibraryService";
 import type { ConfiguredMediaRootService } from "../library/mediaRootService";
+import { MaintenanceRuntime } from "../maintenance/MaintenanceRuntime";
 import { buildMovieTags } from "../maintenance/movieTags";
 import type { NetworkClient } from "../network";
-import { toCommittedMovie } from "../publication/committedMovie";
+import { committedMovieRows, toCommittedMovie } from "../publication/committedMovie";
 import { assertMovieDirectoryOwnership } from "../publication/conflicts";
 import { MoveOutput } from "../publication/MoveOutput";
 import { mediaSnapshot } from "../publication/mediaSnapshot";
@@ -79,6 +81,7 @@ import { TranslateService } from "./TranslateService";
 import { LlmApiClient } from "./translate/engines/LlmApiClient";
 import { LlmRequestService } from "./translate/engines/LlmRequestService";
 import type { TranslationMappingStore } from "./translate/types";
+import { isAbortError } from "./utils/abort";
 import { expandScrapeRetryItems } from "./utils/number";
 import { createVideoProbe } from "./utils/video";
 
@@ -94,20 +97,22 @@ export class ScrapeRunnerError extends Error {
   }
 }
 
-type NormalizedScrapeStart = { library: MediaLibrary } & (
-  | {
-      mode: "directory";
-      scope: DirectoryTaskScope;
-      rootId: string;
-    }
-  | {
-      mode: "single" | "batch";
-      refs: RootFileRef[];
-      manualUrl?: string;
-      number?: string;
-      unpin?: boolean;
-    }
-);
+type NormalizedScrapeStart =
+  | { mode: "refresh"; movieIds: string[]; libraryId?: string }
+  | ({ library: MediaLibrary } & (
+      | {
+          mode: "directory";
+          scope: DirectoryTaskScope;
+          rootId: string;
+        }
+      | {
+          mode: "single" | "batch";
+          refs: RootFileRef[];
+          manualUrl?: string;
+          number?: string;
+          unpin?: boolean;
+        }
+    ));
 
 type ScrapeRunnerStartContext = {
   normalized: NormalizedScrapeStart;
@@ -118,7 +123,7 @@ type ScrapeRunContext = {
   // Frozen for one run so a batch never mixes behaviours; retries and reruns start new runs from current settings.
   // Connection settings (proxy, timeout, retries) stay live because NetworkClient reads them per request.
   configuration: Configuration;
-  target: PublicationTarget;
+  target?: PublicationTarget;
   unpin?: boolean;
   inventory?: DirectoryInventory;
   groups?: MovieGroup[];
@@ -126,11 +131,12 @@ type ScrapeRunContext = {
 };
 export type PrepareScrapeItem = <T extends { fileInfo: Pick<FileInfo, "number">; caseId?: string }>(item: T) => T;
 type RunnerScrapeItem = ScrapeRunItem & MovieMember;
+type RunnerPreparation = PreparedMovieGroup | LibraryEntryRecord;
 type RunnerCoordinator = ScrapeCoordinator<
   ScrapeRunnerStartContext,
   ScrapeRunManifest,
   RunnerScrapeItem,
-  PreparedMovieGroup
+  RunnerPreparation
 >;
 
 export interface StartScrapeResult {
@@ -213,7 +219,7 @@ export class ScrapeRunner {
     ScrapeRunnerStartContext,
     ScrapeRunManifest,
     RunnerScrapeItem,
-    PreparedMovieGroup
+    RunnerPreparation
   >;
 
   constructor(private readonly deps: ScrapeRunnerDependencies) {
@@ -258,7 +264,7 @@ export class ScrapeRunner {
       },
       onTerminal: async (run, snapshot) => {
         const dto = this.toSnapshotDto(run, snapshot, run.startedAt);
-        if (snapshot.status === "failed") {
+        if (snapshot.status === "failed" && !run.items[0]?.refreshMovieId) {
           let added = 0;
           const existing = new Set(
             this.deps.persistence.pending.list().map((item) => `${item.rootId}\0${item.relativePath}`),
@@ -540,6 +546,9 @@ export class ScrapeRunner {
     input: ScrapeStartInput,
     configuration: Configuration,
   ): Promise<NormalizedScrapeStart> {
+    if ("refreshMovieIds" in input) {
+      return { mode: "refresh", movieIds: input.refreshMovieIds, libraryId: input.libraryId };
+    }
     const library = await this.deps.libraries.get(input.libraryId);
     assertTargetLayout(configuration, toPublicationTarget(library));
     if ("source" in input) {
@@ -579,6 +588,9 @@ export class ScrapeRunner {
 
   private async createRun(input: ScrapeRunnerStartContext): Promise<ScrapeRunManifest> {
     const { normalized, configuration } = input;
+    if (normalized.mode === "refresh") {
+      return await this.createLibraryRefreshRun(normalized.movieIds, configuration, normalized.libraryId ?? null);
+    }
     const { library } = normalized;
     const target = toPublicationTarget(library);
 
@@ -628,6 +640,49 @@ export class ScrapeRunner {
 
     this.runContexts.set(manifest.id, { configuration, target, unpin: normalized.unpin, inventory, groups });
     return manifest;
+  }
+
+  private async createLibraryRefreshRun(
+    movieIds: string[],
+    configuration: Configuration,
+    libraryId: string | null,
+    previousRunId?: string,
+  ): Promise<ScrapeRunManifest> {
+    const ids = [...new Set(movieIds)];
+    const entries: LibraryEntryRecord[] = [];
+    for (let index = 0; index < ids.length; index += 500) {
+      entries.push(...(await this.deps.persistence.library.getEntriesByIds(ids.slice(index, index + 500))));
+    }
+    if (entries.length !== ids.length || entries.length === 0) {
+      throw new ScrapeRunnerError("INVALID_ARGUMENT", "部分所选影片已不在媒体库中，请刷新后重试");
+    }
+    const roots = new Set(entries.flatMap((entry) => entry.files.map((file) => file.rootId)));
+    const rootId = roots.values().next().value;
+    if (!rootId || roots.size !== 1) {
+      throw new ScrapeRunnerError("INVALID_ARGUMENT", "请选择同一媒体目录下的影片重新刮削");
+    }
+    const root = await this.deps.persistence.mediaRoots.get(rootId);
+    this.rootDisplayNames.set(rootId, root.displayName);
+    const run = await this.deps.persistence.scrapeRuns.create({
+      libraryId,
+      previousRunId,
+      rootId,
+      outputRootId: rootId,
+      executionMode: entries.length === 1 ? "single" : "batch",
+      items: entries.map((entry, ordinal) => {
+        const file = entry.files.find((file) => file.id === entry.displayFileId) ?? entry.files[0];
+        if (!file) throw new ScrapeRunnerError("INVALID_ARGUMENT", `影片没有可刮削的文件：${entry.id}`);
+        return {
+          id: file.id,
+          ordinal,
+          rootId: file.rootId,
+          relativePath: file.rootRelativePath,
+          refreshMovieId: entry.id,
+        };
+      }),
+    });
+    this.runContexts.set(run.id, { configuration });
+    return run;
   }
 
   /** Retries and reruns publish with the library's current settings, like a new run. */
@@ -695,6 +750,13 @@ export class ScrapeRunner {
       for (const [key, status] of statusByKey) if (status === "failed" || status === "skipped") seedKeys.add(key);
     }
     const seedIds = [...seedKeys].flatMap((key) => batchItems.get(key)?.id ?? []);
+    if (run.items[0]?.refreshMovieId) {
+      const movieIds = [...batchItems].flatMap(([key, item]) =>
+        seedKeys.has(key) && item.refreshMovieId ? [item.refreshMovieId] : [],
+      );
+      if (!movieIds.length) throw new Error(`刮削任务没有可重试的失败或跳过条目：${run.id}`);
+      return await this.createLibraryRefreshRun(movieIds, configuration, run.libraryId, run.id);
+    }
     const inventory = new DirectoryInventory();
     const directories = new Map<string, string>();
     for (const item of batchItems.values()) {
@@ -828,17 +890,204 @@ export class ScrapeRunner {
     return manifest;
   }
 
+  private async createLibraryRefreshExecution(
+    manifest: ScrapeRunManifest,
+    configuration: Configuration,
+    reporter: ScrapeWorkflowReporter,
+    signal?: AbortSignal,
+  ): Promise<ScrapeRunExecution<RunnerScrapeItem, RunnerPreparation>> {
+    const { mediaRoots, library } = this.deps.persistence;
+    const root = await mediaRoots.get(manifest.rootId);
+    const checkRoots = mediaRoots.rootIntegrityGuard();
+    const inventory = new DirectoryInventory();
+    const { restGate } = createScrapeExecutionPolicy(configuration, { logger: this.logger });
+    const runtime = new MaintenanceRuntime({
+      config: { get: async () => configuration },
+      aggregationService:
+        this.deps.aggregationService ??
+        new AggregationService(this.deps.crawlerProvider, {
+          config: configuration,
+          logger: this.logger,
+          signal,
+          recordSiteResults: this.deps.recordSiteResults,
+        }),
+      translateService: this.translateService,
+      fileOrganizer: this.fileOrganizer,
+      nfoGenerator: this.nfoGenerator,
+      downloadManager: new DownloadManager(this.deps.networkClient, {
+        imageHostCooldownStore: this.deps.imageHostCooldownStore,
+        logger: this.logger,
+      }),
+      logger: this.logger,
+      prepareScrapeItem: this.deps.prepareScrapeItem,
+      signalService: { setProgress: () => undefined, showLogText: (message) => this.logger.info(message) },
+      postProcessAssets: this.deps.postProcessAssets,
+      onPublished: this.deps.onPublished,
+    });
+    const result = (item: RunnerScrapeItem, error?: string): ScrapeResult => ({
+      fileId: item.id,
+      resultId: item.id,
+      rootId: item.rootId,
+      relativePath: item.relativePath,
+      fileName: item.fileInfo.fileName,
+      status: error === undefined ? "success" : "failed",
+      error,
+      assets: [],
+    });
+    const recordResult = (item: RunnerScrapeItem, result: ScrapeResult) => {
+      try {
+        this.deps.onCommitted?.(manifest.id, result);
+      } catch (error) {
+        this.logger.warn(`重新刮削结果已保存，但通知失败：${toErrorMessage(error)}`);
+      }
+      return { itemId: item.id, result };
+    };
+    const refreshMovie = async (
+      item: RunnerScrapeItem,
+      entry: LibraryEntryRecord,
+      itemSignal: AbortSignal,
+    ): Promise<ScrapeResult> => {
+      try {
+        const assetRoots = entry.assets.flatMap((asset) => asset.rootId ?? []);
+        if (entry.files.some((file) => file.rootId !== manifest.rootId)) {
+          throw new Error("影片的媒体目录已变化，请重新提交");
+        }
+        await checkRoots([manifest.rootId, ...assetRoots]);
+        await restGate?.waitBeforeStart(itemSignal);
+        reporter.stage({ itemId: item.id, stage: "search" });
+        const roots = await mediaRoots.listRoots();
+        const refreshed = await runtime.applyLibraryEntry({
+          root,
+          entry,
+          presetId: "refresh_metadata",
+          refreshOnline: true,
+          signal: itemSignal,
+          publication: {
+            library,
+            roots,
+            identity: {
+              movieId: entry.id,
+              assets: entry.assets.flatMap((asset) =>
+                asset.rootId && asset.relativePath
+                  ? [
+                      {
+                        rootId: asset.rootId,
+                        relativePath: asset.relativePath,
+                        fileId: asset.fileId,
+                        kind: asset.kind,
+                        published: asset.published,
+                      },
+                    ]
+                  : [],
+              ),
+            },
+            commit: (movie) => {
+              const rows = committedMovieRows(movie);
+              const registeredFiles = new Map(entry.files.map((file) => [file.id, file]));
+              library.writeEntry(
+                rows.movie,
+                rows.files.map((file) => {
+                  const registered = registeredFiles.get(file.fileId);
+                  if (!registered) throw new Error(`重新刮削的文件不属于当前影片：${file.fileId}`);
+                  return {
+                    ...file,
+                    partNumber: registered.partNumber,
+                    partSuffix: registered.partSuffix,
+                    resolution: registered.resolution,
+                    lastKnownPath: registered.lastKnownPath,
+                  };
+                }),
+              );
+            },
+          },
+          onDownload: () => reporter.stage({ itemId: item.id, stage: "download" }),
+        });
+        if (refreshed.status === "failed") throw new Error(refreshed.error);
+        const media = refreshed.output?.files.find((file) => file.fileId === item.id);
+        return {
+          ...result(item),
+          size: media?.size,
+          output: media?.target,
+          nfo: refreshed.output?.nfoPath ? toRootFileRef(refreshed.output.nfoPath, roots) : undefined,
+          crawlerData: refreshed.crawlerData,
+          assets: media && refreshed.output ? movieOutputResultAssets(refreshed.output, media) : [],
+        };
+      } catch (error) {
+        if (isAbortError(error) || itemSignal.aborted) throw error;
+        return result(item, toErrorMessage(error));
+      }
+    };
+
+    return {
+      concurrency: 1,
+      movieGroups: manifest.items.map((item) => {
+        if (!item.refreshMovieId) throw new Error("重新刮削条目缺少影片 ID");
+        const source = { rootId: item.rootId, relativePath: item.relativePath };
+        const sourcePath = resolveRootRelativePath(root, item.relativePath);
+        return {
+          movieId: item.refreshMovieId,
+          assets: [],
+          members: [
+            {
+              ...source,
+              source,
+              id: item.id,
+              fileId: item.id,
+              sourcePath,
+              fileInfo: inventory.fileInfo(sourcePath, configuration.scrape),
+              entryIdentity: filesystemPathKey(sourcePath),
+              canonicalDirectory: dirname(sourcePath),
+            },
+          ],
+        };
+      }),
+      prepareGroup: async (group) => {
+        try {
+          const entry = await library.getEntryById(group.movieId);
+          if (entry.id !== group.movieId || !entry.files.some((file) => file.id === group.members[0].id)) {
+            throw new Error("媒体库影片已变化，请重新提交");
+          }
+          return { status: "prepared", prepared: entry };
+        } catch (error) {
+          return { status: "failed", result: result(group.members[0], toErrorMessage(error)) };
+        }
+      },
+      // The in-place writer checks existing ownership and the current files under the publication lock.
+      checkTargets: async () => undefined,
+      executePreparedGroup: async ({ group, prepared }, itemSignal) => {
+        if ("members" in prepared) throw new Error("重新刮削准备结果缺少媒体库影片");
+        const [item] = group.members;
+        return {
+          results: [],
+          // Publication also commits the library record. Stop must let the queue record that outcome.
+          commit: async () => [recordResult(item, await refreshMovie(item, prepared, itemSignal))],
+        };
+      },
+      commitItems: async (entries) =>
+        entries.map(({ item, result }) => {
+          if (!result) throw new Error(`重新刮削条目缺少结果：${item.id}`);
+          return recordResult(item, result);
+        }),
+    };
+  }
+
   private async createExecution(
     manifest: ScrapeRunManifest,
     reporter: ScrapeWorkflowReporter,
     signal?: AbortSignal,
-  ): Promise<ScrapeRunExecution<RunnerScrapeItem, PreparedMovieGroup>> {
+  ): Promise<ScrapeRunExecution<RunnerScrapeItem, RunnerPreparation>> {
     const outputRootIds = manifest.requestedOutputRootId ? [manifest.requestedOutputRootId] : [];
     const context = this.runContexts.get(manifest.id);
-    if (!context?.inventory || !context.groups) throw new Error(`刮削任务尚未准备完成：${manifest.id}`);
+    if (!context) throw new Error(`刮削任务尚未准备完成：${manifest.id}`);
+    this.runContexts.delete(manifest.id);
+    if (manifest.items[0]?.refreshMovieId) {
+      return await this.createLibraryRefreshExecution(manifest, context.configuration, reporter, signal);
+    }
+    if (!context.inventory || !context.groups || !context.target) {
+      throw new Error(`刮削任务尚未准备完成：${manifest.id}`);
+    }
     const checkRoots = context.rootGuard ?? this.deps.persistence.mediaRoots.rootIntegrityGuard();
     const { inventory } = context;
-    this.runContexts.delete(manifest.id);
     await checkRoots([...new Set([...manifest.items.map((item) => item.rootId), ...outputRootIds])]);
 
     const { configuration, target, unpin } = context;
@@ -1147,15 +1396,18 @@ export class ScrapeRunner {
       },
       checkTargets: async (preparedGroups) => {
         await checkScrapeTargets(
-          preparedGroups.map(({ prepared }) => ({
-            movieId: prepared.movieId,
-            members: prepared.members.map((member) => ({
-              itemId: member.itemId,
-              sourcePath: member.fileInfo.filePath,
-              targetVideoPath: member.outputPlan.targetVideoPath,
-              artifactPaths: prepared.artifactPaths,
-            })),
-          })),
+          preparedGroups.map(({ prepared }) => {
+            if (!("members" in prepared)) throw new Error("刮削准备结果缺少文件");
+            return {
+              movieId: prepared.movieId,
+              members: prepared.members.map((member) => ({
+                itemId: member.itemId,
+                sourcePath: member.fileInfo.filePath,
+                targetVideoPath: member.outputPlan.targetVideoPath,
+                artifactPaths: prepared.artifactPaths,
+              })),
+            };
+          }),
           inventory,
           movieGroups.flatMap((group) =>
             group.members.map((member) => ({
@@ -1166,6 +1418,7 @@ export class ScrapeRunner {
         );
       },
       executePreparedGroup: async ({ group, prepared }, signal) => {
+        if (!("members" in prepared)) throw new Error("刮削准备结果缺少文件");
         const admission = movieLocks.get(
           group.members
             .map((member) => member.id)

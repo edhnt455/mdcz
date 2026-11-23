@@ -288,6 +288,10 @@ export const scrapeFileRefSchema = rootFileRefSchema;
 export type ScrapeFileRefDto = RootFileRef;
 
 export const scrapeStartInputSchema = z.union([
+  z.object({
+    refreshMovieIds: z.array(z.string().trim().min(1)).min(1),
+    libraryId: z.string().trim().min(1).optional(),
+  }),
   z.object({ executionMode: z.literal("batch"), libraryId: z.string().trim().min(1), source: directorySourceSchema }),
   z.object({
     executionMode: z.enum(["batch", "single"]),
@@ -761,23 +765,19 @@ export const libraryFacetKindSchema = z.enum(["actors", "studios", "tags"]);
 export type LibraryFacetKind = z.infer<typeof libraryFacetKindSchema>;
 const libraryFacetValues = z.array(z.string().trim().min(1)).min(1).optional();
 
-/** Filters compose so bulk actions can use the same scope as the listing. */
-const libraryScopeFields = {
-  libraryId: z.string().trim().min(1).optional(),
-  health: libraryHealthIssueSchema.optional(),
+const libraryIdSchema = z.string().trim().min(1).optional();
+
+export const libraryMatchesInputSchema = z.object({
+  query: z.string().optional(),
+  rootId: z.string().optional(),
+  libraryId: libraryIdSchema,
   issues: z.partialRecord(libraryHealthIssueSchema, z.boolean()).optional(),
-  ignored: z.boolean().optional(),
   actors: libraryFacetValues,
   studios: libraryFacetValues,
   tags: libraryFacetValues,
   missingActors: z.boolean().optional(),
   missingSubtitles: z.boolean().optional(),
-};
-
-export const libraryMatchesInputSchema = z.object({
-  query: z.string().optional(),
-  rootId: z.string().optional(),
-  ...libraryScopeFields,
+  hasTranslation: z.boolean().optional(),
 });
 export type LibraryMatchesInput = z.infer<typeof libraryMatchesInputSchema>;
 
@@ -790,12 +790,12 @@ export const libraryListInputSchema = libraryMatchesInputSchema
 
 export type LibraryListInput = z.input<typeof libraryListInputSchema>;
 
-export const librarySummaryInputSchema = z.object({ libraryId: libraryScopeFields.libraryId }).optional();
+export const librarySummaryInputSchema = z.object({ libraryId: libraryIdSchema }).optional();
 export type LibrarySummaryInput = z.infer<typeof librarySummaryInputSchema>;
 
 const libraryFacetSchema = z.array(z.object({ name: z.string(), count: z.number().int() }));
 export const libraryFacetInputSchema = z.object({
-  libraryId: libraryScopeFields.libraryId,
+  libraryId: libraryIdSchema,
   kind: libraryFacetKindSchema,
   query: z.string().trim().optional(),
 });
@@ -805,24 +805,9 @@ export type LibraryFacetOption = z.infer<typeof libraryFacetSchema>[number];
 export const librarySummaryResponseSchema = z.object({
   total: z.number().int(),
   issues: z.record(libraryHealthIssueSchema, z.number().int()),
-  ignored: z.number().int(),
   facets: z.object({ actors: libraryFacetSchema, studios: libraryFacetSchema, tags: libraryFacetSchema }),
 });
 export type LibrarySummaryResponse = z.infer<typeof librarySummaryResponseSchema>;
-
-/** Restoring and ignoring act on what the list shows, so they take the list's scope and search. */
-const libraryHealthActionScopeSchema = z
-  .object({ ...libraryScopeFields, query: z.string().optional() })
-  .omit({ health: true, ignored: true });
-export const libraryRestoreIgnoredInputSchema = libraryHealthActionScopeSchema.extend({
-  ids: z.array(z.string().trim().min(1)).min(1).optional(),
-});
-export type LibraryRestoreIgnoredInput = z.infer<typeof libraryRestoreIgnoredInputSchema>;
-
-export const libraryIgnoreHealthInputSchema = libraryHealthActionScopeSchema.extend({
-  health: libraryHealthIssueSchema,
-});
-export type LibraryIgnoreHealthInput = z.infer<typeof libraryIgnoreHealthInputSchema>;
 
 export const libraryDetailInputSchema = z.object({
   id: z.string().trim().min(1),

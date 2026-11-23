@@ -70,7 +70,6 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [singleFileRootId, setSingleFileRootId] = useState("");
-  const [batchItems, setBatchItems] = useState<BatchTranslateScanItem[]>([]);
   const [amazonDialogOpen, setAmazonDialogOpen] = useState(false);
   const [amazonItems, setAmazonItems] = useState<AmazonPosterScanItem[]>([]);
   const personServer = useToolNavigationStore((state) => state.personServer);
@@ -179,20 +178,25 @@ export const ToolDetail = ({ toolId }: { toolId: ToolId }) => {
         <SymlinkManagerDetail state={state} onRun={(input) => void executeM.mutate({ toolId, ...input })} />
       )}
       {toolId === "batch-nfo-translator" && (
-        <BatchNfoTranslatorWorkspaceDetail
-          items={batchItems}
-          onApply={async (items, batchSize, mode) => {
-            const response = await executeM.mutateAsync({ toolId, action: "apply", mode, batchSize, items });
-            const data = response.data as { results?: BatchTranslateApplyResultItem[] } | undefined;
-            return data?.results ?? [];
-          }}
-          scanning={executeM.isPending && executeM.variables?.toolId === toolId && executeM.variables.action === "scan"}
-          onScan={async (directory, mode) => {
-            const response = await executeM.mutateAsync({ toolId, action: "scan", mode, directory });
-            const data = response.data as { items?: BatchTranslateScanItem[] } | undefined;
-            setBatchItems(data?.items ?? []);
-          }}
-        />
+        <>
+          {librariesQ.error && <ErrorBanner>{toErrorMessage(librariesQ.error)}</ErrorBanner>}
+          {librariesQ.isPending && <p role="status">{t.common.loading}</p>}
+          {librariesQ.data && (
+            <BatchNfoTranslatorWorkspaceDetail
+              libraries={librariesQ.data.libraries}
+              onApply={async (items, batchSize, mode) => {
+                const response = await executeM.mutateAsync({ toolId, action: "apply", mode, batchSize, items });
+                const data = response.data as { results?: BatchTranslateApplyResultItem[] } | undefined;
+                return data?.results ?? [];
+              }}
+              onScan={async (directory, mode) => {
+                const response = await executeM.mutateAsync({ toolId, action: "scan", mode, directory });
+                const data = response.data as { items?: BatchTranslateScanItem[] } | undefined;
+                return data?.items ?? [];
+              }}
+            />
+          )}
+        </>
       )}
       {toolId === "media-library-tools" && (
         <>

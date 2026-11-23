@@ -42,25 +42,20 @@ import { toRootFileRef } from "../publication/outputRefs";
 import { createStagingDirectory, removeStagingDirectory } from "../publication/publicationJournal";
 import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
-import {
-  type DownloadManager,
-  downloadCrawlerAssets,
-  type FileOrganizer,
-  type NfoGenerator,
-  prepareOutputCrawlerData,
-  type ResolvedPublicationLayout,
-  type TranslateService,
-  writePreparedNfo,
-} from "../scrape";
 import { AggregationService, type CrawlerPort, mergeSiteData, type SiteResultSink } from "../scrape/aggregation";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
+import type { DownloadManager } from "../scrape/download";
+import type { FileOrganizer, ResolvedPublicationLayout } from "../scrape/FileOrganizer";
 import { findSubtitleSidecars } from "../scrape/media/subtitleSidecars";
+import type { NfoGenerator } from "../scrape/nfo";
 import { editedKeys } from "../scrape/nfoEdits";
 import { assignVersionLabels } from "../scrape/organize/versionLabels";
+import { downloadCrawlerAssets, prepareOutputCrawlerData, writePreparedNfo } from "../scrape/output/executeOutputSteps";
 import { prepareOnlineMetadata } from "../scrape/prepareOnlineMetadata";
 import { publishMetadata } from "../scrape/publishMetadata";
 import type { PrepareScrapeItem } from "../scrape/ScrapeRunner";
+import type { TranslateService } from "../scrape/TranslateService";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
@@ -153,6 +148,8 @@ export interface MaintenanceRuntimeApplyEntryInput {
     roots: readonly Pick<MediaRoot, "id" | "hostPath">[];
     identity: Pick<MaintenanceMovieGroup, "movieId" | "assets">;
   };
+  refreshOnline?: boolean;
+  onDownload?: () => void;
   signal?: AbortSignal;
 }
 
@@ -205,6 +202,43 @@ const mergeDeep = <T>(base: T, override: DeepPartial<T>): T => {
     merged[key] = key in merged ? mergeDeep(merged[key], value as never) : value;
   }
   return merged as T;
+};
+
+const mergeRefreshedMetadata = (
+  fresh: CrawlerData,
+  previous: CrawlerData | undefined,
+  assets: DownloadedAssets,
+  existing: DiscoveredAssets,
+  download: Configuration["download"],
+): CrawlerData => {
+  if (!previous) return fresh;
+  const data = { ...previous };
+  for (const [key, value] of Object.entries(fresh)) {
+    const missing =
+      value == null || (typeof value === "string" && !value.trim()) || (Array.isArray(value) && value.length === 0);
+    if (!missing) Object.assign(data, { [key]: value });
+  }
+  if (fresh.title?.trim()) {
+    data.original_title = fresh.original_title;
+    data.title_zh = fresh.title_zh;
+  }
+  if (fresh.plot?.trim()) data.plot_zh = fresh.plot_zh;
+  if (fresh.actors.length) data.actor_profiles = fresh.actor_profiles;
+  data.translation_failures = fresh.translation_failures;
+  data.translation_ignored = fresh.translation_ignored;
+
+  for (const [kind, enabled] of [
+    ["thumb", download.downloadThumb],
+    ["poster", download.downloadPoster],
+    ["fanart", download.downloadFanart],
+    ["trailer", download.downloadTrailer],
+  ] as const) {
+    if (enabled && (!existing[kind] || assets[kind])) continue;
+    data[`${kind}_url`] = previous[`${kind}_url`];
+    data[`${kind}_source_url`] = previous[`${kind}_source_url`];
+  }
+  if (!download.downloadSceneImages || !assets.sceneImages.length) data.scene_images = previous.scene_images;
+  return data;
 };
 
 export class MaintenanceRuntime {
@@ -427,6 +461,15 @@ export class MaintenanceRuntime {
       signal: input.signal,
     });
     const files: LocalScanEntry[] = [];
+    const registeredOutputs = input.refreshOnline
+      ? new Map(
+          [...locations].filter(
+            ([, location]) =>
+              location.nfoPaths.length ||
+              Object.values(location.assets).some((value) => (Array.isArray(value) ? value.length : Boolean(value))),
+          ),
+        )
+      : locations;
     const storedData = libraryEntry.crawlerDataJson
       ? (JSON.parse(libraryEntry.crawlerDataJson) as CrawlerData)
       : undefined;
@@ -436,12 +479,40 @@ export class MaintenanceRuntime {
       const scanned = await runtime.scanRefs({
         root: { ...input.root, ...root },
         refs: records.map((file) => ({ relativePath: file.rootRelativePath })),
-        registeredOutputs: locations,
+        registeredOutputs,
         signal: input.signal,
       });
       for (const record of records) {
         const file = scanned.find((candidate) => candidate.ref.relativePath === record.rootRelativePath);
         if (!file) throw new Error(`维护扫描遗漏了媒体库文件：${record.id}`);
+        const registered = locations.get(file.fileInfo.filePath);
+        if (input.refreshOnline) {
+          const existing = async (path: string): Promise<boolean> => {
+            try {
+              return (await runtime.inventory.stats(path)).isFile();
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+              throw error;
+            }
+          };
+          for (const kind of ["thumb", "poster", "fanart", "trailer"] as const) {
+            const path = file.assets[kind];
+            if (path && !(await existing(path))) delete file.assets[kind];
+          }
+          for (const kind of ["sceneImages", "actorPhotos"] as const) {
+            const paths = await Promise.all(
+              file.assets[kind].map(async (path) => ((await existing(path)) ? [path] : [])),
+            );
+            file.assets[kind] = paths.flat();
+          }
+          const artwork =
+            registered?.assets.poster ??
+            registered?.assets.thumb ??
+            registered?.assets.fanart ??
+            registered?.assets.trailer;
+          file.nfoPath ??=
+            registered?.nfoPaths[0] ?? (artwork ? join(dirname(artwork), `${file.fileInfo.fileName}.nfo`) : undefined);
+        }
         files.push({
           ...file,
           fileId: record.id,
@@ -451,7 +522,57 @@ export class MaintenanceRuntime {
       }
     }
     if (!files.length) throw new Error("媒体库影片没有媒体文件");
-    return runtime.applyEntry({ ...input, entry: files[0], files });
+    const entry = files.find((file) => file.fileId === libraryEntry.displayFileId) ?? files[0];
+    if (!input.refreshOnline) return runtime.applyEntry({ ...input, entry: files[0], files });
+    const { aggregationService, translateService } = runtime.deps;
+    if (!aggregationService || !translateService) {
+      throw new Error("重新刮削缺少必要的聚合或翻译服务");
+    }
+    const configuration = await runtime.getConfiguration();
+    const mediaPaths = files.map((file) => file.fileInfo.filePath);
+    const paths = [
+      ...mediaPaths,
+      ...files.flatMap((file) => [
+        ...file.nfoPaths,
+        ...(file.nfoPath ? [file.nfoPath] : []),
+        ...Object.values(file.assets).flatMap((value) => value ?? []),
+      ]),
+      ...(
+        await Promise.all(mediaPaths.map((path) => findSubtitleSidecars(path, undefined, configuration.scrape)))
+      ).flatMap((sidecars) => sidecars.map((sidecar) => sidecar.path)),
+    ];
+    const expectedState = {
+      paths,
+      mediaPaths,
+      fingerprint: await mediaSnapshot(paths),
+      publication: JSON.stringify(input.publication.library.publicationSnapshot({ paths, includeOwners: true })),
+    };
+    const sourcePin = entry.nfoLocalState?.sourcePin;
+    const number = entry.fileInfo.number || libraryEntry.number || entry.crawlerData?.number;
+    if (!number && !sourcePin) throw new Error("无法识别影片番号");
+    const caseId = runtime.deps.prepareScrapeItem?.({
+      fileInfo: { number: number ?? "" },
+      caseId: undefined as string | undefined,
+    }).caseId;
+    return await runWithScrapeItem({ caseId, execution: {} }, async () => {
+      const { crawlerData, aggregation } = await prepareOnlineMetadata({
+        number: number ?? "",
+        configuration,
+        aggregationService,
+        translateService,
+        manualScrape: sourcePin ? { site: sourcePin.site, detailUrl: sourcePin.url } : undefined,
+        keepEdits: false,
+        signal: input.signal,
+      });
+      input.onDownload?.();
+      return await runtime.applyEntry({
+        ...input,
+        entry,
+        files,
+        expectedState,
+        committed: { crawlerData, imageAlternatives: aggregation.imageAlternatives },
+      });
+    });
   }
 
   async applyEntry(input: MaintenanceRuntimeApplyEntryInput): Promise<MaintenanceRuntimeApplyResult> {
@@ -476,7 +597,11 @@ export class MaintenanceRuntime {
               input.publication.library.publicationSnapshot({ paths: expected.paths, includeOwners: true }),
             ) !== expected.publication)
         )
-          throw new Error("维护预览涉及的文件或记录已变化，请刷新维护预览后重试");
+          throw new Error(
+            input.refreshOnline
+              ? "重新刮削期间影片文件或记录已变化，请重试"
+              : "维护预览涉及的文件或记录已变化，请刷新维护预览后重试",
+          );
         const preset = getMaintenancePreset(input.presetId);
         const { entry, files = [entry], committed, publication, signal } = input;
         throwIfAborted(signal);
@@ -562,12 +687,13 @@ export class MaintenanceRuntime {
               imageAlternatives: committed?.imageAlternatives,
               movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : entry.fileInfo.fileName,
               outputDir: stagingDir,
-              existingAssetDir: stagingParent,
-              existingAssets: entry.assets,
+              existingAssetDir: input.refreshOnline ? stagingDir : stagingParent,
+              existingAssets: input.refreshOnline ? undefined : entry.assets,
               inventory: this.inventory,
               sources: undefined,
               callbacks: {
                 signal,
+                preserveExistingPosterOnFailure: input.refreshOnline && Boolean(entry.assets.poster),
                 assetDecisions: committed?.assetDecisions,
                 forceReplace: {
                   thumb: committed?.assetDecisions?.thumb === "replace",
@@ -592,6 +718,15 @@ export class MaintenanceRuntime {
               signalService: this.deps.signalService,
             });
           }
+          if (input.refreshOnline) {
+            preparedCrawlerData = mergeRefreshedMetadata(
+              preparedCrawlerData,
+              entry.crawlerData,
+              downloadedAssets,
+              entry.assets,
+              config.download,
+            );
+          }
 
           const published = await prepareMovieArtifacts({
             inventory: this.inventory,
@@ -601,6 +736,8 @@ export class MaintenanceRuntime {
             stagingDir,
             downloadedAssets,
             assetDecisions: committed?.assetDecisions,
+            refreshExisting: input.refreshOnline ? { nfoPaths: files.flatMap((file) => file.nfoPaths) } : undefined,
+            remoteData: input.refreshOnline ? preparedCrawlerData : undefined,
             relocateExistingArtifacts: input.presetId === "local_organize",
             ownedAssetPaths: await Promise.all(
               publication.identity.assets
@@ -708,7 +845,11 @@ export class MaintenanceRuntime {
               "sourcePath" in artifact && basename(dirname(artifact.targetPath)) === ".actors" ? [artifact] : [],
             );
             const ownershipPaths = [
-              ...new Set([...cleanupPaths, ...actorCopies.map((artifact) => artifact.targetPath)]),
+              ...new Set([
+                ...cleanupPaths,
+                ...actorCopies.map((artifact) => artifact.targetPath),
+                ...(input.refreshOnline ? published.artifacts.map((artifact) => artifact.targetPath) : []),
+              ]),
             ];
             let preservedSourcePaths: string[] = [];
             if (ownershipPaths.length) {
@@ -734,6 +875,16 @@ export class MaintenanceRuntime {
                 ),
               );
               const isShared = (path: string) => shared.has(filesystemPathKey(entryPaths.get(path) ?? path));
+              if (input.refreshOnline) {
+                const conflict = published.artifacts.find((artifact) => isShared(artifact.targetPath));
+                if (conflict) {
+                  throw new PublicationConflictError(
+                    entry.fileInfo.filePath,
+                    conflict.targetPath,
+                    "其他影片仍在使用该资源",
+                  );
+                }
+              }
               for (const copy of actorCopies) {
                 if (!isShared(copy.targetPath)) continue;
                 const exists = await lstat(copy.targetPath).then(
@@ -782,8 +933,15 @@ export class MaintenanceRuntime {
             unlock();
           }
 
-          if (preset.output !== "none")
-            this.deps.onPublished?.(published.metadataDirectories, config, preparedCrawlerData);
+          if (preset.output !== "none") {
+            try {
+              this.deps.onPublished?.(published.metadataDirectories, config, preparedCrawlerData);
+            } catch (error) {
+              (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
+                `维护已提交，但通知失败：${toErrorMessage(error)}`,
+              );
+            }
+          }
           return {
             status: "success",
             crawlerData: preparedCrawlerData,

@@ -702,7 +702,6 @@ describe("LibraryRepository", () => {
     expect(summary).toEqual({
       total: 4,
       issues: { missingPoster: 2, missingBackdrop: 2, missingSynopsis: 1, noNfo: 1, duplicate: 2 },
-      ignored: 0,
       facets: {
         actors: [
           { name: "Alice", count: 2 },
@@ -727,40 +726,21 @@ describe("LibraryRepository", () => {
     });
     const ids = async (filter: object) =>
       (await repository.listEntriesPage({ limit: 10, ...filter })).entries.map((entry) => entry.id).sort();
-    await expect(ids({ health: "noNfo" })).resolves.toEqual(["bare"]);
+    await expect(ids({ issues: { noNfo: true } })).resolves.toEqual(["bare"]);
     expect(repository.summary({ includeBackdrop: false })).toEqual({
       ...repository.summary({}),
       issues: { ...repository.summary({}).issues, missingBackdrop: 0 },
     });
-    await expect(ids({ health: "missingBackdrop", includeBackdrop: false })).resolves.toEqual([]);
-    await expect(ids({ health: "missingBackdrop", includeBackdrop: true })).resolves.toEqual(["bare", "translated"]);
+    await expect(ids({ issues: { missingBackdrop: true } })).resolves.toEqual(["bare", "translated"]);
     // The other copy lives in a different library, so neither side counts it.
-    await expect(ids({ health: "duplicate", pathPrefixes: [resolve("/root-1")] })).resolves.toEqual([]);
-    await expect(ids({ health: "duplicate" })).resolves.toEqual(["bare", "healthy"]);
+    await expect(ids({ issues: { duplicate: true }, pathPrefixes: [resolve("/root-1")] })).resolves.toEqual([]);
+    await expect(ids({ issues: { duplicate: true } })).resolves.toEqual(["bare", "healthy"]);
     await expect(ids({ actors: ["Bob", "Not found"] })).resolves.toEqual(["bare", "translated"]);
     await expect(ids({ studios: ["S2"], tags: ["drama"] })).resolves.toEqual([]);
     await expect(ids({ tags: ["3p"] })).resolves.toEqual(["bare"]);
 
-    // An ignored issue stops counting for that movie only; its other issues still list it.
-    repository.ignoreHealth({ health: "missingSynopsis" });
-    repository.ignoreHealth({ health: "missingSynopsis" });
-    expect(repository.summary({})).toEqual({
-      ...summary,
-      issues: { ...summary.issues, missingSynopsis: 0 },
-      ignored: 1,
-    });
-    await expect(ids({ health: "missingSynopsis" })).resolves.toEqual([]);
     await expect(ids({ issues: { missingSynopsis: true, noNfo: true } })).resolves.toEqual(["bare"]);
-    await expect(ids({ issues: { missingBackdrop: true, noNfo: false }, includeBackdrop: false })).resolves.toEqual([
-      "translated",
-    ]);
-    await expect(ids({ health: "noNfo" })).resolves.toEqual(["bare"]);
-    await expect(ids({ healthIgnored: true })).resolves.toEqual(["bare"]);
-    repository.restoreIgnored({});
-    expect(repository.summary({})).toEqual(summary);
-    repository.ignoreHealth({ health: "noNfo" });
-    repository.deleteEntries(["bare"]);
-    expect(database.sqlite.prepare("SELECT count(*) AS count FROM library_health_ignores").get()).toEqual({ count: 0 });
+    await expect(ids({ issues: { missingBackdrop: true, noNfo: false } })).resolves.toEqual(["translated"]);
   });
 
   it("includes all registered roots and treats LIKE metacharacters literally", async () => {

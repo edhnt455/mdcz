@@ -12,14 +12,22 @@ export interface ScrapeSnapshotManifest {
   previousRunId: string | null;
   libraryId: string | null;
   createdAt: Date;
-  items: Array<{ id: string; rootId: string; relativePath: string; manualUrl?: string | null }>;
+  items: Array<{
+    id: string;
+    rootId: string;
+    relativePath: string;
+    manualUrl?: string | null;
+    refreshMovieId?: string;
+  }>;
 }
 
 const isTerminalStatus = (status: ScrapeRunSnapshot["status"]): boolean =>
   status === "completed" || status === "failed" || status === "stopped" || status === "interrupted";
 
-const liveItemToDto = (manifest: ScrapeSnapshotManifest, item: ScrapeRunItemSnapshot): ScrapeLiveItemDto => {
-  const manifestItem = manifest.items.find((candidate) => candidate.id === item.id);
+const liveItemToDto = (
+  manifestItem: ScrapeSnapshotManifest["items"][number] | undefined,
+  item: ScrapeRunItemSnapshot,
+): ScrapeLiveItemDto => {
   if (!manifestItem) throw new Error(`文件清单中未找到刮削条目：${item.id}`);
   const result = item.result;
   return {
@@ -64,6 +72,7 @@ export const toScrapeRunSnapshotDto = (input: {
   const terminal = isTerminalStatus(input.snapshot.status);
   const completedAt = terminal ? (input.completedAt ?? new Date()) : null;
   const updatedAt = completedAt ?? new Date();
+  const manifestItems = new Map(input.manifest.items.map((item) => [item.id, item]));
   return {
     task: {
       id: input.snapshot.runId,
@@ -98,7 +107,25 @@ export const toScrapeRunSnapshotDto = (input: {
       input.manifest.directoryScopeJson && !input.manifest.manifestFixedAt
         ? { ...input.snapshot.progress, percent: null, totalItems: null }
         : { ...input.snapshot.progress },
-    items: input.snapshot.items.map((item) => liveItemToDto(input.manifest, item)),
+    items:
+      !terminal && input.snapshot.items.length === 0 && input.manifest.items[0]?.refreshMovieId
+        ? input.manifest.items.map((item) => ({
+            id: item.id,
+            rootId: item.rootId,
+            relativePath: item.relativePath,
+            fileName: path.posix.basename(item.relativePath),
+            status: "pending",
+            error: null,
+            resultId: null,
+            crawlerData: null,
+            nfoRootId: null,
+            nfoRelativePath: null,
+            outputRootId: null,
+            outputRelativePath: null,
+            assets: [],
+            manualUrl: null,
+          }))
+        : input.snapshot.items.map((item) => liveItemToDto(manifestItems.get(item.id), item)),
     latestStage: input.snapshot.latestStage
       ? {
           stage: input.snapshot.latestStage.stage,

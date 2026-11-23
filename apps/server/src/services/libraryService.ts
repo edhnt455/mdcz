@@ -19,12 +19,10 @@ import type {
   LibraryEntryDto,
   LibraryFacetInput,
   LibraryFacetOption,
-  LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
   LibraryMatchesInput,
   LibraryMatchesResponse,
-  LibraryRestoreIgnoredInput,
   LibrarySummaryInput,
   LibrarySummaryResponse,
   MediaRootDto,
@@ -62,26 +60,14 @@ export class LibraryService {
 
   async summary(input: LibrarySummaryInput): Promise<LibrarySummaryResponse> {
     const state = await this.persistence.getState();
-    return state.repositories.library.summary(
-      await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration()),
-    );
+    const configuration = await this.getConfiguration();
+    const { pathPrefixes } = await toLibraryEntryFilter(input, this.libraries, configuration);
+    return state.repositories.library.summary({ pathPrefixes, includeBackdrop: configuration.download.downloadFanart });
   }
 
   async facet({ libraryId, kind, query }: LibraryFacetInput): Promise<LibraryFacetOption[]> {
     const filter = await toLibraryEntryFilter({ libraryId }, this.libraries, await this.getConfiguration());
     return (await this.persistence.getState()).repositories.library.listFacet(filter, kind, query);
-  }
-
-  async ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }> {
-    const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
-    (await this.persistence.getState()).repositories.library.ignoreHealth({ ...filter, health: input.health });
-    return { success: true };
-  }
-
-  async restoreIgnored(input: LibraryRestoreIgnoredInput): Promise<{ success: true }> {
-    const filter = await toLibraryEntryFilter(input, this.libraries, await this.getConfiguration());
-    (await this.persistence.getState()).repositories.library.restoreIgnored(filter, input.ids);
-    return { success: true };
   }
 
   async removeFile(input: { fileId: string }): Promise<LibraryDeletionResponse> {

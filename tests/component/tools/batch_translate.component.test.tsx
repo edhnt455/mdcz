@@ -15,6 +15,64 @@ const items: BatchTranslateScanItem[] = ["ABC-001", "ABC-002"].map((number) => (
   reason: "content",
 }));
 
+const library = { id: "main", name: "Main", placement: "move", outputPath: "/library" } as const;
+
+test("defaults to the first configured output and clears scanned items when the library changes", async () => {
+  const t = getT();
+  const inPlace = { id: "in-place", name: "In place", placement: "inPlace", outputPath: "" } as const;
+  const other = { ...library, id: "other", name: "Other", outputPath: "/other" };
+  const onApply = vi.fn(async () => []);
+  const onScan = vi.fn(async () => items);
+  const screen = await render(
+    <BatchNfoTranslatorWorkspaceDetail libraries={[inPlace, library]} onApply={onApply} onScan={onScan} />,
+  );
+  const picker = screen.getByRole("combobox", { name: t.tools.targetDirectory });
+  const scan = screen.getByRole("button", { name: t.tools.scanPendingItems, exact: true });
+  await expect.element(picker).toHaveValue(library.id);
+  expect(picker.getByRole("option").elements()).toHaveLength(1);
+
+  await screen.rerender(
+    <BatchNfoTranslatorWorkspaceDetail libraries={[inPlace, library, other]} onApply={onApply} onScan={onScan} />,
+  );
+  await expect.element(picker).toHaveValue(library.id);
+  await expect.element(picker.getByRole("option", { name: "Other · /other" })).toBeInTheDocument();
+  await scan.click();
+  expect(onScan).toHaveBeenLastCalledWith(library.outputPath, "untranslated");
+  await expect.element(screen.getByText(items[0].title, { exact: true })).toBeVisible();
+  await picker.selectOptions(other.id);
+  await expect.element(screen.getByText(items[0].title, { exact: true })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: t.tools.startBatchTranslate, exact: true })).toBeDisabled();
+  onScan.mockResolvedValueOnce([]);
+  await scan.click();
+  expect(onScan).toHaveBeenLastCalledWith(other.outputPath, "untranslated");
+});
+
+test("accepts a manual directory when no configured output is eligible", async () => {
+  const t = getT();
+  const onScan = vi.fn(async () => []);
+  const storedKey = "mdcz:tool:batch-translate-dir";
+  const storedPath = localStorage.getItem(storedKey);
+  try {
+    localStorage.removeItem(storedKey);
+    const screen = await render(
+      <BatchNfoTranslatorWorkspaceDetail
+        libraries={[{ ...library, placement: "inPlace", outputPath: "" }]}
+        onApply={vi.fn(async () => [])}
+        onScan={onScan}
+      />,
+    );
+    const directory = screen.getByRole("textbox", { name: t.tools.targetDirectory });
+    const scan = screen.getByRole("button", { name: t.tools.scanPendingItems, exact: true });
+    await expect.element(scan).toBeDisabled();
+    await directory.fill("  /manual  ");
+    await scan.click();
+    expect(onScan).toHaveBeenCalledWith("/manual", "untranslated");
+  } finally {
+    if (storedPath === null) localStorage.removeItem(storedKey);
+    else localStorage.setItem(storedKey, storedPath);
+  }
+});
+
 test("shows current text and persists individual and bulk manual completion with retryable failures", async () => {
   const t = getT();
   const onApply = vi.fn(async (selected: BatchTranslateScanItem[]) =>
@@ -25,7 +83,10 @@ test("shows current text and persists individual and bulk manual completion with
     })),
   );
   onApply.mockRejectedValueOnce(new Error("Permission denied"));
-  const screen = await render(<BatchNfoTranslatorWorkspaceDetail items={items} onApply={onApply} onScan={vi.fn()} />);
+  const screen = await render(
+    <BatchNfoTranslatorWorkspaceDetail libraries={[library]} onApply={onApply} onScan={async () => items} />,
+  );
+  await screen.getByRole("button", { name: t.tools.scanPendingItems, exact: true }).click();
 
   await expect.element(screen.getByRole("columnheader", { name: t.tools.currentTitle })).toBeVisible();
   await expect.element(screen.getByRole("columnheader", { name: t.tools.currentPlot })).toBeVisible();
@@ -67,8 +128,13 @@ test("refreshes displayed title and plot after translation and hides ignore acti
     })),
   );
   const screen = await render(
-    <BatchNfoTranslatorWorkspaceDetail items={items.slice(0, 1)} onApply={onApply} onScan={vi.fn()} />,
+    <BatchNfoTranslatorWorkspaceDetail
+      libraries={[library]}
+      onApply={onApply}
+      onScan={async () => items.slice(0, 1)}
+    />,
   );
+  await screen.getByRole("button", { name: t.tools.scanPendingItems, exact: true }).click();
   await screen.getByRole("button", { name: t.tools.startBatchTranslate, exact: true }).click();
   await expect.element(screen.getByText("新的译名", { exact: true })).toBeVisible();
   await expect.element(screen.getByText("新的译文", { exact: true })).toBeVisible();
@@ -76,9 +142,10 @@ test("refreshes displayed title and plot after translation and hides ignore acti
   await expect.element(screen.getByText(t.tools.batchTranslateStatus.ignored, { exact: true })).toBeVisible();
   await screen.getByRole("button", { name: t.tools.batchTranslateModeOptions.restore, exact: true }).click();
   await screen.getByRole("button", { name: t.tools.scanPendingItems, exact: true }).click();
-  expect(
-    screen.getByRole("button", { name: `${t.tools.ignoreTranslation} ABC-001`, exact: true }).elements(),
-  ).toHaveLength(0);
+  await expect.element(screen.getByText(items[0].title, { exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: `${t.tools.ignoreTranslation} ABC-001`, exact: true }))
+    .not.toBeInTheDocument();
 });
 
 test("selects only the chosen reason for bulk actions and resets the filter on scanning", async () => {
@@ -91,10 +158,12 @@ test("selects only the chosen reason for bulk actions and resets the filter on s
     });
     return selected.map((item) => ({ ...item, success: true, translatedFields: item.pendingFields }));
   });
-  const onScan = vi.fn();
+  const onScan = vi.fn(async () => mixedItems);
   const screen = await render(
-    <BatchNfoTranslatorWorkspaceDetail items={mixedItems} onApply={onApply} onScan={onScan} />,
+    <BatchNfoTranslatorWorkspaceDetail libraries={[library]} onApply={onApply} onScan={onScan} />,
   );
+  const scan = screen.getByRole("button", { name: t.tools.scanPendingItems, exact: true });
+  await scan.click();
   const filters = screen.getByRole("group", { name: t.tools.translationReasonFilter });
   const failedFilter = filters.getByRole("button", { name: `${t.tools.translationReasonOptions.task_failed} (1)` });
   const contentFilter = filters.getByRole("button", { name: `${t.tools.translationReasonOptions.content} (1)` });
@@ -126,8 +195,9 @@ test("selects only the chosen reason for bulk actions and resets the filter on s
   await filters.getByRole("button", { name: `${t.tools.translationReasonOptions.all} (1)` }).click();
   await expect.element(screen.getByRole("button", { name: t.tools.translateSelected(1), exact: true })).toBeEnabled();
   await failedFilter.click();
-  await screen.getByRole("button", { name: t.tools.scanPendingItems, exact: true }).click();
-  expect(onScan).toHaveBeenCalledWith(expect.any(String), "untranslated");
+  onScan.mockResolvedValueOnce([mixedItems[0]]);
+  await scan.click();
+  expect(onScan).toHaveBeenLastCalledWith(library.outputPath, "untranslated");
   await expect
     .element(filters.getByRole("button", { name: `${t.tools.translationReasonOptions.all} (1)` }))
     .toHaveAttribute("aria-pressed", "true");
@@ -136,13 +206,13 @@ test("selects only the chosen reason for bulk actions and resets the filter on s
     ...items[1],
     filePath: `/library/content-${index}.mp4`,
   }));
-  await screen.rerender(<BatchNfoTranslatorWorkspaceDetail items={contentItems} onApply={onApply} onScan={onScan} />);
+  onScan.mockResolvedValueOnce(contentItems);
+  await scan.click();
   await filters.getByRole("button", { name: `${t.tools.translationReasonOptions.task_failed} (0)` }).click();
   await expect.element(screen.getByText(t.tools.noMatchingTranslationReason, { exact: true })).toBeVisible();
   await expect.element(screen.getByRole("button", { name: t.tools.translateSelected(0), exact: true })).toBeDisabled();
-  await screen.rerender(
-    <BatchNfoTranslatorWorkspaceDetail items={[...contentItems, mixedItems[0]]} onApply={onApply} onScan={onScan} />,
-  );
+  onScan.mockResolvedValueOnce([...contentItems, mixedItems[0]]);
+  await scan.click();
   await expect
     .element(filters.getByRole("button", { name: `${t.tools.translationReasonOptions.all} (302)` }))
     .toHaveAttribute("aria-pressed", "true");

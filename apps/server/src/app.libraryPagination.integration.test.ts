@@ -6,6 +6,52 @@ import { closeTestServers, createTempRoot, createTestLibrary, createTestServer, 
 
 afterEach(closeTestServers);
 
+it("filters listings and selection snapshots by the presence of distinct title or plot translations", async () => {
+  const { fastify, services } = await createTestServer();
+  const token = await loginAsAdmin(fastify);
+  const headers = { authorization: `Bearer ${token}` };
+  const directory = await createTempRoot("library-translation-filter");
+  const { libraryId, rootId } = await createTestLibrary(fastify, token, directory);
+  const { repositories } = await services.persistence.getState();
+  const withTranslation = {
+    "translated-title": { title: "Original", title_zh: "译文" },
+    "translated-plot": { title: "中文标题", plot: "Original plot", plot_zh: "简介译文" },
+  };
+  const withoutTranslation = {
+    "native-chinese": { title: "中文标题", plot: "中文简介" },
+    "same-as-source": { title: "中文标题", title_zh: "\u3000中文标题\n", plot: "中文简介", plot_zh: "中文简介" },
+    "blank-translation": { title: "Original", title_zh: "\u3000\t\n", plot_zh: "" },
+    "no-metadata": null,
+  };
+  for (const [id, data] of Object.entries({ ...withTranslation, ...withoutTranslation })) {
+    repositories.library.writeEntry({ id, crawlerDataJson: data === null ? null : JSON.stringify(data) }, [
+      { fileId: id, rootId, rootRelativePath: `${id}.mp4`, size: 2 },
+    ]);
+  }
+
+  for (const [hasTranslation, fixtures] of [
+    [true, withTranslation],
+    [false, withoutTranslation],
+    [undefined, { ...withTranslation, ...withoutTranslation }],
+  ] as const) {
+    const ids = Object.keys(fixtures).sort();
+    for (const procedure of ["list", "matches"] as const) {
+      const response = await fastify.inject({
+        method: "POST",
+        url: `/trpc/library.${procedure}`,
+        headers,
+        payload: { libraryId, hasTranslation },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      const data = response.json().result.data;
+      expect(data.entries.map(({ id }: LibraryEntryDto) => id).sort()).toEqual(ids);
+      if (procedure === "list") {
+        expect(data).toMatchObject({ total: ids.length, fileCount: ids.length, totalBytes: ids.length * 2 });
+      }
+    }
+  }
+});
+
 it("filters movies without a nonblank actor name before counting, paging, and selecting matches", async () => {
   const { fastify, services } = await createTestServer();
   const token = await loginAsAdmin(fastify);
@@ -26,7 +72,7 @@ it("filters movies without a nonblank actor name before counting, paging, and se
     ]);
   }
 
-  const scope = { libraryId, missingActors: true, missingSubtitles: true, health: "missingSynopsis" } as const;
+  const scope = { libraryId, missingActors: true, missingSubtitles: true, issues: { missingSynopsis: true } } as const;
   const read = async (procedure: "list" | "matches", input: LibraryMatchesInput & { page?: number }) => {
     const response = await fastify.inject({
       method: "POST",
@@ -48,12 +94,6 @@ it("filters movies without a nonblank actor name before counting, paging, and se
   expect(await read("list", { ...scope, missingActors: undefined })).toMatchObject({ total: 13 });
   expect(await read("list", { ...scope, missingActors: false })).toMatchObject({ total: 1 });
 
-  const ignoreScope = { libraryId, missingActors: true, missingSubtitles: true };
-  await services.library.ignoreHealth({ ...ignoreScope, health: "missingSynopsis" });
-  expect(await read("list", scope)).toMatchObject({ total: 0 });
-  expect(await read("list", { libraryId, health: "missingSynopsis" })).toMatchObject({ total: 2 });
-  await services.library.restoreIgnored(ignoreScope);
-  expect(await read("list", scope)).toMatchObject({ total: 12 });
   repositories.library.writeEntry({ id: "missing-0", actors: ["Alice"] }, [
     { fileId: "missing-0", rootId, rootRelativePath: "missing-0.mp4" },
   ]);
@@ -137,7 +177,7 @@ it("filters movies with any unsubtitled file using filename rules and file-scope
   expect(result.entries.map(({ id }) => id).sort()).toEqual(expectedIds);
   expect(result).toMatchObject({ total: 5, fileCount: 7, totalBytes: 7 });
   expect(result.entries.every(({ available }) => available === "unchecked")).toBe(true);
-  expect(await read({ ...scope, health: "missingSynopsis" })).toMatchObject({ total: 5 });
+  expect(await read({ ...scope, issues: { missingSynopsis: true } })).toMatchObject({ total: 5 });
   expect(await read({ ...scope, actors: ["Bob"] })).toMatchObject({ total: 0, fileCount: 0, totalBytes: 0 });
   expect(await read({ ...scope, missingSubtitles: undefined })).toMatchObject({ total: 10 });
   expect(await read({ ...scope, missingSubtitles: false })).toMatchObject({ total: 5 });
@@ -222,7 +262,6 @@ it("pages filtered movies and snapshots every match using the same scope without
       [{ fileId: id, rootId: index === 121 ? otherRootId : rootId, rootRelativePath: `${id}.mp4`, size: 1 }],
     );
   }
-  repositories.library.ignoreHealth({ query: "movie-123", health: "missingSynopsis" });
   const scope: LibraryMatchesInput = {
     libraryId,
     query: "Matching",

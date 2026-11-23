@@ -45,7 +45,6 @@ const baseProps = {
   onSelectAll: vi.fn(async () => baseProps.entries),
   onDeleteEntries: vi.fn(),
   browse,
-  onRefresh: vi.fn(),
   total: 3,
 };
 
@@ -152,28 +151,17 @@ test("an unfinished select-all cannot select movies in a different filter", asyn
   await expect.element(screen.getByText("已选 0 部影片")).toBeVisible();
 });
 
-test("batch refresh uses the selection and restoring previous ignores is available in the ignored view", async () => {
+test("batch refresh uses the selected movies", async () => {
   const onRefreshEntries = vi.fn(async () => undefined);
-  const onRestoreEntries = vi.fn(async () => undefined);
-  const props = { ...baseProps, onRefreshEntries, onRestoreEntries };
+  const props = { ...baseProps, onRefreshEntries };
   const screen = await render(<LibraryIndexView {...props} />);
   const refresh = screen.getByRole("button", { name: "重新刮削" });
-  const restore = screen.getByRole("button", { name: "取消忽略" });
   await expect.element(refresh).toBeDisabled();
-  await expect.element(restore).not.toBeInTheDocument();
   await screen.getByRole("checkbox", { name: "选择 AVAILABLE" }).click();
   await refresh.click();
   expect(onRefreshEntries).toHaveBeenCalledExactlyOnceWith([props.entries[0]]);
-
-  await screen.getByRole("button", { name: "已忽略" }).click();
-  expect(browse.onApply).toHaveBeenLastCalledWith({ ignored: true });
-  await screen.rerender(
-    <LibraryIndexView {...props} selectionKey="ignored" browse={{ ...browse, search: { ignored: true } }} />,
-  );
-  await expect.element(restore).toBeDisabled();
-  await screen.getByRole("checkbox", { name: "选择 UNKNOWN" }).click();
-  await restore.click();
-  expect(onRestoreEntries).toHaveBeenCalledExactlyOnceWith([props.entries[1]]);
+  await expect.element(screen.getByText("已忽略", { exact: true })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "取消忽略" })).not.toBeInTheDocument();
 });
 
 test("library view preference survives remounts", async () => {

@@ -97,7 +97,7 @@ export function ScrapeWorkbenchAdapter({
       isScraping={isScraping}
       scrapeStatus={scrapeStatus}
       progress={snapshot?.progress.totalItems === null ? null : progress}
-      canPause={resultsCount > 0}
+      canPause={resultsCount > 0 && snapshot?.task.status !== "queued"}
       stageMessage={stageMessage}
       showCompletedActions={!isScraping && snapshot !== null}
       runSummary={

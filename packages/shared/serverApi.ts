@@ -58,13 +58,11 @@ import type {
   LibraryDetailResponse,
   LibraryFacetInput,
   LibraryFacetOption,
-  LibraryIgnoreHealthInput,
   LibraryListInput,
   LibraryListResponse,
   LibraryMatchesInput,
   LibraryMatchesResponse,
   LibraryRelinkInput,
-  LibraryRestoreIgnoredInput,
   LibrarySummaryInput,
   LibrarySummaryResponse,
   LogListInput,
@@ -221,8 +219,6 @@ export interface ServerApiContract {
     rescan(input: LibraryDetailInput): Promise<ScanTaskDto>;
     relink(input: LibraryRelinkInput): Promise<LibraryDetailResponse>;
     delete(input: LibraryDeleteInput): Promise<LibraryDeletionResponse>;
-    ignoreHealth(input: LibraryIgnoreHealthInput): Promise<{ success: true }>;
-    restoreIgnored(input: LibraryRestoreIgnoredInput): Promise<{ success: true }>;
   };
   overview: {
     summary(): Promise<OverviewSummaryResponse>;

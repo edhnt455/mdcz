@@ -6,10 +6,10 @@ describe("library page requests", () => {
   it("defaults to the first page of ten movies and accepts each supported page size", () => {
     expect(libraryListInputSchema.parse({})).toEqual({ page: 1, pageSize: 10 });
     for (const pageSize of LIBRARY_PAGE_SIZES) {
-      expect(libraryListInputSchema.parse({ page: 12, pageSize, health: "missingSynopsis" })).toEqual({
+      expect(libraryListInputSchema.parse({ page: 12, pageSize, issues: { missingSynopsis: true } })).toEqual({
         page: 12,
         pageSize,
-        health: "missingSynopsis",
+        issues: { missingSynopsis: true },
       });
     }
   });

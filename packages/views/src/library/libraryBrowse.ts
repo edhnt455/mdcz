@@ -1,7 +1,7 @@
 import { LIBRARY_HEALTH_ISSUES, type LibraryMatchesInput } from "@mdcz/shared/serverDtos";
 import { useState } from "react";
 
-export type LibraryBrowseSearch = Omit<LibraryMatchesInput, "rootId" | "health">;
+export type LibraryBrowseSearch = Omit<LibraryMatchesInput, "rootId">;
 
 const text = (value: unknown): string | undefined =>
   typeof value === "string" ? value.trim() || undefined : undefined;
@@ -31,7 +31,7 @@ export const parseLibraryBrowseSearch = (search: Record<string, unknown>): Libra
     tags: names(search.tags),
     missingActors: flag(search.missingActors),
     missingSubtitles: flag(search.missingSubtitles),
-    ignored: search.ignored === true || undefined,
+    hasTranslation: flag(search.hasTranslation),
   };
 };
 

@@ -90,16 +90,13 @@ export interface LibraryEntryFilter {
   rootId?: string;
   /** Host directories; a movie matches when one of its files is inside one of them. */
   pathPrefixes?: readonly string[];
-  health?: LibraryHealthIssue;
   issues?: Partial<Record<LibraryHealthIssue, boolean>>;
-  /** Movies with an issue that still applies but was ignored; ignored issues never match `health`. */
-  healthIgnored?: boolean;
-  includeBackdrop?: boolean;
   actors?: string[];
   studios?: string[];
   tags?: string[];
   missingActors?: boolean;
   missingSubtitles?: { missing: boolean; pattern: string; excludedPattern: string };
+  hasTranslation?: boolean;
 }
 
 export interface ListLibraryEntriesInput extends LibraryEntryFilter {
@@ -117,7 +114,6 @@ type LibraryFacetKind = keyof LibrarySummary["facets"];
 export interface LibrarySummary {
   total: number;
   issues: Record<LibraryHealthIssue, number>;
-  ignored: number;
   facets: { actors: LibraryFacetCount[]; studios: LibraryFacetCount[]; tags: LibraryFacetCount[] };
 }
 
@@ -689,26 +685,29 @@ export class LibraryRepository {
   }
 
   /** Health counts and the most common actors, studios and tags among the movies a filter selects. */
-  summary(filter: Pick<LibraryEntryFilter, "pathPrefixes" | "includeBackdrop">, facetLimit = 30): LibrarySummary {
+  summary(
+    filter: Pick<LibraryEntryFilter, "pathPrefixes"> & { includeBackdrop?: boolean },
+    facetLimit = 30,
+  ): LibrarySummary {
     const scope = buildLibraryListWhere(filter) ?? sql`1`;
     const issueColumns = sql.join(
-      LIBRARY_HEALTH_ISSUES.map(
-        (issue) =>
-          sql`coalesce(sum(CASE WHEN ${healthCondition(issue, filter)} THEN 1 ELSE 0 END), 0) AS ${sql.identifier(issue)}`,
-      ),
+      LIBRARY_HEALTH_ISSUES.map((issue) => {
+        const condition =
+          issue === "missingBackdrop" && filter.includeBackdrop === false
+            ? sql`0`
+            : issueCondition(issue, filter.pathPrefixes);
+        return sql`coalesce(sum(CASE WHEN ${condition} THEN 1 ELSE 0 END), 0) AS ${sql.identifier(issue)}`;
+      }),
       sql`, `,
     );
-    const counts = this.database.db.get<Record<"total" | "ignored" | LibraryHealthIssue, number>>(
-      sql`SELECT count(*) AS total, ${issueColumns},
-        coalesce(sum(CASE WHEN ${healthIgnoredCondition(filter)} THEN 1 ELSE 0 END), 0) AS ignored
-        FROM library_items WHERE ${scope}`,
+    const counts = this.database.db.get<Record<"total" | LibraryHealthIssue, number>>(
+      sql`SELECT count(*) AS total, ${issueColumns} FROM library_items WHERE ${scope}`,
     );
     return {
       total: counts.total,
       issues: Object.fromEntries(
         LIBRARY_HEALTH_ISSUES.map((issue) => [issue, counts[issue]]),
       ) as LibrarySummary["issues"],
-      ignored: counts.ignored,
       facets: {
         actors: this.listFacet(filter, "actors", "", facetLimit),
         studios: this.listFacet(filter, "studios", "", facetLimit),
@@ -731,27 +730,8 @@ export class LibraryRepository {
     return this.database.db.all<LibraryFacetCount>(
       sql`SELECT ${value} AS name, count(DISTINCT ${libraryItems.id}) AS count
         FROM library_items ${source}
-        WHERE ${scope} AND is_nonblank_text(${value}) ${matching}
+        WHERE ${scope} AND nonblank_text(${value}) IS NOT NULL ${matching}
         GROUP BY ${value} ORDER BY count DESC, name LIMIT ${limit}`,
-    );
-  }
-
-  /** Stops counting `filter.health` for every movie the filter lists. */
-  ignoreHealth(filter: LibraryEntryFilter & { health: LibraryHealthIssue }): void {
-    this.database.db.run(
-      sql`INSERT OR IGNORE INTO library_health_ignores (item_id, issue)
-        SELECT ${libraryItems.id}, ${filter.health} FROM library_items WHERE ${buildLibraryListWhere(filter)}`,
-    );
-  }
-
-  /** Counts every issue again for the ignored movies the filter lists. */
-  restoreIgnored(filter: Omit<LibraryEntryFilter, "health" | "healthIgnored">, ids?: string[]): void {
-    const scope = buildLibraryListWhere({ ...filter, healthIgnored: true });
-    const selected = ids ? sql`AND ${libraryItems.id} IN (SELECT value FROM json_each(${JSON.stringify(ids)}))` : sql``;
-    this.database.db.run(
-      sql`DELETE FROM library_health_ignores WHERE item_id IN (
-        SELECT ${libraryItems.id} FROM library_items WHERE ${scope} ${selected}
-      )`,
     );
   }
 
@@ -934,50 +914,28 @@ const pathPrefixCondition = (prefixes: readonly string[], itemId: SQL): SQL => {
   )`;
 };
 
-const unresolvedCondition = (
-  issue: LibraryHealthIssue,
-  filter: Pick<LibraryEntryFilter, "includeBackdrop" | "pathPrefixes">,
-): SQL => {
-  if (issue === "missingBackdrop" && filter.includeBackdrop === false) return sql`0`;
+const issueCondition = (issue: LibraryHealthIssue, pathPrefixes: readonly string[] | undefined): SQL => {
   if (issue !== "duplicate") return HEALTH_CONDITIONS[issue];
   // The same number in another library is a different copy, not a duplicate.
-  const sameScope = filter.pathPrefixes ? sql`AND ${pathPrefixCondition(filter.pathPrefixes, sql`other.id`)}` : sql``;
+  const sameScope = pathPrefixes ? sql`AND ${pathPrefixCondition(pathPrefixes, sql`other.id`)}` : sql``;
   return sql`trim(coalesce(${libraryItems.number}, '')) <> '' AND EXISTS (
     SELECT 1 FROM library_items AS other
     WHERE other.id <> ${libraryItems.id} AND lower(other.number) = lower(${libraryItems.number}) ${sameScope}
   )`;
 };
 
-const ignoredCondition = (issue: LibraryHealthIssue): SQL =>
-  sql`EXISTS (SELECT 1 FROM library_health_ignores AS health_ignore
-    WHERE health_ignore.item_id = ${libraryItems.id} AND health_ignore.issue = ${issue})`;
-
-const healthCondition = (
-  issue: LibraryHealthIssue,
-  filter: Pick<LibraryEntryFilter, "includeBackdrop" | "pathPrefixes">,
-): SQL => sql`((${unresolvedCondition(issue, filter)}) AND NOT ${ignoredCondition(issue)})`;
-
-// An ignore only shows while its issue still applies, so a movie fixed since then leaves the ignored view.
-const healthIgnoredCondition = (filter: Pick<LibraryEntryFilter, "includeBackdrop" | "pathPrefixes">): SQL =>
-  sql`(${sql.join(
-    LIBRARY_HEALTH_ISSUES.map((issue) => sql`(${ignoredCondition(issue)} AND (${unresolvedCondition(issue, filter)}))`),
-    sql` OR `,
-  )})`;
-
 const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
   const filters: SQL[] = [];
   if (input.pathPrefixes) filters.push(pathPrefixCondition(input.pathPrefixes, sql`${libraryItems.id}`));
-  if (input.health) filters.push(healthCondition(input.health, input));
-  if (input.healthIgnored) filters.push(healthIgnoredCondition(input));
   for (const issue of LIBRARY_HEALTH_ISSUES) {
     const missing = input.issues?.[issue];
     if (missing === undefined) continue;
-    const condition = unresolvedCondition(issue, { pathPrefixes: input.pathPrefixes });
+    const condition = issueCondition(issue, input.pathPrefixes);
     filters.push(missing ? condition : sql`NOT (${condition})`);
   }
   if (input.missingActors !== undefined) {
     const condition = sql`EXISTS (
-      SELECT 1 FROM json_each(${libraryItems.actorsJson}) AS actor WHERE is_nonblank_text(actor.atom)
+      SELECT 1 FROM json_each(${libraryItems.actorsJson}) AS actor WHERE nonblank_text(actor.atom) IS NOT NULL
     )`;
     filters.push(input.missingActors ? sql`NOT ${condition}` : condition);
   }
@@ -997,6 +955,15 @@ const buildLibraryListWhere = (input: LibraryEntryFilter): SQL | undefined => {
         )
     )`;
     filters.push(input.missingSubtitles.missing ? condition : sql`NOT ${condition}`);
+  }
+  if (input.hasTranslation !== undefined) {
+    const data = libraryItems.crawlerDataJson;
+    const hasTranslation = sql`CASE WHEN json_valid(${data}) THEN coalesce(
+      nonblank_text(json_extract(${data}, '$.title_zh')) <> coalesce(nonblank_text(json_extract(${data}, '$.title')), '')
+      OR nonblank_text(json_extract(${data}, '$.plot_zh')) <> coalesce(nonblank_text(json_extract(${data}, '$.plot')), ''),
+      0
+    ) ELSE 0 END`;
+    filters.push(input.hasTranslation ? hasTranslation : sql`NOT (${hasTranslation})`);
   }
   if (input.studios?.length) filters.push(inArray(STUDIO, input.studios));
   for (const kind of ["actors", "tags"] as const) {

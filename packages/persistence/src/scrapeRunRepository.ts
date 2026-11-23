@@ -19,6 +19,7 @@ export interface ScrapeRunManifestItem {
   uncensoredChoice?: ScrapeUncensoredChoice | null;
   /** Replaces the number parsed from the file name. */
   number?: string | null;
+  refreshMovieId?: string;
 }
 
 export type ScrapeRunItemRecord = ScrapeRunManifestItem;
@@ -70,22 +71,14 @@ export interface ScrapeRunSummaryRecord {
 export interface CreateScrapeRunInput {
   id?: string;
   previousRunId?: string | null;
-  libraryId: string;
+  libraryId: string | null;
   rootId: string;
   outputRootId?: string | null;
   outputRelativeDirectory?: string | null;
   executionMode: ScrapeExecutionMode;
   directoryScopeJson?: string;
   createdAt?: Date;
-  items: Array<{
-    id?: string;
-    ordinal: number;
-    rootId: string;
-    relativePath: string;
-    manualUrl?: string | null;
-    uncensoredChoice?: ScrapeUncensoredChoice | null;
-    number?: string | null;
-  }>;
+  items: Array<Omit<ScrapeRunManifestItem, "id"> & { id?: string }>;
 }
 
 export interface FinalizeScrapeRunInput {
@@ -121,6 +114,7 @@ export class ScrapeRunRepository {
       manualUrl: item.manualUrl ?? null,
       uncensoredChoice: item.uncensoredChoice ?? null,
       number: item.number ?? null,
+      refreshMovieId: item.refreshMovieId,
     }));
 
     this.database.sqlite.transaction(() => {
@@ -141,7 +135,7 @@ export class ScrapeRunRepository {
           createdAt,
         })
         .run();
-      new PendingRepository(this.database).consume(input.items);
+      new PendingRepository(this.database).consume(input.items.filter((item) => !item.refreshMovieId));
     })();
 
     return await this.get(id);

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
-import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
+import { type AssetRef, isRemoteAssetUrl, type RootFileRef } from "@mdcz/shared/mediaRef";
 import { moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
 import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
@@ -121,6 +121,7 @@ export const prepareMovieArtifacts = async (input: {
   assetDecisions?: MaintenanceAssetDecisions;
   relocateExistingArtifacts?: boolean;
   ownedAssetPaths?: readonly string[];
+  refreshExisting?: { nfoPaths: readonly string[] };
   nfoNaming: "both" | "movie" | "filename";
   remoteData?: CrawlerData;
   writeNfo(
@@ -144,6 +145,7 @@ export const prepareMovieArtifacts = async (input: {
   const mapped = new Map<string, string>();
   const assetTargets = new Map<string, string>();
   const downloaded = input.downloadedAssets;
+  const ownedAssets = new Set(input.refreshExisting ? input.ownedAssetPaths : undefined);
   const sourcePathOf = (file: MovieOutputMember) => {
     const root = input.roots.find((root) => root.id === file.source.rootId);
     if (!root) throw new Error(`未找到发布根目录：${file.source.rootId}`);
@@ -308,7 +310,12 @@ export const prepareMovieArtifacts = async (input: {
       },
       {
         key: "sceneImages" as const,
-        paths: downloaded.sceneImages.length ? downloaded.sceneImages : (existing?.sceneImages ?? []),
+        paths: downloaded.sceneImages.length
+          ? [
+              ...downloaded.sceneImages,
+              ...(input.refreshExisting ? (existing?.sceneImages.slice(downloaded.sceneImages.length) ?? []) : []),
+            ]
+          : (existing?.sceneImages ?? []),
       },
       {
         key: "actorPhotos" as const,
@@ -317,7 +324,7 @@ export const prepareMovieArtifacts = async (input: {
     ];
     for (const group of groups) {
       const targets: string[] = [];
-      for (const sourcePath of group.paths) {
+      for (const [index, sourcePath] of group.paths.entries()) {
         if (!sourcePath) continue;
         const mappingKey = `${sourcePath}\0${metadataOutputDir}`;
         let targetPath = assetTargets.get(mappingKey);
@@ -327,12 +334,19 @@ export const prepareMovieArtifacts = async (input: {
           if (!targetPath) throw new Error(`发布资源未指定目标：${sourcePath}`);
           if (stagedName || sourcePath !== targetPath) {
             const target = toRef(targetPath);
+            const original = existing?.[group.key];
+            const replaced = Array.isArray(original) ? original[index] : original;
             artifacts.push({
               sourcePath,
               targetPath,
               size: (await input.inventory.stats(sourcePath)).size,
               consume: Boolean(stagedName),
-              removeSourcesAfterCommit: input.relocateExistingArtifacts && !stagedName ? [sourcePath] : undefined,
+              removeSourcesAfterCommit:
+                input.relocateExistingArtifacts && !stagedName
+                  ? [sourcePath]
+                  : stagedName && replaced && replaced !== targetPath && ownedAssets.has(replaced)
+                    ? [replaced]
+                    : undefined,
             });
             publishedTargets.push(target);
             if (stagedName) downloadedTargets.add(targetPath);
@@ -379,6 +393,11 @@ export const prepareMovieArtifacts = async (input: {
           publishedTargets.push(target);
         }
       }
+    }
+    for (const path of new Set(input.refreshExisting?.nfoPaths)) {
+      if (artifacts.some((artifact) => resolve(artifact.targetPath) === resolve(path))) continue;
+      artifacts.push({ targetPath: path, data: writtenNfos[0].data });
+      publishedTargets.push(toRef(path));
     }
   }
   if (!nfoPath && existingNfoPath) {
@@ -439,12 +458,16 @@ export const prepareMovieArtifacts = async (input: {
   const movieAssets: AssetRef[] = [...locationAssets.values(), ...featureAssets.values(), ...linkAssets.values()];
   for (const kind of ["thumb", "poster", "fanart", "trailer"] as const) {
     const targetPath = assets[kind];
-    const url = input.remoteData?.[`${kind}_source_url`] ?? input.remoteData?.[`${kind}_url`];
-    if (!targetPath && url?.trim()) movieAssets.push({ type: "remote", kind, url });
+    const url = [input.remoteData?.[`${kind}_source_url`], input.remoteData?.[`${kind}_url`]].find(
+      (value) => value && isRemoteAssetUrl(value),
+    );
+    if (!targetPath && url) movieAssets.push({ type: "remote", kind, url });
   }
   if (!assets.sceneImages.length)
     movieAssets.push(
-      ...(input.remoteData?.scene_images ?? []).map((url) => ({ type: "remote" as const, kind: "scene", url })),
+      ...(input.remoteData?.scene_images ?? [])
+        .filter(isRemoteAssetUrl)
+        .map((url) => ({ type: "remote" as const, kind: "scene", url })),
     );
   if (nfoPath) {
     const nfoFiles = new Map<string, RootFileRef>();

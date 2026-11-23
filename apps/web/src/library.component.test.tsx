@@ -3,6 +3,7 @@ import type { DeletionJob } from "@mdcz/shared/deletions";
 import type { LibraryDeletionResponse } from "@mdcz/shared/pending";
 import type { LibraryEntryDto, LibraryListResponse } from "@mdcz/shared/serverDtos";
 import { parseLibraryBrowseSearch } from "@mdcz/views/library";
+import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -17,9 +18,94 @@ import { toast } from "sonner";
 import { expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
+import { buildScrapeSnapshot } from "../../../tests/unit/renderer/scrapeTestSupport";
 import { api } from "./client";
 import { DeletionTasksPage } from "./deletionTasks";
 import { LibraryPage, Route } from "./routes/library";
+
+test("library rescrape stays on the list while a task is running and opens the submitted run on request", async () => {
+  const entries: LibraryEntryDto[] = ["First", "Second"].map((id) => ({
+    id,
+    mediaIdentity: id,
+    title: id,
+    number: id,
+    actors: [],
+    size: 1,
+    displayFileId: id,
+    crawlerData: null,
+    thumbnailPath: null,
+    available: "unchecked",
+    createdAt: "2026-11-16T00:00:00Z",
+    lastRefreshedAt: null,
+    hiddenFromRecentAt: null,
+    fileRefs: [],
+    assets: [],
+  }));
+  const client = new QueryClient();
+  const success = vi.spyOn(toast, "success");
+  const start = vi.spyOn(api.scrape, "start").mockResolvedValue({ runId: "rescrape" });
+  const baseRun = buildScrapeSnapshot();
+  const snapshot = vi
+    .spyOn(api.scrape, "snapshot")
+    .mockResolvedValue(
+      buildScrapeSnapshot({ task: { ...baseRun.task, id: "rescrape", status: "queued", continuity: "live" } }),
+    );
+  useScrapeStore.getState().setSnapshot(
+    buildScrapeSnapshot({
+      task: { ...baseRun.task, id: "running", status: "running", continuity: "live" },
+    }),
+    true,
+  );
+  vi.spyOn(Route, "useSearch").mockReturnValue({});
+  vi.spyOn(api.library, "list").mockResolvedValue({
+    entries,
+    page: 1,
+    pageSize: 20,
+    total: 2,
+    fileCount: 2,
+    totalBytes: 2,
+  });
+  vi.spyOn(api.library, "availability").mockResolvedValue({ entries: [] });
+  vi.spyOn(api.libraries, "list").mockResolvedValue({ libraries: [] });
+  const root = createRootRoute({ component: Outlet });
+  const library = createRoute({ getParentRoute: () => root, path: "/library", component: LibraryPage });
+  const workbench = createRoute({ getParentRoute: () => root, path: "/workbench", component: () => <p>任务进度</p> });
+  const router = createRouter({
+    routeTree: root.addChildren([library, workbench]),
+    history: createMemoryHistory({ initialEntries: ["/library"] }),
+  });
+  const previousView = localStorage.getItem("mdcz.library.view");
+  localStorage.setItem("mdcz.library.view", "list");
+  const screen = await render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  try {
+    await screen.getByRole("checkbox", { name: "选择 Second" }).click();
+    await screen.getByRole("checkbox", { name: "选择 First" }).click();
+    await screen.getByRole("button", { name: "重新刮削" }).click();
+    await expect.poll(() => success.mock.calls[0]?.[0]).toBe("已将 2 部影片加入刮削队列");
+    expect(start).toHaveBeenCalledExactlyOnceWith({ refreshMovieIds: ["Second", "First"], libraryId: undefined });
+    expect(router.state.location.pathname).toBe("/library");
+    await expect.element(screen.getByRole("dialog")).not.toBeInTheDocument();
+
+    const action = success.mock.calls[0]?.[1]?.action;
+    if (!action || typeof action !== "object" || !("onClick" in action)) throw new Error("Missing rescrape action");
+    expect(action.label).toBe("查看进度");
+    action.onClick(new MouseEvent("click") as unknown as ReactMouseEvent<HTMLButtonElement>);
+    await expect.element(screen.getByText("任务进度")).toBeVisible();
+    expect(snapshot).toHaveBeenCalledExactlyOnceWith({ taskId: "rescrape" });
+    expect(useScrapeStore.getState().snapshot?.task.id).toBe("rescrape");
+  } finally {
+    await screen.unmount();
+    client.clear();
+    useScrapeStore.getState().reset();
+    vi.restoreAllMocks();
+    if (previousView === null) localStorage.removeItem("mdcz.library.view");
+    else localStorage.setItem("mdcz.library.view", previousView);
+  }
+});
 
 test("library deletion closes after submission while jobs and library refresh continue in the background", async () => {
   const entry: LibraryEntryDto = {
@@ -230,6 +316,7 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     await expect.element(lastPage).toBeVisible();
 
     const apply = screen.getByRole("button", { name: "搜索", exact: true });
+    await expect.element(screen.getByRole("button", { name: "刷新", exact: true })).not.toBeInTheDocument();
     await screen.getByRole("combobox", { name: "缺少简介" }).selectOptions("true");
     await screen.getByRole("combobox", { name: "番号重复" }).selectOptions("false");
     await expect.element(lastPage).toBeVisible();
@@ -251,8 +338,18 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     await expect.element(screen.getByText("共 121 部 · 第 2 / 7 页")).toBeVisible();
     await screen.getByRole("checkbox", { name: "选择 MOVIE-21", exact: true }).click();
     await expect.element(screen.getByText("已选 119 部影片")).toBeVisible();
-    await screen.getByRole("button", { name: "上一页" }).click();
+    const requestsBeforePageReset = list.mock.calls.length;
+    await apply.click();
+    await expect.element(screen.getByText("共 121 部 · 第 1 / 7 页")).toBeVisible();
+    expect(list).toHaveBeenCalledTimes(requestsBeforePageReset + 1);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, issues }));
     await expect.element(screen.getByRole("checkbox", { name: "选择 NEW-MATCH" })).not.toBeChecked();
+    const requestsBeforeRepeat = list.mock.calls.length;
+    matches[0] = { ...matches[0], title: "Updated on repeat search" };
+    await apply.click();
+    await expect.element(screen.getByText("Updated on repeat search", { exact: true })).toBeVisible();
+    expect(list).toHaveBeenCalledTimes(requestsBeforeRepeat + 1);
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, issues }));
     await screen.getByRole("group", { name: "批量操作" }).getByRole("button", { name: "深度删除" }).click();
     await expect.element(screen.getByText(/将提交 119 部影片/u)).toBeVisible();
     await screen.getByRole("button", { name: "取消", exact: true }).click();
@@ -268,6 +365,8 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     await search.fill("");
     await screen.getByRole("combobox", { name: "存在无字幕文件" }).selectOptions("true");
     await screen.getByRole("combobox", { name: "缺少演员" }).selectOptions("false");
+    const translation = screen.getByRole("combobox", { name: "有无译文" });
+    await translation.selectOptions("false");
     const actors = screen.getByRole("button", { name: /^演员 /u });
     await actors.click();
     await screen.getByRole("checkbox", { name: "Alice", exact: true }).click();
@@ -279,7 +378,13 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     await apply.click();
 
     await expect.element(screen.getByText("共 2 部 · 第 1 / 1 页")).toBeVisible();
-    const combined = { issues, actors: ["Alice", "Bob"], missingActors: false, missingSubtitles: true };
+    const combined = {
+      issues,
+      actors: ["Alice", "Bob"],
+      missingActors: false,
+      missingSubtitles: true,
+      hasTranslation: false,
+    };
     expect(router.state.location.search).toMatchObject(combined);
     expect(list).toHaveBeenLastCalledWith(expect.objectContaining(combined));
 
@@ -296,6 +401,7 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     const requestsBeforeReset = list.mock.calls.length;
     await screen.getByRole("button", { name: "重置" }).click();
     await expect.element(screen.getByRole("combobox", { name: "缺少简介" })).toHaveValue("");
+    await expect.element(translation).toHaveValue("");
     await expect.element(actors).toHaveTextContent("全部");
     await expect.element(screen.getByText("共 2 部 · 第 1 / 1 页")).toBeVisible();
     await expect.element(screen.getByText("已选 2 部影片")).toBeVisible();

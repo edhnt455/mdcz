@@ -1,5 +1,4 @@
 import type { RootFileRef } from "@mdcz/shared/mediaRef";
-import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import type { MaintenancePresetId } from "@mdcz/shared/types";
 import {
   changeMaintenancePreset,
@@ -51,7 +50,6 @@ export const resolveWorkbenchMode = (input: {
 
   return input.currentMode;
 };
-
 export const getWorkbenchSessionSnapshot = (
   currentMode: WorkbenchMode,
   routeIntent?: WorkbenchRouteIntent,
@@ -214,30 +212,4 @@ export const startMaintenanceFlow = async (options: StartMaintenanceFlowOptions)
     executionStore.setError(options.toErrorMessage(error));
     options.toast.error(t.maintenance.startFailed(options.toErrorMessage(error)));
   }
-};
-
-export const startLibraryRefresh = async (options: {
-  libraryId?: string;
-  entries: LibraryEntryDto[];
-  port: MaintenanceActionPort;
-  isScraping: boolean;
-  toast: StartMaintenanceFlowOptions["toast"];
-  toErrorMessage(error: unknown): string;
-}): Promise<void> => {
-  const t = getT();
-  const refs = options.entries.flatMap((entry) =>
-    entry.fileRefs.map((file) => ({ rootId: file.rootId, relativePath: file.relativePath })),
-  );
-  // A maintenance session works inside one media root.
-  if (new Set(refs.map((ref) => ref.rootId)).size > 1) throw new Error(t.library.bulk.mixedRoots);
-  await startMaintenanceFlow({
-    refs,
-    presetId: "refresh_metadata",
-    libraryId: options.libraryId,
-    port: options.port,
-    isScraping: options.isScraping,
-    setWorkbenchMode: useUIStore.getState().setWorkbenchMode,
-    toast: options.toast,
-    toErrorMessage: options.toErrorMessage,
-  });
 };

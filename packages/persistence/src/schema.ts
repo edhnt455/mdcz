@@ -221,7 +221,7 @@ export const libraryItemAssets = sqliteTable(
   ],
 );
 
-// A health issue the user chose to stop counting for a movie, such as a synopsis no site has.
+// Preserves data from migration 0018 for installations that roll back.
 export const libraryHealthIgnores = sqliteTable(
   "library_health_ignores",
   {

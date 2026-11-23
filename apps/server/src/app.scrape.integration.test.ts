@@ -2,7 +2,13 @@ import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs
 import { dirname, join } from "node:path";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { acquireMediaTask, movieTaskKey } from "@mdcz/runtime/publication/mediaTasks";
-import { type AggregationResult, ImageWatermarkService, LlmApiClient, TranslateService } from "@mdcz/runtime/scrape";
+import {
+  type AggregationResult,
+  ImageWatermarkService,
+  LlmApiClient,
+  NfoGenerator,
+  TranslateService,
+} from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { PendingBatchResponse, PendingKindDto } from "@mdcz/shared/pending";
@@ -18,6 +24,7 @@ import {
   createTestPngBytes,
   createTestServer,
   loginAsAdmin,
+  startLocalHttpServer,
   startTestImageServer,
   waitForScrapeRunStatus,
 } from "./app.testSupport";
@@ -130,6 +137,206 @@ beforeEach(() => {
 });
 
 describe("buildServer scrape integration", () => {
+  it("queues a full library refresh in order and publishes each successful movie in place", async ({
+    onTestFinished,
+  }) => {
+    const root = await createTempRoot("library-refresh-videos");
+    const metadataRoot = await createTempRoot("library-refresh-metadata");
+    const otherRoot = await createTempRoot("library-refresh-other-root");
+    const newPoster = createTestPngBytes();
+    const oldPoster = await sharp({ create: { width: 1, height: 1, channels: 3, background: "blue" } })
+      .png()
+      .toBuffer();
+    const imageServer = await startLocalHttpServer((request, response) => {
+      if (request.url === "/missing.png") {
+        response.writeHead(404).end();
+        return;
+      }
+      response.writeHead(200, { "content-type": "image/png" }).end(newPoster);
+    });
+    const imageUrl = `${imageServer.url}/new.png`;
+    const pin = { site: Website.JAVDB, url: "https://javdb.com/v/pinned-page" };
+    const control = createGatedAggregation(imageUrl);
+    onTestFinished(control.releaseFirstCall);
+    let failedLookup = true;
+    const aggregate = vi.fn<NonNullable<ScrapeServiceResources["aggregationService"]>["aggregate"]>(
+      async (number, options) => {
+        if (number === "ABC-990") return await control.aggregation.aggregate(number, options);
+        if (number === "XYZ-303" && failedLookup) throw new Error("No matching work");
+        const result = await createTestAggregation(imageUrl).aggregate(number);
+        return {
+          ...result,
+          data: {
+            ...result.data,
+            plot: undefined,
+            poster_url: number === "XYZ-302" ? `${imageServer.url}/missing.png` : imageUrl,
+          },
+        };
+      },
+    );
+    const translate = vi.spyOn(TranslateService.prototype, "translateCrawlerData").mockImplementation(async (data) => ({
+      data: { ...data, title_zh: `新译名 ${data.number}` },
+      error: null,
+    }));
+    onTestFinished(() => translate.mockRestore());
+    const { fastify, services } = await createTestServer({ scrapeAggregation: { aggregate } });
+    const token = await loginAsAdmin(fastify);
+    const { rootId, libraryId } = await createTestLibrary(fastify, token, root, {
+      placement: "metadataOnly",
+      outputPath: metadataRoot,
+    });
+    const { rootId: otherRootId } = await createTestLibrary(fastify, token, otherRoot);
+    const metadata = await services.mediaRoots.ensurePathRecord({ hostPath: metadataRoot });
+    await services.config.update({
+      scrape: { threadNumber: 4 },
+      naming: { assetNamingMode: "followVideo" },
+      download: {
+        downloadThumb: false,
+        downloadPoster: true,
+        keepPoster: true,
+        downloadFanart: false,
+        downloadSceneImages: false,
+        downloadTrailer: false,
+        nfoNaming: "filename",
+      },
+    });
+    const { repositories } = await services.persistence.getState();
+    for (const number of ["XYZ-301", "XYZ-302", "XYZ-303", "XYZ-304"]) {
+      const outside = number === "XYZ-304";
+      const firstPart = number === "XYZ-302";
+      const video = `${number}${firstPart ? "-CD1" : ""}.mp4`;
+      await writeFile(join(outside ? otherRoot : root, video), number);
+      const nfo = `${number}.nfo`;
+      const poster = `${number}-poster.png`;
+      const fanart = `${number}-fanart.png`;
+      await writeFile(join(metadataRoot, poster), oldPoster);
+      await writeFile(join(metadataRoot, fanart), oldPoster);
+      const data = {
+        number,
+        title: "Hand edited title",
+        plot: "Previous synopsis",
+        actors: [],
+        genres: [],
+        scene_images: [],
+        website: Website.JAVDB,
+      };
+      if (number !== "XYZ-301") {
+        await writeFile(
+          join(metadataRoot, nfo),
+          new NfoGenerator().buildXml(data, {
+            localState: number === "XYZ-302" ? { sourcePin: pin } : undefined,
+          }),
+        );
+      }
+      await repositories.library.upsertEntry({
+        movie: {
+          id: number,
+          title: data.title,
+          crawlerDataJson: JSON.stringify(data),
+          assets: [
+            { kind: "nfo", path: nfo },
+            { kind: "poster", path: poster },
+            { kind: "fanart", path: fanart },
+          ].map(({ kind, path }) => ({
+            kind,
+            uri: path,
+            relativePath: path,
+            rootId: metadata.id,
+            published: true,
+          })),
+        },
+        files: [
+          {
+            rootId: outside ? otherRootId : rootId,
+            rootRelativePath: video,
+            fileId: video,
+            partNumber: firstPart ? 1 : null,
+            resolution: firstPart ? "1080p" : null,
+          },
+        ],
+      });
+    }
+    await writeFile(join(root, "ABC-990.mp4"), "running");
+    await writeFile(join(root, "XYZ-302-CD1.srt"), "existing subtitles");
+    const version = "XYZ-302-CD2.mp4";
+    await writeFile(join(root, version), "second part");
+    await repositories.library.upsertEntry({
+      movie: { id: "XYZ-302" },
+      files: [{ rootId, rootRelativePath: version, fileId: version, partNumber: 2 }],
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const start = (payload: object) => fastify.inject({ method: "POST", url: "/trpc/scrape.start", headers, payload });
+    const running = await start({ executionMode: "batch", libraryId, refs: [{ rootId, relativePath: "ABC-990.mp4" }] });
+    expect(running.statusCode).toBe(200);
+    await control.firstCallStarted;
+
+    const mixed = await start({ refreshMovieIds: ["XYZ-301", "XYZ-304"] });
+    expect(mixed.statusCode).toBe(400);
+    const accepted = await start({ refreshMovieIds: ["XYZ-303", "XYZ-302", "XYZ-301"] });
+    expect(accepted.statusCode).toBe(200);
+    const taskId = accepted.json().result.data.runId;
+    const queued = await services.scrape.snapshot({ taskId });
+    expect(queued.task).toMatchObject({ status: "queued", totalItems: 3 });
+    expect(queued.items.map((item) => [item.id, item.status])).toEqual([
+      ["XYZ-303.mp4", "pending"],
+      ["XYZ-302-CD1.mp4", "pending"],
+      ["XYZ-301.mp4", "pending"],
+    ]);
+    expect(aggregate.mock.calls.map(([number]) => number)).toEqual(["ABC-990"]);
+    control.releaseFirstCall();
+    await waitForScrapeRunStatus(fastify, token, taskId, "failed");
+
+    expect(aggregate.mock.calls.map(([number]) => number)).toEqual(["ABC-990", "XYZ-303", "XYZ-302", "XYZ-301"]);
+    expect(aggregate).toHaveBeenCalledWith(
+      "XYZ-302",
+      expect.objectContaining({
+        manualScrape: { site: pin.site, detailUrl: pin.url },
+      }),
+    );
+    const completed = await services.scrape.snapshot({ taskId });
+    expect(completed.items.map((item) => item.status)).toEqual(["failed", "success", "success"]);
+    await expect(readFile(join(root, "XYZ-302-CD1.mp4"), "utf8")).resolves.toBe("XYZ-302");
+    await expect(readFile(join(root, "XYZ-302-CD1.srt"), "utf8")).resolves.toBe("existing subtitles");
+    await expect(readFile(join(root, version), "utf8")).resolves.toBe("second part");
+    const parts = (await repositories.library.getEntryById("XYZ-302")).files;
+    expect(parts).toHaveLength(2);
+    expect(parts.find((file) => file.partNumber === 1)?.resolution).toBe("1080p");
+    await expect(readFile(join(metadataRoot, "XYZ-302-poster.png"))).resolves.toEqual(oldPoster);
+    const updated = await repositories.library.getEntryById("XYZ-301");
+    const updatedPoster = updated.assets.find((asset) => asset.kind === "poster");
+    expect(updatedPoster?.rootId).toBe(metadata.id);
+    expect(
+      await sharp(join(metadataRoot, updatedPoster?.relativePath ?? ""))
+        .removeAlpha()
+        .raw()
+        .toBuffer(),
+    ).toEqual(await sharp(newPoster).removeAlpha().raw().toBuffer());
+    await expect(readFile(join(metadataRoot, "XYZ-301-fanart.png"))).resolves.toEqual(oldPoster);
+    const pinned = parseNfoSnapshot(await readFile(join(metadataRoot, "XYZ-302.nfo"), "utf8"));
+    expect(pinned.localState?.sourcePin).toEqual(pin);
+    expect(pinned.crawlerData).toMatchObject({
+      title: "Runtime Title XYZ-302",
+      title_zh: "新译名 XYZ-302",
+      plot: "Previous synopsis",
+    });
+    expect(await readFile(join(metadataRoot, "XYZ-301.nfo"), "utf8")).toContain("新译名 XYZ-301");
+    expect(await readFile(join(metadataRoot, "XYZ-303.nfo"), "utf8")).toContain("Hand edited title");
+    expect(repositories.pending.list()).toEqual([]);
+
+    failedLookup = false;
+    const retry = await fastify.inject({ method: "POST", url: "/trpc/scrape.retry", headers, payload: { taskId } });
+    expect(retry.statusCode).toBe(200);
+    await waitForScrapeRunStatus(fastify, token, retry.json().result.data.runId, "completed");
+    expect(aggregate.mock.calls.map(([number]) => number)).toEqual([
+      "ABC-990",
+      "XYZ-303",
+      "XYZ-302",
+      "XYZ-301",
+      "XYZ-303",
+    ]);
+    expect(await readFile(join(metadataRoot, "XYZ-303.nfo"), "utf8")).toContain("新译名 XYZ-303");
+  });
+
   it("completes published scrapes with translation errors and repairs them through batch NFO translation", async () => {
     const root = await createTempRoot("translation-failed-scrape");
     await writeFile(join(root, "ABC-123.mp4"), "video");

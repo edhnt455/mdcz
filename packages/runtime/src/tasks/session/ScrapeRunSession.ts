@@ -89,6 +89,7 @@ export interface ScrapeRunExecution<TItem extends ScrapeRunItem = ScrapeRunItem,
   ) => Promise<{
     results: readonly { itemId: string; result: ScrapeResult }[];
     output?: PreparedMovieOutput;
+    commit?: () => Promise<readonly { itemId: string; result: ScrapeResult }[]>;
     release?: () => Promise<void>;
   }>;
   commitItems: (
@@ -115,6 +116,7 @@ type RuntimeMovieGroup<TItem extends ScrapeRunItem, TPrepared> = MovieGroup<Muta
 };
 type ScrapeGroupExecution<TItem extends ScrapeRunItem> = {
   output?: PreparedMovieOutput;
+  commit?: () => Promise<readonly { itemId: string; result: ScrapeResult }[]>;
   results: Array<{ item: MutableScrapeRunItem<TItem>; result?: ScrapeResult }>;
   release: () => Promise<void>;
 };
@@ -546,6 +548,13 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
             const groupedResults = new Map(execution.results.map(({ itemId, result }) => [itemId, result]));
             const eligibleIds = new Set(execution.output?.files.map((file) => file.scrape?.itemId) ?? []);
             const pendingItems = entry.group.members.filter((m) => m.status === "processing" || m.status === "pending");
+            if (execution.commit) {
+              return {
+                commit: execution.commit,
+                results: pendingItems.map((item) => ({ item })),
+                release: releaseResources,
+              };
+            }
             if (
               execution.results.length + eligibleIds.size !== pendingItems.length ||
               groupedResults.size !== execution.results.length
@@ -590,7 +599,9 @@ export class ScrapeRunSession<TItem extends ScrapeRunItem = ScrapeRunItem, TPrep
         this.assertActive(["running", "paused", "stopping"]);
         let committed: Awaited<ReturnType<typeof this.execution.commitItems>>;
         try {
-          committed = await this.execution.commitItems(execution.results, execution.output);
+          committed = execution.commit
+            ? await execution.commit()
+            : await this.execution.commitItems(execution.results, execution.output);
         } catch (error) {
           // A publish failure belongs to this group: file it as a failed item so the pending list can explain and
           // repair it, instead of aborting the run and leaving the file only as skipped.
