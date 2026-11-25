@@ -229,6 +229,7 @@ const translateSchema = z.object({
   baiduSecretKey: z.string().default(""),
   baiduApiKey: z.string().default(""),
   llmModelName: z.string().default("gpt-5.2"),
+  llmFallbackModelName: z.string().trim().default(""),
   llmApiKey: z.string().default(""),
   llmBaseUrl: z.url().or(z.literal("")).default(DEFAULT_LLM_BASE_URL),
   llmApiFormat: z.enum(LLM_API_FORMAT_OPTIONS).default("responses"),

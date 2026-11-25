@@ -69,6 +69,7 @@ describe("TranslateService term consistency", () => {
 
     const service = createTranslateService(new NetworkClient({}), llmApiClient);
     const config = createBaseConfig();
+    config.translate.llmFallbackModelName = "fallback-model";
 
     const translated = await service.translateCrawlerData(
       {
@@ -81,6 +82,8 @@ describe("TranslateService term consistency", () => {
         website: Website.DMM,
       },
       config,
+      undefined,
+      { allowFallbackModel: true },
     );
 
     expect(generateText).toHaveBeenCalledTimes(1);
@@ -95,6 +98,80 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.title_zh).toBe("中文标题");
     expect(translated.data.plot_zh).toBe(plot);
     expect(translated.data.genres).toEqual(["统一译名"]);
+  });
+
+  it.each([
+    { primaryOutput: "{", retries: 0 },
+    { primaryOutput: new LlmTransportError("request timed out", new Error("timeout")), retries: 1 },
+  ])("uses the backup after invalid output or after all $retries configured retries", async ({
+    primaryOutput,
+    retries,
+  }) => {
+    const generateText = vi.fn(async ({ model }: { model: string }) => {
+      if (model === "fallback-model") return JSON.stringify({ title: "补译标题", plot: null, genres: [] });
+      if (primaryOutput instanceof Error) throw primaryOutput;
+      return primaryOutput;
+    });
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
+    const config = createBaseConfig();
+    Object.assign(config.translate, {
+      llmModelName: "primary-model",
+      llmFallbackModelName: "fallback-model",
+      llmMaxRequestsPerSecond: 100,
+    });
+
+    const result = await service.translateCrawlerData(
+      { title: "未翻訳のタイトル", number: "ABC-123", actors: [], genres: [], scene_images: [], website: Website.DMM },
+      config,
+      undefined,
+      { allowFallbackModel: true },
+    );
+
+    expect(result.data.title_zh).toBe("补译标题");
+    expect(result.data.translation_failures).toBeUndefined();
+    expect(result.error).toBeNull();
+    expect(generateText.mock.calls.map(([request]) => request.model)).toEqual([
+      ...Array.from({ length: retries + 1 }, () => "primary-model"),
+      "fallback-model",
+    ]);
+    expect(sleepMock).toHaveBeenCalledTimes(retries);
+  });
+
+  it("retries only unresolved genres and preserves their positions and final failures", async () => {
+    const generateText = vi
+      .fn()
+      .mockResolvedValueOnce(JSON.stringify({ title: null, plot: null, genres: ["主译类别", null, null] }))
+      .mockResolvedValueOnce(JSON.stringify({ title: null, plot: null, genres: ["补译类别", null] }));
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
+    const config = createBaseConfig();
+    Object.assign(config.translate, { llmFallbackModelName: "fallback-model", llmMaxRequestsPerSecond: 100 });
+
+    const result = await service.translateCrawlerData(
+      {
+        title: "中文标题",
+        number: "ABC-123",
+        actors: [],
+        genres: ["类别", "ジャンル1", "ジャンル2", "ジャンル3"],
+        scene_images: [],
+        website: Website.DMM,
+      },
+      config,
+      undefined,
+      { allowFallbackModel: true },
+    );
+
+    expect(generateText).toHaveBeenCalledTimes(2);
+    expect(generateText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        model: "fallback-model",
+        prompt: expect.stringContaining('"title":null,"plot":null,"genres":["ジャンル2","ジャンル3"]'),
+        retry: false,
+      }),
+      undefined,
+    );
+    expect(result.data.genres).toEqual(["类别", "主译类别", "补译类别", "ジャンル3"]);
+    expect(result.data.translation_failures).toEqual({ genres: "翻译引擎返回的类别不完整" });
   });
 
   it.each([

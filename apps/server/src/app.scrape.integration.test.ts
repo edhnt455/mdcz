@@ -337,6 +337,105 @@ describe("buildServer scrape integration", () => {
     expect(await readFile(join(metadataRoot, "XYZ-303.nfo"), "utf8")).toContain("新译名 XYZ-303");
   });
 
+  it("publishes the original after the backup fails once and recovers it on re-scrape", async () => {
+    const root = await createTempRoot("fallback-translation");
+    await writeFile(join(root, "ABC-123.mp4"), "video");
+    const plot = "あいうえおのあらすじ";
+    let backupAvailable = false;
+    const requests: Array<{ model: string; input: string }> = [];
+    const llmServer = await startLocalHttpServer(async (request, response) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      requests.push(body);
+      const isBackup = body.model === "backup-model";
+      if (isBackup && !backupAvailable) {
+        response
+          .writeHead(503, { "content-type": "application/json" })
+          .end(JSON.stringify({ error: { message: "Backup unavailable" } }));
+        return;
+      }
+      const translation = isBackup ? { plot: "补译简介" } : { title: "主模型译名", plot: " ", genres: [] };
+      response
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify({ output_text: JSON.stringify(translation) }));
+    });
+    const aggregation = createTestAggregation("https://unused.example/image.png");
+    const { fastify, services } = await createTestServer({
+      scrapeAggregation: {
+        async aggregate(number) {
+          const result = await aggregation.aggregate(number);
+          return { ...result, data: { ...result.data, plot } };
+        },
+      },
+    });
+    const token = await loginAsAdmin(fastify);
+    const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
+    const headers = { authorization: `Bearer ${token}` };
+    const updated = await fastify.inject({
+      method: "POST",
+      url: "/trpc/config.update",
+      headers,
+      payload: {
+        translate: {
+          enableTranslation: true,
+          fields: ["title", "plot"],
+          llmModelName: "primary-model",
+          llmFallbackModelName: " backup-model ",
+          llmBaseUrl: llmServer.url,
+          llmMaxRequestsPerSecond: 100,
+        },
+        download: {
+          downloadThumb: false,
+          downloadPoster: false,
+          downloadFanart: false,
+          downloadSceneImages: false,
+          downloadTrailer: false,
+        },
+      },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect((await services.config.get()).translate.llmFallbackModelName).toBe("backup-model");
+
+    const start = async (payload: object) => {
+      const response = await fastify.inject({ method: "POST", url: "/trpc/scrape.start", headers, payload });
+      expect(response.statusCode).toBe(200);
+      const taskId = response.json().result.data.runId;
+      await waitForScrapeRunStatus(fastify, token, taskId, "completed");
+      return await services.scrape.snapshot({ taskId });
+    };
+    const imported = await start({
+      executionMode: "batch",
+      libraryId,
+      refs: [{ rootId, relativePath: "ABC-123.mp4" }],
+    });
+    const { nfoRootId, nfoRelativePath } = imported.items[0];
+    if (!nfoRootId || !nfoRelativePath) throw new Error("Missing published NFO");
+    const { repositories } = await services.persistence.getState();
+    const nfoPath = join((await repositories.mediaRoots.get(nfoRootId)).hostPath, nfoRelativePath);
+    const [movie] = await repositories.library.listEntries();
+    expect(imported.task.successCount).toBe(1);
+    expect(requests.map(({ model }) => model)).toEqual(["primary-model", "backup-model"]);
+    expect(requests[1].input).toContain(JSON.stringify({ title: null, plot, genres: [] }));
+    const published = parseNfoSnapshot(await readFile(nfoPath, "utf8")).crawlerData;
+    expect(published).toMatchObject({
+      title_zh: "主模型译名",
+      plot,
+      translation_failures: { plot: expect.stringContaining("Backup unavailable") },
+    });
+    expect(published.plot_zh).toBeUndefined();
+
+    backupAvailable = true;
+    requests.length = 0;
+    const refreshed = await start({ refreshMovieIds: [movie.id] });
+    expect(refreshed.task.successCount).toBe(1);
+    expect(requests.map(({ model }) => model)).toEqual(["primary-model", "backup-model"]);
+    expect(requests[1].input).toContain(JSON.stringify({ title: null, plot, genres: [] }));
+    const recovered = parseNfoSnapshot(await readFile(nfoPath, "utf8")).crawlerData;
+    expect(recovered).toMatchObject({ title_zh: "主模型译名", plot_zh: "补译简介" });
+    expect(recovered.translation_failures).toBeUndefined();
+  });
+
   it("completes published scrapes with translation errors and repairs them through batch NFO translation", async () => {
     const root = await createTempRoot("translation-failed-scrape");
     await writeFile(join(root, "ABC-123.mp4"), "video");

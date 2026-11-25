@@ -80,8 +80,15 @@ export class TranslateService {
     data: CrawlerData,
     config: Configuration,
     signal?: AbortSignal,
-    settled: SettledTranslations = {},
-    kept: ReadonlySet<keyof CrawlerData> = new Set(),
+    {
+      settled = {},
+      kept = new Set(),
+      allowFallbackModel = false,
+    }: {
+      settled?: SettledTranslations;
+      kept?: ReadonlySet<keyof CrawlerData>;
+      allowFallbackModel?: boolean;
+    } = {},
   ): Promise<{ data: CrawlerData; error: string | null }> {
     if (!config.translate.enableTranslation) {
       return {
@@ -123,56 +130,73 @@ export class TranslateService {
     const fields = { title: prepareField("title", data.title), plot: prepareField("plot", data.plot) };
     const translateGenres = selectedFields.has("genres") && !kept.has("genres");
     const genres = await this.genreTranslator.resolve(translateGenres ? (data.genres ?? []) : [], target, signal);
-    let metadataTranslation: Awaited<ReturnType<TranslateService["translateMetadata"]>> | null = null;
-    if (fields.title.source || fields.plot.source || genres.unresolvedEntries.length > 0) {
+    let pendingGenres = genres.unresolvedEntries.map(([, term], index) => ({ index, term }));
+    const translatedGenres: Array<string | null> = pendingGenres.map(() => null);
+    const fallbackModel = config.translate.llmFallbackModelName.trim();
+    const useFallback =
+      allowFallbackModel &&
+      config.translate.engine === "openai" &&
+      fallbackModel !== "" &&
+      fallbackModel !== config.translate.llmModelName.trim();
+    const attempts = [config];
+    if (useFallback) {
+      attempts.push({ ...config, translate: { ...config.translate, llmModelName: fallbackModel, llmMaxRetries: 0 } });
+    }
+
+    for (const attempt of attempts) {
+      const input = {
+        title: fields.title.source,
+        plot: fields.plot.source,
+        genres: pendingGenres.map(({ term }) => term),
+      };
+      if (!input.title && !input.plot && !input.genres.length) break;
+      if (attempt !== config) {
+        this.logger.info(`[translation] number=${data.number} fallbackModel=${fallbackModel}`);
+      }
+
+      let translation: Awaited<ReturnType<TranslateService["translateMetadata"]>>;
       try {
-        metadataTranslation = await this.translateMetadata(
-          {
-            title: fields.title.source,
-            plot: fields.plot.source,
-            genres: genres.unresolvedEntries.map(([, term]) => term),
-          },
-          target,
-          config,
-          signal,
-        );
+        translation = await this.translateMetadata(input, target, attempt, signal, useFallback);
       } catch (error) {
+        throwIfAborted(signal);
         if (isAbortError(error) || isUnrecoverableNetworkError(error)) throw error;
         const translationError = toErrorMessage(error);
-        if (fields.title.source) failures.title = translationError;
-        if (fields.plot.source) failures.plot = translationError;
-        if (genres.unresolvedEntries.length) failures.genres = translationError;
+        if (input.title) failures.title = translationError;
+        if (input.plot) failures.plot = translationError;
+        if (input.genres.length) failures.genres = translationError;
         this.logger.warn(`${data.number} 翻译失败：${translationError}`);
-      }
-    }
-    const mappedGenres = translateGenres
-      ? this.genreTranslator.remember(genres, metadataTranslation?.genres ?? [], target)
-      : (data.genres ?? []);
-
-    for (const field of ["title", "plot"] as const) {
-      const prepared = fields[field];
-      if (!prepared.source || !metadataTranslation) continue;
-      const returned = normalizeNewlines(metadataTranslation[field] ?? "").trim();
-      if (returned && (returned !== prepared.source || canKeepOriginalTranslation(prepared.source))) {
-        if (returned !== prepared.source) prepared.translated = ensureTargetChinese(returned, target);
-        delete failures[field];
         continue;
       }
-      const message = `翻译引擎未能翻译 ${field}（${data.number}），将返回原文：${returned ? UNCHANGED_TRANSLATION_REASON : "引擎未返回译文"}`;
-      this.logger.warn(message);
-      failures[field] = message;
-    }
 
-    if (translateGenres && metadataTranslation) {
-      if (
-        metadataTranslation.genres.length === genres.unresolvedEntries.length &&
-        metadataTranslation.genres.every((genre) => genre?.trim())
-      ) {
-        delete failures.genres;
-      } else if (genres.unresolvedEntries.length) {
-        failures.genres = "翻译引擎返回的类别不完整";
+      for (const field of ["title", "plot"] as const) {
+        const source = input[field];
+        if (!source) continue;
+        const returned = normalizeNewlines(translation[field] ?? "").trim();
+        if (returned && (returned !== source || canKeepOriginalTranslation(source))) {
+          fields[field].source = null;
+          if (returned !== source) fields[field].translated = ensureTargetChinese(returned, target);
+          delete failures[field];
+          continue;
+        }
+        const message = `翻译引擎未能翻译 ${field}（${data.number}），将返回原文：${returned ? UNCHANGED_TRANSLATION_REASON : "引擎未返回译文"}`;
+        if (attempt === attempts.at(-1)) this.logger.warn(message);
+        failures[field] = message;
       }
+
+      if (translation.genres.length === pendingGenres.length) {
+        pendingGenres = pendingGenres.filter(({ index }, responseIndex) => {
+          const value = translation.genres[responseIndex]?.trim();
+          if (!value) return true;
+          translatedGenres[index] = value;
+          return false;
+        });
+      }
+      if (pendingGenres.length) failures.genres = "翻译引擎返回的类别不完整";
     }
+    if (translateGenres && !pendingGenres.length) delete failures.genres;
+    const mappedGenres = translateGenres
+      ? this.genreTranslator.remember(genres, translatedGenres, target)
+      : (data.genres ?? []);
     const { translation_failures: _previousFailures, ...sourceData } = data;
 
     throwIfAborted(signal);
@@ -201,11 +225,12 @@ export class TranslateService {
     target: LanguageTarget,
     config: Configuration,
     signal?: AbortSignal,
+    allowPartialOutput = false,
   ): Promise<{ title: string | null; plot: string | null; genres: Array<string | null> }> {
     throwIfAborted(signal);
     return await runWithNetworkChannel("translation", async () => {
       if (config.translate.engine === "openai") {
-        return await this.openAiTranslator.translateMetadata(input, target, config, signal);
+        return await this.openAiTranslator.translateMetadata(input, target, config, signal, allowPartialOutput);
       }
       const sources = [input.title, input.plot].filter((text): text is string => text !== null);
       const translated = await this.translators[config.translate.engine](

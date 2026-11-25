@@ -9,12 +9,13 @@ import {
 import { toErrorMessage } from "../../../shared";
 
 type LlmHeadersInit = Headers | Record<string, string> | Array<[string, string]>;
+type LlmRequestInit = { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number; retry?: boolean };
 
 export interface LlmApiTransport {
   postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init?: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number },
+    init?: LlmRequestInit,
   ): Promise<RuntimeNetworkJsonResponse<TResponse>>;
 }
 
@@ -40,6 +41,7 @@ export interface LlmTextRequest {
   outputFormat: LlmOutputFormat;
   outputSchema?: LlmJsonSchema;
   timeout?: number;
+  retry?: boolean;
 }
 
 export interface LlmJsonSchema {
@@ -148,7 +150,7 @@ class FetchLlmApiTransport implements LlmApiTransport {
   async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number } = {},
+    init: LlmRequestInit = {},
   ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
@@ -246,7 +248,7 @@ export class LlmApiClient {
           : { reasoning: { effort: request.reasoning === "disabled" ? "none" : request.reasoning } }),
         ...this.buildOutputFormat(request, "responses"),
       },
-      { headers, signal, timeout: request.timeout },
+      { headers, signal, timeout: request.timeout, ...(request.retry === false ? { retry: false } : {}) },
     );
 
     if (responsesResponse.ok) {
@@ -282,7 +284,7 @@ export class LlmApiClient {
           },
         ],
       },
-      { headers, signal, timeout: request.timeout },
+      { headers, signal, timeout: request.timeout, ...(request.retry === false ? { retry: false } : {}) },
     );
 
     if (!response.ok) {
@@ -341,7 +343,7 @@ export class LlmApiClient {
   private async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init?: { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number },
+    init?: LlmRequestInit,
   ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
     try {
       return await this.transport.postJsonDetailed<TResponse>(url, payload, init);

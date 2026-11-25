@@ -359,7 +359,11 @@ export const settingsFields: Messages["settingsFields"] = {
       aliases: ["翻译范围", "只翻译简介"],
     },
     "translate.engine": { label: "翻译引擎", aliases: ["翻译引擎"] },
-    "translate.llmModelName": { label: "LLM 模型名称" },
+    "translate.llmModelName": { label: "LLM 主模型名称" },
+    "translate.llmFallbackModelName": {
+      label: "LLM 备用翻译模型",
+      description: "与主模型共用连接。入库或重新刮削时，用于补译主模型翻译失败的字段。留空时关闭。",
+    },
     "translate.llmApiKey": {
       label: "LLM 密钥（可选）",
       description: "默认 OpenAI 地址通常必须填写；本地或兼容服务是否需要密钥取决于服务端配置",

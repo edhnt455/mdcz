@@ -482,7 +482,7 @@ test.each(["deepl", "baidu"] as const)("translation verification sends edited %s
   );
 });
 
-test("LLM prompts save independently, recognition restores defaults and translation verification uses edits", async () => {
+test("LLM settings save independently, recognition restores defaults and translation verification uses edits", async () => {
   const saveConfig = vi.fn(async () => undefined);
   const resetConfig = vi.fn(async (_path?: string) => undefined);
   const testTranslation = vi.fn(async () => ({ status: "ok" as const, sample: "测试译文" }));
@@ -499,6 +499,16 @@ test("LLM prompts save independently, recognition restores defaults and translat
       <TranslateTopLevelSection />
     </FormHarness>,
   );
+  const fallbackModel = screen.getByLabelText("LLM 备用翻译模型", { exact: true });
+  await expect.element(fallbackModel).toHaveValue("");
+  await fallbackModel.fill("backup-model");
+  (fallbackModel.element() as HTMLInputElement).blur();
+  await expect
+    .poll(() => saveConfig.mock.calls)
+    .toContainEqual([{ translate: { llmFallbackModelName: "backup-model" } }]);
+  await fallbackModel.fill("");
+  (fallbackModel.element() as HTMLInputElement).blur();
+  await expect.poll(() => saveConfig.mock.calls).toContainEqual([{ translate: { llmFallbackModelName: "" } }]);
   const extraInstructions = "\nAdditional instruction".repeat(40);
   const recognitionPrompt = screen.getByLabelText("LLM 兜底番号识别提示词", { exact: true });
   await expect.element(recognitionPrompt).toHaveValue("Saved extraction instructions");
@@ -596,7 +606,8 @@ test("settings sections expose public labels and the library template notice", a
   );
   await expect.element(translate.getByText("翻译服务")).toBeVisible();
   await expect.element(translate.getByText("翻译引擎")).toBeVisible();
-  await expect.element(translate.getByLabelText("LLM 模型名称", { exact: true })).toBeVisible();
+  await expect.element(translate.getByLabelText("LLM 主模型名称", { exact: true })).toBeVisible();
+  await expect.element(translate.getByLabelText("LLM 备用翻译模型", { exact: true })).not.toBeInTheDocument();
   await expect.element(translate.getByLabelText("LLM 前置提示词", { exact: true })).toBeVisible();
   await expect.element(translate.getByLabelText("LLM 兜底番号识别提示词", { exact: true })).toBeVisible();
   await expect.element(translate.getByLabelText("LLM 翻译提示词", { exact: true })).toBeVisible();

@@ -26,6 +26,7 @@ export const prepareOnlineMetadata = async (input: {
     keepEdits: input.keepEdits,
     configuration: input.configuration,
     translateService: input.translateService,
+    allowFallbackModel: true,
     signal: input.signal,
   });
   throwIfAborted(input.signal);

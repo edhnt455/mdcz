@@ -19,6 +19,7 @@ export const publishMetadata = async (input: {
   keepPublishedGenres?: boolean;
   configuration: Configuration;
   translateService: Pick<TranslateService, "translateCrawlerData">;
+  allowFallbackModel?: boolean;
   signal?: AbortSignal;
 }): Promise<{ data: CrawlerData; error: string | null }> => {
   const published = input.published?.crawlerData;
@@ -57,5 +58,9 @@ export const publishMetadata = async (input: {
     }
   }
 
-  return await input.translateService.translateCrawlerData(data, input.configuration, input.signal, settled, kept);
+  return await input.translateService.translateCrawlerData(data, input.configuration, input.signal, {
+    settled,
+    kept,
+    allowFallbackModel: input.allowFallbackModel,
+  });
 };

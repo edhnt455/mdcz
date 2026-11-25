@@ -483,6 +483,7 @@ export function TranslateSection() {
       {shouldMountConditionalSettings(isLLM || aiNumberFallback, search) && (
         <>
           <TextField name="translate.llmModelName" />
+          {shouldMountConditionalSettings(isLLM, search) && <TextField name="translate.llmFallbackModelName" />}
           <SecretField name="translate.llmApiKey" />
           <UrlField name="translate.llmBaseUrl" />
           {serviceType === "openai-compatible" && (

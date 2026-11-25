@@ -17,6 +17,12 @@ const metadataTranslationSchema = z.strictObject({
   plot: z.string().trim().min(1).nullable(),
   genres: z.array(z.string().trim().min(1)),
 });
+const partialMetadataText = metadataTranslationSchema.shape.title.catch(null).default(null);
+const partialMetadataTranslationSchema = z.strictObject({
+  title: partialMetadataText,
+  plot: partialMetadataText,
+  genres: z.array(partialMetadataText).catch([]).default([]),
+});
 
 export const LLM_TEXT_TRANSLATION_SCHEMA: LlmJsonSchema = {
   name: "text_translation",
@@ -78,7 +84,7 @@ export const cleanTranslationOutput = (
 };
 
 export type LlmMetadataTranslationInput = z.infer<typeof metadataTranslationSchema>;
-export type LlmMetadataTranslationResult = z.infer<typeof metadataTranslationSchema>;
+export type LlmMetadataTranslationResult = z.infer<typeof partialMetadataTranslationSchema>;
 
 export class OpenAiTranslator {
   constructor(private readonly requests: LlmRequestService) {}
@@ -121,6 +127,7 @@ export class OpenAiTranslator {
     target: LanguageTarget,
     config: Configuration,
     signal?: AbortSignal,
+    allowPartialOutput = false,
   ): Promise<LlmMetadataTranslationResult> {
     if (!input.title && !input.plot && input.genres.length === 0) {
       return { title: null, plot: null, genres: [] };
@@ -147,7 +154,9 @@ export class OpenAiTranslator {
     );
     const content = await this.requests.requestText(config.translate, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
     try {
-      const parsed = metadataTranslationSchema.parse(JSON.parse(content ?? ""));
+      const result: unknown = JSON.parse(content ?? "");
+      if (allowPartialOutput) return partialMetadataTranslationSchema.parse(result);
+      const parsed = metadataTranslationSchema.parse(result);
       if (
         (input.title === null) !== (parsed.title === null) ||
         (input.plot === null) !== (parsed.plot === null) ||

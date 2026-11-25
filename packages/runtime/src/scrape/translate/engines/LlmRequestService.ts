@@ -30,11 +30,9 @@ export class LlmRequestService {
   ) {}
 
   requestText(config: Configuration["translate"], prompt: string, signal?: AbortSignal, outputSchema?: LlmJsonSchema) {
-    return this.executeRequestWithRetry(
-      config,
-      () => this.llmApiClient.generateText(toLlmTextRequest(config, prompt, outputSchema), signal),
-      signal,
-    );
+    const request = toLlmTextRequest(config, prompt, outputSchema);
+    if (config.llmMaxRetries === 0) request.retry = false;
+    return this.executeRequestWithRetry(config, () => this.llmApiClient.generateText(request, signal), signal);
   }
 
   private getQueue(config: Configuration["translate"]): PQueue {
@@ -72,9 +70,8 @@ export class LlmRequestService {
           signal ? { signal } : undefined,
         );
       } catch (error) {
-        if (isAbortError(error)) {
-          throw error;
-        }
+        throwIfAborted(signal);
+        if (isAbortError(error)) throw error;
         if (attempt >= maxRetryCount) {
           throw error;
         }

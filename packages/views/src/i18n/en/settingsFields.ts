@@ -452,7 +452,12 @@ const fields: Record<FieldKey, FieldText> = {
     aliases: ["translation scope"],
   },
   "translate.engine": { label: "Translation engine", aliases: ["translator", "translation"] },
-  "translate.llmModelName": { label: "LLM model name", aliases: ["model", "openai", "llm"] },
+  "translate.llmModelName": { label: "Primary LLM model", aliases: ["model", "openai", "llm"] },
+  "translate.llmFallbackModelName": {
+    label: "Fallback LLM for translation",
+    description:
+      "Uses the same connection to retry fields that failed translation during import or re-scraping. Leave blank to disable.",
+  },
   "translate.llmApiKey": {
     label: "LLM API key (optional)",
     description:

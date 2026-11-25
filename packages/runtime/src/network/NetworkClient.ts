@@ -122,6 +122,7 @@ export interface NetworkJsonResponse<T = unknown> {
 
 interface RequestBehavior<TResult> {
   allowNonOkResponse?: boolean;
+  retry?: boolean;
   retryLogPrefix?: string;
   transformResponse?: (response: RawNetworkResponse) => Promise<TResult> | TResult;
 }
@@ -200,7 +201,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init: Omit<NetworkRequestInit, "method" | "body"> = {},
+    { retry, ...init }: Omit<NetworkRequestInit, "method" | "body"> & { retry?: boolean } = {},
   ): Promise<NetworkJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
@@ -216,6 +217,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       undefined,
       {
         allowNonOkResponse: true,
+        retry,
         transformResponse: async (response) => ({
           ok: response.ok,
           status: response.status,
@@ -501,7 +503,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       throw createAbortError();
     }
 
-    const maxRetries = this.resolveRetryCount();
+    const maxRetries = behavior.retry === false ? 0 : this.resolveRetryCount();
     let attempt = 0;
     const transformResponse = behavior.transformResponse ?? ((response: RawNetworkResponse) => response as TResult);
     const retryTransportError = async (error: unknown): Promise<void> => {

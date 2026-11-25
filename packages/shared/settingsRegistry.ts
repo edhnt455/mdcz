@@ -153,6 +153,7 @@ const RAW_FIELD_REGISTRY = [
   { key: "translate.baiduSecretKey", anchor: "translate" },
   { key: "translate.baiduApiKey", anchor: "translate" },
   { key: "translate.llmModelName", anchor: "translate" },
+  { key: "translate.llmFallbackModelName", anchor: "translate" },
   { key: "translate.llmApiKey", anchor: "translate" },
   { key: "translate.llmBaseUrl", anchor: "translate" },
   { key: "translate.llmApiFormat", anchor: "translate" },
