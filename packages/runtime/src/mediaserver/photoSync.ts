@@ -83,6 +83,7 @@ export const runMediaServerPhotoSync = async <TPerson>(
         return "skipped";
       }
 
+      options.signalService.showLogText(`正在查询 ${options.serviceName} 演员照片：${actorName}`);
       const actorSource = await options.actorSourceProvider.lookup(options.configuration, {
         name: actorName,
         requiredField: "photo_url",

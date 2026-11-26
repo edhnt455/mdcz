@@ -386,7 +386,7 @@ describe("BatchNfoTranslator", () => {
       .mockResolvedValueOnce(emptyResponse)
       .mockResolvedValue({
         ...emptyResponse,
-        data: { output_text: '[N] {"translations":["相同标题","剧情一"]}' },
+        data: { output_text: ' <think>{"draft":true}</think> [N] {"translations":["相同标题","剧情一"]}' },
       });
     const client = new LlmApiClient({ postJsonDetailed });
     const generateText = vi.fn(client.generateText.bind(client));

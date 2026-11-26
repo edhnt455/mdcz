@@ -187,6 +187,8 @@ export class LibraryService {
       ...filter,
       page: input?.page ?? 1,
       limit: input?.pageSize ?? 10,
+      sortBy: input?.sortBy,
+      sortOrder: input?.sortOrder,
     });
 
     return {

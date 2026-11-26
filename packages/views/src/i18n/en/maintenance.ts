@@ -1,4 +1,8 @@
 export const maintenance = {
+  posterRedraw: {
+    redraw: "Poster badges will be redrawn when applied.",
+    kept: "Current poster will be kept because its original image could not be verified.",
+  },
   // PathPlanView
   pathChange: "Path change",
   currentPath: "Current path",

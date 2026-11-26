@@ -21,6 +21,19 @@ export interface RuntimeDownloadRequestInit extends RuntimeRequestInit {
   totalTimeoutMs?: number;
 }
 
+export interface RuntimeDetailedRequestInit extends RuntimeRequestInit {
+  maxRetries?: number;
+}
+
+export interface RuntimeJsonResponse<T = unknown> {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  resolvedUrl: string;
+  headers: Headers;
+  data: T | string | null;
+}
+
 export interface RuntimeProbeResult {
   ok: boolean;
   status: number;
@@ -42,15 +55,8 @@ export interface RuntimeNetworkClient {
   postJsonDetailed?<TResponse>(
     url: string,
     payload: unknown,
-    init?: RuntimeRequestInit,
-  ): Promise<{
-    ok: boolean;
-    status: number;
-    statusText: string;
-    resolvedUrl: string;
-    headers: Headers;
-    data: TResponse | string | null;
-  }>;
+    init?: RuntimeDetailedRequestInit,
+  ): Promise<RuntimeJsonResponse<TResponse>>;
   head(url: string, init?: RuntimeRequestInit): Promise<{ status: number; ok: boolean }>;
   probe(url: string, init?: RuntimeProbeRequestInit): Promise<RuntimeProbeResult>;
 }
@@ -102,15 +108,8 @@ export class FetchNetworkClient implements RuntimeNetworkClient {
   async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init: RuntimeRequestInit = {},
-  ): Promise<{
-    ok: boolean;
-    status: number;
-    statusText: string;
-    resolvedUrl: string;
-    headers: Headers;
-    data: TResponse | string | null;
-  }> {
+    init: RuntimeDetailedRequestInit = {},
+  ): Promise<RuntimeJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
     const response = await this.fetch(url, { ...init, body: JSON.stringify(payload), headers, method: "POST" }, true);

@@ -60,6 +60,7 @@ describe("Persistence migrations", () => {
         "library_item_assets_item_idx",
         "library_item_assets_output_idx",
         "library_item_files_root_path_idx",
+        "library_item_files_item_root_idx",
         "scan_results_task_root_path_idx",
         "scan_tasks_queue_idx",
         "scan_task_events_task_created_at_idx",
@@ -182,7 +183,7 @@ describe("Persistence migrations", () => {
         { name: "scrape_runs" },
       ]);
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 26,
+        count: 27,
       });
 
       expect(
@@ -252,7 +253,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 26,
+        count: 27,
       });
       expect(database.sqlite.prepare("SELECT id, root_id, status FROM scan_tasks").all()).toEqual([
         { id: "scan-1", root_id: "root-1", status: "completed" },
@@ -313,7 +314,7 @@ describe("Persistence migrations", () => {
       runMigrations(database);
 
       expect(database.sqlite.prepare("SELECT count(*) AS count FROM __drizzle_migrations").get()).toEqual({
-        count: 24,
+        count: 25,
       });
       const fresh = createTestPersistenceDatabase();
       try {
@@ -555,13 +556,19 @@ describe("LibraryRepository", () => {
     expect(pending.list().map((item) => item.relativePath)).toEqual(["B.mp4"]);
   });
 
-  it("paginates library entries in stable order and clamps missing pages", async () => {
+  it("paginates library entries in either direction with stable ties and clamps missing pages", async () => {
     database = createTestPersistenceDatabase();
     await addRoots("root-1", "root-2");
     const repository = new LibraryRepository(database);
     const createdAt = new Date("2026-05-01T00:00:00.000Z");
     await repository.upsertEntry({
-      movie: { id: "entry-a", title: "Alpha", createdAt },
+      movie: {
+        id: "entry-a",
+        title: "Original A",
+        number: "ABC-10",
+        crawlerDataJson: JSON.stringify({ title_zh: "阿片 10" }),
+        createdAt,
+      },
       files: [
         {
           rootId: "root-1",
@@ -571,7 +578,13 @@ describe("LibraryRepository", () => {
       ],
     });
     await repository.upsertEntry({
-      movie: { id: "entry-b", title: "Beta", createdAt },
+      movie: {
+        id: "entry-b",
+        title: "Original B",
+        number: "abc-2",
+        crawlerDataJson: JSON.stringify({ title_zh: "阿片 2" }),
+        createdAt,
+      },
       files: [
         {
           rootId: "root-1",
@@ -581,7 +594,13 @@ describe("LibraryRepository", () => {
       ],
     });
     await repository.upsertEntry({
-      movie: { id: "entry-c", title: "Gamma", createdAt: new Date("2026-05-02T00:00:00.000Z") },
+      movie: {
+        id: "entry-c",
+        title: "阿片 02",
+        number: "ABC-02",
+        crawlerDataJson: "malformed",
+        createdAt: new Date("2026-05-02T00:00:00.000Z"),
+      },
       files: [
         {
           rootId: "root-2",
@@ -606,6 +625,70 @@ describe("LibraryRepository", () => {
       fileCount: 0,
       totalBytes: 0,
     });
+
+    for (const [sortBy, ascending] of [
+      ["createdAt", ["entry-a", "entry-b", "entry-c"]],
+      ["number", ["entry-b", "entry-c", "entry-a"]],
+      ["title", ["entry-b", "entry-c", "entry-a"]],
+    ] as const) {
+      for (const sortOrder of ["asc", "desc"] as const) {
+        const options = { sortBy, sortOrder, limit: 2 };
+        const first = await repository.listEntriesPage(options);
+        const second = await repository.listEntriesPage({ ...options, page: 2 });
+        expect(first.entries.concat(second.entries).map(({ id }) => id)).toEqual(
+          sortOrder === "asc" ? ascending : [...ascending].reverse(),
+        );
+        expect(second).toMatchObject({ page: 2, total: 3, fileCount: 3 });
+      }
+    }
+    const titlePage = { sortBy: "title", sortOrder: "asc", limit: 2 } as const;
+    database.sqlite
+      .prepare("UPDATE library_items SET crawler_data_json = ? WHERE id = ?")
+      .run(JSON.stringify({ title_zh: "阿片 1" }), "entry-a");
+    await expect(repository.listEntriesPage(titlePage)).resolves.toMatchObject({
+      entries: [{ id: "entry-a" }, { id: "entry-b" }],
+    });
+    await expect(repository.listEntriesPage({ ...titlePage, rootId: "root-2" })).resolves.toMatchObject({
+      entries: [{ id: "entry-c" }],
+      total: 1,
+    });
+  });
+
+  it("refreshes cached sort order after the worker writes through a separate connection", async () => {
+    const directory = await createTempDirectory("library-sort-wal-");
+    const path = join(directory.path, "library.sqlite");
+    database = createPersistenceDatabase({ path });
+    try {
+      runMigrations(database);
+      await addRoots("root-1");
+      const writer = new LibraryRepository(database);
+      for (const [id, number] of [
+        ["first", "ABC-2"],
+        ["second", "ABC-10"],
+      ]) {
+        writer.writeEntry({ id, number }, [{ fileId: id, rootId: "root-1", rootRelativePath: `${id}.mp4` }]);
+      }
+      const reader = createPersistenceDatabase({ path, readonly: true });
+      try {
+        const repository = new LibraryRepository(reader);
+        const sort = { sortBy: "number", sortOrder: "asc", limit: 1 } as const;
+        await expect(repository.listEntriesPage(sort)).resolves.toMatchObject({ entries: [{ id: "first" }] });
+        writer.writeEntry({ id: "second", number: "ABC-1" }, []);
+        await expect(repository.listEntriesPage(sort)).resolves.toMatchObject({ entries: [{ id: "second" }] });
+        writer.removeFile("first");
+        await expect(repository.listEntriesPage({ ...sort, page: 2 })).resolves.toMatchObject({
+          entries: [{ id: "second" }],
+          page: 1,
+          total: 1,
+        });
+      } finally {
+        reader.close();
+      }
+    } finally {
+      database.close();
+      database = undefined;
+      await directory.cleanup();
+    }
   });
 
   it("filters paged library entries by file/root and metadata in SQL", async () => {

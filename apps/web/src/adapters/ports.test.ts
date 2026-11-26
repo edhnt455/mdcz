@@ -1,4 +1,5 @@
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
+import { toLocalFileUrl } from "@mdcz/shared/mediaRef";
 import type { LocalScanEntry } from "@mdcz/shared/types";
 import { DetailPanelAdapter } from "@mdcz/views/adapters";
 import { getT } from "@mdcz/views/i18n";
@@ -52,10 +53,12 @@ describe("web detail action port", () => {
         port: createWebDetailPort(),
         item: {
           id: "root-1:ABC-001.mp4",
+          resultId: "result-1",
           number: "ABC-001",
           path: "ABC-001.mp4",
           status: "success",
           title: "ABC-001",
+          assets: [{ type: "remote", kind: "poster", url: "https://img.example/poster.jpg" }],
         },
       }),
     );
@@ -66,14 +69,19 @@ describe("web detail action port", () => {
     expect(html).not.toContain(t.play);
     expect(html).not.toContain(t.openSourceFolder);
     expect(html).not.toContain(t.openMetadataFolder);
+    expect(html).not.toContain(t.editCover);
     expect(html).toContain(t.editNfo);
   });
 
-  it("resolves root-relative image candidates through authenticated library assets", async () => {
+  it("requests local WebP variants while keeping remote images and original assets intact", async () => {
     setAdminToken("token-1");
     const port = createWebDetailPort();
-    const [poster, remote] = await port.resolveImageCandidates(
-      ["JAV_output/ABC-001/poster.jpg", "https://img.example/poster.jpg"],
+    const [poster, scene, remote] = await port.resolveImageCandidates(
+      [
+        "JAV_output/ABC-001/poster.jpg",
+        toLocalFileUrl({ rootId: "metadata-root", relativePath: "JAV_output/ABC-001/extrafanart/1.jpg" }),
+        "https://img.example/poster.jpg",
+      ],
       undefined,
       {
         id: "root-1:ABC-001.mp4",
@@ -88,10 +96,18 @@ describe("web detail action port", () => {
         path: "ABC-001.mp4",
         status: "success",
       },
+      360,
     );
 
-    expect(poster).toContain("/api/library/assets/metadata-root/JAV_output/ABC-001/poster.jpg");
+    const assetBase = "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001";
+    expect(poster).toBe(`${assetBase}/poster.jpg?token=token-1&w=360&format=webp`);
+    expect(scene).toBe(`${assetBase}/extrafanart/1.jpg?token=token-1&w=360&format=webp`);
     expect(remote).toBe("https://img.example/poster.jpg");
+    await expect(
+      port.resolveImageCandidates([
+        toLocalFileUrl({ rootId: "metadata-root", relativePath: "JAV_output/ABC-001/trailer.mp4" }),
+      ]),
+    ).resolves.toEqual([`${assetBase}/trailer.mp4?token=token-1`]);
   });
 
   it("resolves selected-maintenance absolute local image candidates relative to the media root", async () => {
@@ -189,8 +205,9 @@ describe("web detail action port", () => {
       "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/thumb.png?token=token-1",
     );
     expect(save).toHaveBeenCalledWith({ id: "result-1", crop: initialCrop });
-    expect(result.posterUrl).toContain("poster.png");
-    expect(result.posterUrl).toContain("revision=42");
+    expect(result.posterUrl).toBe(
+      "http://127.0.0.1:3838/api/library/assets/metadata-root/JAV_output/ABC-001/poster.png?token=token-1&w=360&format=webp&revision=42",
+    );
   });
 });
 

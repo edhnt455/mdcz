@@ -77,7 +77,7 @@ export class ScrapeService {
   private readonly prepareScrapeItem?: PrepareScrapeItem;
   private readonly libraries: Pick<MediaLibraryService, "get">;
   private readonly taskGate: LibraryTaskGate;
-  private imageWatermarkService: ImageWatermarkService | null = null;
+  private readonly imageWatermarkService: ImageWatermarkService;
   private runnerInstance: ScrapeRunner | null = null;
   private runnerInitPromise: Promise<ScrapeRunner> | null = null;
   private scrapeInvalidationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -111,10 +111,14 @@ export class ScrapeService {
       invalidate: () => this.taskEvents.invalidate("library", "pending", "scrape-history"),
     });
     this.nfoAdapter = new ServerNfoAdapter(this.mediaRoots, this.config, new NfoGenerator(), this.persistence);
+    this.imageWatermarkService = new ImageWatermarkService({
+      dataDir: this.config.runtimePaths.dataDir,
+      builtinDirectory: join(dirname(resolveServerBundledMappingDirectory()), "watermark"),
+    });
     this.posterCropAdapter = new ServerPosterCropAdapter(
       this.mediaRoots,
       this.config,
-      new PosterCropService(),
+      new PosterCropService(this.imageWatermarkService),
       this.persistence,
     );
   }
@@ -125,11 +129,6 @@ export class ScrapeService {
     this.runnerInitPromise ??= (async () => {
       const state = await this.persistence.initialize();
       if (this.closed) throw new Error("刮削队列正在关闭");
-      this.imageWatermarkService ??= new ImageWatermarkService({
-        dataDir: this.config.runtimePaths.dataDir,
-        builtinDirectory: join(dirname(resolveServerBundledMappingDirectory()), "watermark"),
-      });
-      const imageWatermarkService = this.imageWatermarkService;
       this.runnerInstance = new ScrapeRunner({
         taskGate: this.taskGate,
         libraries: this.libraries,
@@ -183,7 +182,7 @@ export class ScrapeService {
             logger: runtimeLoggerService.getLogger("ScrapeRunner"),
             signal,
             signalService,
-            watermarkService: imageWatermarkService,
+            watermarkService: this.imageWatermarkService,
           }),
         logger: runtimeLoggerService.getLogger("ScrapeRunner"),
         onCommitted: (runId, result) => {

@@ -11,6 +11,7 @@ import {
   getNfoReadCandidates,
   type NfoGenerator,
   type PosterCropService,
+  readPosterNfos,
   registeredPosterCropContext,
   writeNfoPublication,
 } from "@mdcz/runtime/scrape";
@@ -124,8 +125,18 @@ export class ServerPosterCropAdapter {
   }
 
   async session(record: ServerScrapeArtifactRecord) {
-    const [{ root, videoPath, assets }, configuration] = await Promise.all([this.context(record), this.config.get()]);
-    const session = await this.posterCropService.prepare(videoPath, configuration.naming.assetNamingMode, assets);
+    const [{ root, videoPath, assets, nfoPaths }, configuration] = await Promise.all([
+      this.context(record),
+      this.config.get(),
+    ]);
+    const [nfo] = await readPosterNfos(nfoPaths);
+    const badgeRecords = nfo ? parseNfoSnapshot(nfo.xml).localState?.badgeRecords : undefined;
+    const session = await this.posterCropService.prepare(
+      videoPath,
+      configuration.naming.assetNamingMode,
+      assets,
+      badgeRecords,
+    );
     return {
       rootId: root.id,
       sourceRelativePath: requireRootRelativeAssetPath(root, session.sourcePath),
@@ -137,7 +148,7 @@ export class ServerPosterCropAdapter {
   }
 
   async save(record: ServerScrapeArtifactRecord, input: PosterCropSaveInput) {
-    const [{ root, videoPath, assets, movieId }, configuration] = await Promise.all([
+    const [{ root, videoPath, assets, movieId, nfoPaths }, configuration] = await Promise.all([
       this.context(record),
       this.config.get(),
     ]);
@@ -151,6 +162,8 @@ export class ServerPosterCropAdapter {
         library: state.repositories.library,
         movieId,
         roots: await this.mediaRoots.listRoots(),
+        nfoPaths,
+        configuration,
       },
     );
     return {

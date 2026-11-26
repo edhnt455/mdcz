@@ -87,6 +87,9 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
         ready: group.previewState.ready,
         blockedError: group.previewState.blockedPreview?.error,
         diffCount: group.previewState.diffCount,
+        posterRedraw: group.previewItems.find(
+          (preview) => preview.posterRedraw && fieldSelections[preview.fileId]?.poster_url !== "new",
+        )?.posterRedraw,
         hasPathChange: group.previewState.hasPathChange,
         changedPathItems: group.previewState.changedPathItems.map(({ entry, pathDiff }) => ({
           fileId: entry.fileId,
@@ -94,7 +97,7 @@ export function MaintenanceBatchBarAdapter({ port }: { port: MaintenanceActionPo
           pathDiff,
         })),
       })),
-    [selectedEntriesViewModel.groups],
+    [fieldSelections, selectedEntriesViewModel.groups],
   );
 
   const handlePreview = async (): Promise<void> => {

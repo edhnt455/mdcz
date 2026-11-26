@@ -1,5 +1,5 @@
 import { DEFAULT_FILENAME_KEYWORDS } from "@mdcz/shared/filenameKeywords";
-import { LIBRARY_PAGE_SIZES } from "@mdcz/shared/libraryPagination";
+import { LIBRARY_PAGE_SIZES, type LibrarySort } from "@mdcz/shared/libraryPagination";
 import type { LibraryEntryDto, LibraryListResponse, LibraryMatchesInput } from "@mdcz/shared/serverDtos";
 import { afterEach, expect, it } from "vitest";
 import { closeTestServers, createTempRoot, createTestLibrary, createTestServer, loginAsAdmin } from "./app.testSupport";
@@ -274,12 +274,13 @@ it("pages filtered movies and snapshots every match using the same scope without
   const read = async (
     page: number,
     pageSize: (typeof LIBRARY_PAGE_SIZES)[number] = 10,
+    sort?: LibrarySort,
   ): Promise<LibraryListResponse> => {
     const response = await fastify.inject({
       method: "POST",
       url: "/trpc/library.list",
       headers,
-      payload: { ...scope, page, pageSize },
+      payload: { ...scope, ...sort, page, pageSize },
     });
     expect(response.statusCode, response.body).toBe(200);
     return response.json().result.data;
@@ -297,6 +298,11 @@ it("pages filtered movies and snapshots every match using the same scope without
     pagedIds.push(...result.entries.map((entry) => entry.id));
   }
   expect(pagedIds).toEqual(expectedIds);
+  for (const sortBy of ["createdAt", "number", "title"] as const) {
+    const result = await read(2, 20, { sortBy, sortOrder: "asc" });
+    expect(result).toMatchObject({ page: 2, total: 121, fileCount: 121, totalBytes: 121 });
+    expect(result.entries.map(({ id }) => id)).toEqual(expectedIds.toReversed().slice(20, 40));
+  }
   for (const pageSize of LIBRARY_PAGE_SIZES) {
     const result = await read(1, pageSize);
     expect(result.entries).toHaveLength(pageSize);
@@ -331,7 +337,7 @@ it("pages filtered movies and snapshots every match using the same scope without
   );
   expect((await read(1)).total).toBe(122);
   expect(snapshot).toHaveLength(121);
-  for (const payload of [{ page: 0 }, { page: 1.5 }, { pageSize: 15 }]) {
+  for (const payload of [{ page: 0 }, { page: 1.5 }, { pageSize: 15 }, { sortBy: "size" }, { sortOrder: "up" }]) {
     const response = await fastify.inject({ method: "POST", url: "/trpc/library.list", headers, payload });
     expect(response.statusCode).toBe(400);
   }

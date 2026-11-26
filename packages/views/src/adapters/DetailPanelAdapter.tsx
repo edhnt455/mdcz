@@ -3,12 +3,12 @@ import type { NormalizedCropRegion } from "@mdcz/shared/posterCrop";
 import { findScrapeResultGroup } from "@mdcz/shared/viewModels/scrapeResultGrouping";
 import { selectScrapeResults, useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { useUIStore } from "@mdcz/views/state/uiStore";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { confirmDialog } from "../common";
 import { type DetailPanelCompareProps, DetailPanelView, toDetailViewItemFromScrapeResult } from "../detail";
 import { buildDetailArtworkCandidates } from "../detail/imageCandidates";
-import type { DetailViewItem } from "../detail/types";
+import { type DetailViewItem, detailImageWidths, type ResolveImageCandidates } from "../detail/types";
 import { getT, useT } from "../i18n";
 import {
   createEmptyEditableNfoData,
@@ -57,8 +57,8 @@ function useResolvedArtworkSources(item: DetailViewItem | null, port: DetailActi
 
     const resolveSources = async () => {
       const resolved = await Promise.all([
-        port.resolveImageCandidates(posterCandidates, baseDir, item),
-        port.resolveImageCandidates(thumbCandidates, baseDir, item),
+        port.resolveImageCandidates(posterCandidates, baseDir, item, detailImageWidths.poster),
+        port.resolveImageCandidates(thumbCandidates, baseDir, item, detailImageWidths.backdrop),
         port.resolveImageCandidates(trailerCandidates, baseDir, item),
       ]);
 
@@ -102,7 +102,6 @@ interface DetailPanelProps {
 }
 
 export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, compare }: DetailPanelProps) {
-  const t = useT();
   const results = useScrapeStore((state) => (explicitItem === undefined ? selectScrapeResults(state) : EMPTY_RESULTS));
   const selectedResultId = useUIStore((state) => (explicitItem === undefined ? state.selectedResultId : null));
 
@@ -116,10 +115,39 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
           })(),
     [explicitItem, results, selectedResultId],
   );
-  const [posterOverride, setPosterOverride] = useState("");
-  const artwork = useResolvedArtworkSources(compare ? null : item, port, posterOverride);
-  const resolveImageCandidates = useCallback(
-    async (candidates: string[], baseDir?: string) => await port.resolveImageCandidates(candidates, baseDir, item),
+  const [savedPosters, setSavedPosters] = useState<Record<string, string>>({});
+  const resultId = item?.resultId;
+  const updateSavedPoster = useCallback(
+    (posterUrl: string) => {
+      if (resultId) setSavedPosters((current) => ({ ...current, [resultId]: posterUrl }));
+    },
+    [resultId],
+  );
+  return (
+    <SelectedDetailPanel
+      key={JSON.stringify([item?.id, item?.resultId, Boolean(compare)])}
+      item={item}
+      port={port}
+      emptyMessage={emptyMessage}
+      compare={compare}
+      savedPoster={resultId ? savedPosters[resultId] : undefined}
+      updateSavedPoster={updateSavedPoster}
+    />
+  );
+}
+
+function SelectedDetailPanel({
+  port,
+  item,
+  emptyMessage,
+  compare,
+  savedPoster,
+  updateSavedPoster,
+}: DetailPanelProps & { savedPoster?: string; updateSavedPoster: (posterUrl: string) => void }) {
+  const t = useT();
+  const artwork = useResolvedArtworkSources(compare ? null : (item ?? null), port, savedPoster ?? "");
+  const resolveImageCandidates = useCallback<ResolveImageCandidates>(
+    (candidates, baseDir, width) => port.resolveImageCandidates(candidates, baseDir, item, width),
     [item, port],
   );
 
@@ -130,35 +158,24 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
   const [nfoValidationErrors, setNfoValidationErrors] = useState<NfoValidationErrors>({});
   const [nfoLoading, setNfoLoading] = useState(false);
   const [nfoSaving, setNfoSaving] = useState(false);
-  const [posterEditorOpen, setPosterEditorOpen] = useState(false);
-  const [posterCropSession, setPosterCropSession] = useState<PosterCropEditSession | null>(null);
-  const [posterCrop, setPosterCrop] = useState<NormalizedCropRegion | null>(null);
-  const [posterCropSaving, setPosterCropSaving] = useState(false);
+  const [posterDraft, setPosterDraft] = useState<{ session: PosterCropEditSession; crop: NormalizedCropRegion } | null>(
+    null,
+  );
+  const [posterWork, setPosterWork] = useState<"loading" | "saving" | null>(null);
+  const pendingPosterWork = useRef<"loading" | "saving" | null>(null);
+  const canEditPoster =
+    !compare &&
+    item?.status === "success" &&
+    Boolean(item.resultId) &&
+    (item.assets?.some((asset) => asset.type === "local" && (asset.kind === "poster" || asset.kind === "thumb")) ??
+      true);
   const nfoDirty = nfoOpen && serializeEditableNfoData(nfoData) !== nfoInitialSnapshot;
-  const posterCropDirty =
-    posterEditorOpen &&
-    posterCropSession !== null &&
-    posterCrop !== null &&
-    JSON.stringify(posterCrop) !== JSON.stringify(posterCropSession.initialCrop);
-
-  useEffect(() => {
-    let cancelled = false;
-    setPosterOverride("");
-    setPosterCropSession(null);
-    setPosterCrop(null);
-    if (!item || item.status !== "success") return;
-    void port
-      .preparePosterCrop(item)
-      .then((session) => {
-        if (cancelled) return;
-        setPosterCropSession(session);
-        setPosterCrop(session.initialCrop);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [item, port]);
+  useLayoutEffect(
+    () => () => {
+      pendingPosterWork.current = null;
+    },
+    [],
+  );
 
   const openNfoEditor = useCallback(
     async (path: string) => {
@@ -238,47 +255,42 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
     await openNfoEditor(path);
   }, [item?.nfoPath, item?.path, openNfoEditor]);
 
-  const handleOpenPosterEditor = useCallback(() => {
-    if (!posterCropSession) return;
-    setPosterCrop(posterCropSession.initialCrop);
-    setPosterEditorOpen(true);
-  }, [posterCropSession]);
-
-  const setPosterEditorOpenSafe = useCallback(
-    async (open: boolean) => {
-      if (open) {
-        setPosterEditorOpen(true);
-        return;
-      }
-      if (posterCropSaving) return;
-      if (posterCropDirty && !(await confirmDialog({ title: getT().scrape.discardPosterChanges, destructive: true })))
-        return;
-      setPosterEditorOpen(false);
-    },
-    [posterCropDirty, posterCropSaving],
-  );
-
-  const handleSavePosterCrop = useCallback(async () => {
-    if (!item || !posterCrop) return;
+  const runPosterWork = async (crop?: NormalizedCropRegion) => {
+    if (!canEditPoster || !item || pendingPosterWork.current) return;
+    const work = crop ? "saving" : "loading";
+    pendingPosterWork.current = work;
+    setPosterWork(work);
     try {
-      setPosterCropSaving(true);
-      const result = await port.savePosterCrop(item, posterCrop);
-      setPosterOverride(result.posterUrl);
-      setPosterEditorOpen(false);
-      toast.success(getT().scrape.coverSaved);
-      void port
-        .preparePosterCrop(item)
-        .then((refreshed) => {
-          setPosterCropSession(refreshed);
-          setPosterCrop(refreshed.initialCrop);
-        })
-        .catch(() => undefined);
+      if (crop) {
+        const { posterUrl } = await port.savePosterCrop(item, crop);
+        if (pendingPosterWork.current !== work) return;
+        updateSavedPoster(posterUrl);
+        setPosterDraft(null);
+        toast.success(getT().scrape.coverSaved);
+      } else {
+        const session = await port.preparePosterCrop(item);
+        if (pendingPosterWork.current !== work) return;
+        setPosterDraft({ session, crop: session.initialCrop });
+      }
     } catch (error) {
-      toast.error(getT().scrape.saveCoverFailed(toErrorMessage(error)));
+      if (pendingPosterWork.current === work) {
+        const message = work === "loading" ? getT().scrape.loadCoverFailed : getT().scrape.saveCoverFailed;
+        toast.error(message(toErrorMessage(error)));
+      }
     } finally {
-      setPosterCropSaving(false);
+      if (pendingPosterWork.current === work) {
+        pendingPosterWork.current = null;
+        setPosterWork(null);
+      }
     }
-  }, [item, port, posterCrop]);
+  };
+
+  const setPosterEditorOpen = async (open: boolean) => {
+    if (open || !posterDraft || pendingPosterWork.current) return;
+    const dirty = JSON.stringify(posterDraft.crop) !== JSON.stringify(posterDraft.session.initialCrop);
+    if (dirty && !(await confirmDialog({ title: getT().scrape.discardPosterChanges, destructive: true }))) return;
+    setPosterDraft(null);
+  };
 
   useEffect(() => {
     const listener = (event: Event) => {
@@ -320,19 +332,23 @@ export function DetailPanelAdapter({ port, item: explicitItem, emptyMessage, com
         onSave: handleSaveNfo,
       }}
       onOpenNfo={handleOpenNfo}
-      onPosterError={artwork.handlePosterError}
+      onPosterError={savedPoster ? () => updateSavedPoster("") : artwork.handlePosterError}
       onThumbError={artwork.handleThumbError}
       onTrailerError={artwork.handleTrailerError}
       resolveImageCandidates={resolveImageCandidates}
       posterEditor={{
-        open: posterEditorOpen,
-        session: posterCropSession,
-        crop: posterCrop,
-        saving: posterCropSaving,
-        onCropChange: setPosterCrop,
-        onOpen: handleOpenPosterEditor,
-        onOpenChange: setPosterEditorOpenSafe,
-        onSave: handleSavePosterCrop,
+        available: canEditPoster,
+        loading: posterWork === "loading",
+        open: Boolean(posterDraft),
+        session: posterDraft?.session ?? null,
+        crop: posterDraft?.crop ?? null,
+        saving: posterWork === "saving",
+        onCropChange: (crop) => setPosterDraft((draft) => (draft ? { ...draft, crop } : null)),
+        onOpen: () => void runPosterWork(),
+        onOpenChange: setPosterEditorOpen,
+        onSave: () => {
+          if (posterDraft) void runPosterWork(posterDraft.crop);
+        },
       }}
     />
   );

@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NetworkClient } from "@mdcz/runtime/network";
 import { acquireMediaTask, movieTaskKey } from "@mdcz/runtime/publication/mediaTasks";
 import { acquireOutputDirectories } from "@mdcz/runtime/publication/outputMutex";
-import { NfoGenerator } from "@mdcz/runtime/scrape";
+import { badgeBasePath, NfoGenerator } from "@mdcz/runtime/scrape";
 import { Website } from "@mdcz/shared/enums";
 import sharp from "sharp";
 import { afterEach, expect, it, vi } from "vitest";
@@ -23,6 +23,80 @@ import { ServerPersistenceService } from "./services/persistenceService";
 
 afterEach(closeTestServers);
 afterEach(() => vi.restoreAllMocks());
+
+it("adds subtitle badges offline and preserves a replaced managed poster", async () => {
+  const root = await createTempRoot("managed-subtitle-artwork");
+  const { fastify, services } = await createTestServer();
+  const token = await loginAsAdmin(fastify);
+  const { rootId } = await createTestLibrary(fastify, token, root);
+  await services.config.update({
+    download: { tagBadges: true, tagBadgeTypes: ["subtitle"], tagBadgeTargets: ["poster"], tagBadgeStyle: "ribbon" },
+  });
+  const movie = {
+    number: "ABC-704",
+    title: "Movie",
+    actors: [],
+    genres: [],
+    scene_images: [],
+    website: Website.JAVDB,
+    poster_source_url: "https://unused.example/poster.jpg",
+  };
+  const mediaPath = join(root, "ABC-704.mp4");
+  const subtitlePath = join(root, "ABC-704.zh.srt");
+  const nfoPath = join(root, "ABC-704.nfo");
+  const poster = join(root, "poster.jpg");
+  const base = await sharp({ create: { width: 160, height: 240, channels: 3, background: "green" } })
+    .jpeg()
+    .toBuffer();
+  const generator = new NfoGenerator();
+  const sha256 = createHash("sha256").update(base).digest("hex");
+  const posterRecord = { stamp: "", sha256, baseSha256: sha256 };
+  const xml = generator.mergeBadgeRecords(generator.buildXml(movie), { poster: posterRecord });
+  await Promise.all([
+    writeFile(mediaPath, "video"),
+    writeFile(subtitlePath, "subtitle"),
+    writeFile(nfoPath, xml),
+    writeFile(poster, base),
+  ]);
+  const { repositories } = await services.persistence.getState();
+  await repositories.library.upsertEntry({
+    movie: {
+      id: "managed-movie",
+      number: movie.number,
+      title: movie.title,
+      crawlerDataJson: JSON.stringify(movie),
+      assets: [
+        { kind: "nfo", uri: "ABC-704.nfo", rootId, relativePath: "ABC-704.nfo", published: true },
+        { kind: "poster", uri: "poster.jpg", rootId, relativePath: "poster.jpg", published: true },
+      ],
+    },
+    files: [{ fileId: "managed-file", rootId, rootRelativePath: "ABC-704.mp4" }],
+  });
+  const download = vi.spyOn(NetworkClient.prototype, "getContent").mockRejectedValue(new Error("offline"));
+  const update = async () => {
+    const { taskId } = await services.subtitleUpdates.enqueue({
+      eventId: randomUUID(),
+      mediaPath,
+      subtitlePath,
+      language: "zh-CN",
+    });
+    await expect.poll(async () => (await services.subtitleUpdates.get(taskId))?.status).toBe("completed");
+    return (await services.subtitleUpdates.get(taskId))?.result;
+  };
+  expect(await update()).toMatchObject({ badgeStatus: "updated" });
+  expect(await readFile(poster)).not.toEqual(base);
+  expect(await readFile(badgeBasePath(poster))).toEqual(base);
+  expect(await readFile(nfoPath, "utf8")).toContain("<tag>中文字幕</tag>");
+  expect((await repositories.library.getEntryById("managed-movie")).assets).toContainEqual(
+    expect.objectContaining({ kind: "poster-base", published: true }),
+  );
+  expect(await update()).toMatchObject({ badgeStatus: "unchanged", metadataUpdated: false });
+  await writeFile(poster, base);
+  await services.config.update({ download: { tagBadgePosition: "bottomRight" } });
+  expect(await update()).toMatchObject({ badgeStatus: "skipped" });
+  expect(await readFile(poster)).toEqual(base);
+  expect(download).not.toHaveBeenCalled();
+});
 
 it("batch retries selected failure attempts across pages, including historical jobs for the same movie", async () => {
   const root = await createTempRoot("subtitle-batch-retry");

@@ -2,7 +2,6 @@ import { defaultConfiguration } from "@mdcz/shared/config";
 import type { DeletionJob } from "@mdcz/shared/deletions";
 import type { LibraryDeletionResponse } from "@mdcz/shared/pending";
 import type { LibraryEntryDto, LibraryListResponse } from "@mdcz/shared/serverDtos";
-import { parseLibraryBrowseSearch } from "@mdcz/views/library";
 import { useScrapeStore } from "@mdcz/views/state/scrapeStore";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -21,7 +20,7 @@ import { render } from "vitest-browser-react";
 import { buildScrapeSnapshot } from "../../../tests/unit/renderer/scrapeTestSupport";
 import { api } from "./client";
 import { DeletionTasksPage } from "./deletionTasks";
-import { LibraryPage, Route } from "./routes/library";
+import { LibraryPage, parseLibraryRouteSearch, Route } from "./routes/library";
 
 test("library rescrape stays on the list while a task is running and opens the submitted run on request", async () => {
   const entries: LibraryEntryDto[] = ["First", "Second"].map((id) => ({
@@ -260,7 +259,7 @@ test("library browsing pages on the server and selects a fixed snapshot of every
   }));
   const matches = movies.slice(0, 120);
   const list = vi.spyOn(api.library, "list").mockImplementation(async (input) => {
-    const { actors, missingActors, query } = input ?? {};
+    const { actors, missingActors, query, sortBy, sortOrder } = input ?? {};
     const source = (input?.issues?.missingSynopsis ? matches : movies).filter(
       (entry) =>
         (!query || entry.number === query) &&
@@ -269,8 +268,16 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     );
     const page = input?.page ?? 1;
     const pageSize = input?.pageSize ?? 10;
+    const sorted =
+      sortBy === "number" || sortBy === "title"
+        ? source.toSorted(
+            (left, right) =>
+              (left[sortBy] ?? "").localeCompare(right[sortBy] ?? "", "zh-CN", { numeric: true }) *
+              (sortOrder === "asc" ? 1 : -1),
+          )
+        : source;
     return {
-      entries: source.slice((page - 1) * pageSize, page * pageSize),
+      entries: sorted.slice((page - 1) * pageSize, page * pageSize),
       page,
       pageSize,
       total: source.length,
@@ -293,7 +300,7 @@ test("library browsing pages on the server and selects a fixed snapshot of every
   const library = createRoute({
     getParentRoute: () => root,
     path: "/library",
-    validateSearch: parseLibraryBrowseSearch,
+    validateSearch: parseLibraryRouteSearch,
     component: LibraryPage,
   });
   vi.spyOn(Route, "useSearch").mockImplementation(() => library.useSearch());
@@ -412,6 +419,27 @@ test("library browsing pages on the server and selects a fixed snapshot of every
     await expect.element(screen.getByText("共 630 部 · 第 1 / 32 页")).toBeVisible();
     await expect.element(screen.getByText("已选 0 部影片")).toBeVisible();
     expect(router.state.location.search).toEqual({});
+
+    await screen.getByRole("checkbox", { name: "选择当前页" }).click();
+    await screen.getByRole("button", { name: "下一页" }).click();
+    await expect.element(screen.getByText("共 630 部 · 第 2 / 32 页")).toBeVisible();
+    await search.fill("unsaved draft");
+    const sort = screen.getByRole("combobox", { name: "排序字段" });
+    const order = screen.getByRole("combobox", { name: "排序方向" });
+    await sort.selectOptions("number");
+    await expect.element(screen.getByText("共 630 部 · 第 1 / 32 页")).toBeVisible();
+    await expect.element(screen.getByText("Movie 630", { exact: true })).toBeVisible();
+    await expect.element(screen.getByText("已选 20 部影片")).toBeVisible();
+    await expect.element(search).toHaveValue("unsaved draft");
+    expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, sortBy: "number", sortOrder: "desc" }));
+
+    await order.selectOptions("asc");
+    await expect.element(screen.getByRole("checkbox", { name: "选择 MOVIE-1", exact: true })).toBeChecked();
+    await screen.getByRole("button", { name: "海报墙", exact: true }).click();
+    await expect.element(screen.getByText("Movie 1", { exact: true })).toBeVisible();
+    await sort.selectOptions("title");
+    await expect.poll(() => list.mock.calls.at(-1)?.[0]).toMatchObject({ page: 1, sortBy: "title", sortOrder: "asc" });
+    expect(router.state.location.search).toEqual({ sortBy: "title", sortOrder: "asc" });
   } finally {
     await screen.unmount();
     client.clear();

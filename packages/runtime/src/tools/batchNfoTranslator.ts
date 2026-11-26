@@ -250,7 +250,7 @@ const translatePendingTexts = async (
     try {
       const content = await runWithNetworkChannel("translation", () =>
         requests.requestText(
-          config.translate,
+          config,
           buildLlmTranslatePrompt(
             config.translate.llmPrompt,
             JSON.stringify(chunk.map((item) => item.text)),

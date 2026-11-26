@@ -123,5 +123,6 @@ export const scrape: Messages["scrape"] = {
   discardNfoChanges: "放弃未保存的 NFO 修改？",
   discardPosterChanges: "放弃未保存的封面修改？",
   coverSaved: "封面已保存",
+  loadCoverFailed: (error: string) => `无法打开封面编辑器：${error}`,
   saveCoverFailed: (error: string) => `保存封面失败: ${error}`,
 };

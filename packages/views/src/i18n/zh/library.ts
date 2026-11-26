@@ -44,6 +44,13 @@ export const library: Messages["library"] = {
   allLibraries: "全部媒体库",
   libraryAriaLabel: "媒体库",
   view: { list: "列表", wall: "海报墙" },
+  updatedAt: "最近更新",
+  sort: {
+    field: "排序字段",
+    order: "排序方向",
+    fields: { createdAt: "入库时间", number: "番号", title: "标题" },
+    orders: { asc: "升序", desc: "降序" },
+  },
   filters: {
     label: "媒体库筛选",
     keyword: "关键词",

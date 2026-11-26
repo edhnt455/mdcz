@@ -102,8 +102,9 @@ describe("TranslateService term consistency", () => {
 
   it.each([
     { primaryOutput: "{", retries: 0 },
-    { primaryOutput: new LlmTransportError("request timed out", new Error("timeout")), retries: 1 },
-  ])("uses the backup after invalid output or after all $retries configured retries", async ({
+    { primaryOutput: new LlmTransportError("request timed out", new Error("timeout")), retries: 0 },
+    { primaryOutput: Object.assign(new Error("rate limited"), { status: 429 }), retries: 1 },
+  ])("uses the backup after invalid output or after $retries translation-layer retries", async ({
     primaryOutput,
     retries,
   }) => {
@@ -166,7 +167,7 @@ describe("TranslateService term consistency", () => {
       expect.objectContaining({
         model: "fallback-model",
         prompt: expect.stringContaining('"title":null,"plot":null,"genres":["ジャンル2","ジャンル3"]'),
-        retry: false,
+        maxRetries: 0,
       }),
       undefined,
     );
@@ -250,11 +251,6 @@ describe("TranslateService term consistency", () => {
       Object.assign(new Error("rate limited"), { status: 429, headers: new Headers() }),
       1000,
     ],
-    [
-      "timeout",
-      new Error("LLM request failed: Error reading response stream: reqwest::Error { kind: Body, source: TimedOut }"),
-      1000,
-    ],
   ] as const)("retries recoverable llm failures with %s", async (_name, error, delay) => {
     const generateText = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce("重试成功");
     const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText));
@@ -263,36 +259,21 @@ describe("TranslateService term consistency", () => {
     expect(sleepMock).toHaveBeenCalledExactlyOnceWith(delay, undefined, undefined);
   });
 
-  it("retries typed transient failures until recovery or llmMaxRetries is exhausted", async () => {
-    for (const [reason, error] of [
-      [
-        "传输错误",
-        new LlmTransportError(
-          "大模型请求 https://api.deepseek.com/responses 失败：Error reading response stream: kind: Body",
-          new Error("body timed out"),
-        ),
-      ],
-      ["空响应", new LlmEmptyResponseError("响应不包含文本", 200, new Headers(), {})],
-    ] as const) {
-      for (const recover of [true, false]) {
-        sleepMock.mockClear();
-        const generateText = vi.fn().mockRejectedValue(error);
-        if (recover) generateText.mockRejectedValueOnce(error).mockResolvedValue("重试成功");
-        const logger = createLogger();
-        const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
-        const config = createBaseConfig();
-        config.translate.llmMaxRetries = 3;
-        config.translate.llmMaxRequestsPerSecond = 100;
-
-        const result = service.translateText("hello", "zh_cn", config);
-        if (recover) await expect(result).resolves.toBe("重试成功");
-        else await expect(result).rejects.toBe(error);
-
-        expect(generateText).toHaveBeenCalledTimes(recover ? 2 : 4);
-        expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual(recover ? [1000] : [1000, 2000, 4000]);
-        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining(`${reason}而重试（1/3）`));
-      }
-    }
+  it("retries empty responses while leaving exhausted transport errors to the network layer", async () => {
+    const transportError = new LlmTransportError("body timed out", new Error("timeout"));
+    const emptyResponse = new LlmEmptyResponseError("响应不包含文本", 200, new Headers(), {});
+    const generateText = vi.fn().mockRejectedValueOnce(transportError).mockRejectedValue(emptyResponse);
+    const logger = createLogger();
+    const service = createTranslateService(new NetworkClient({}), createLlmApiClient(generateText), logger);
+    const config = createBaseConfig();
+    config.translate.llmMaxRetries = 3;
+    await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(transportError);
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(sleepMock).not.toHaveBeenCalled();
+    await expect(service.translateText("hello", "zh_cn", config)).rejects.toBe(emptyResponse);
+    expect(generateText).toHaveBeenCalledTimes(5);
+    expect(sleepMock.mock.calls.map(([delay]) => delay)).toEqual([1000, 2000, 4000]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("空响应而重试（1/3）"));
   });
 
   it.each([
@@ -367,7 +348,10 @@ describe("TranslateService term consistency", () => {
     const llmApiClient = createLlmApiClient(generateText);
     const networkClient = new NetworkClient({});
     const outputs = ["标题", "第一行\n第二行", "剧情"];
-    const getJson = vi.spyOn(networkClient, "getJson").mockImplementation(async () => [[[outputs.shift()]]]);
+    const getJson = vi
+      .spyOn(networkClient, "getJson")
+      .mockResolvedValue([[["标题"], ["\n"], ["第一行\n第二行"], ["\n"], ["剧情"]]]);
+    const setDomainLimit = vi.spyOn(networkClient, "setDomainLimit");
     const postJson = vi
       .spyOn(networkClient, "postJson")
       .mockImplementation(async (url, payload) =>
@@ -407,7 +391,26 @@ describe("TranslateService term consistency", () => {
     expect(translated.data.title_zh).toBe(targetLanguage === "zh-TW" ? "標題" : "标题");
     expect(translated.data.plot_zh).toBe("第一行\n第二行");
     expect(translated.data.genres).toEqual(Array(3).fill(targetLanguage === "zh-TW" ? "劇情" : "剧情"));
-    expect(getJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 3 : 0);
+    expect(getJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 1 : 0);
+    if (engine === TranslateEngine.GOOGLE) {
+      expect(new URL(getJson.mock.calls[0][0]).searchParams.get("q")).toBe(
+        "Original title\nFirst line\nSecond line\nDrama",
+      );
+      expect(setDomainLimit).toHaveBeenCalledWith("translate.googleapis.com", 5, config.scrape.threadNumber);
+      getJson
+        .mockReset()
+        .mockResolvedValueOnce([[["only one line"]]])
+        .mockResolvedValueOnce([[["标题"]]])
+        .mockResolvedValueOnce([[["原样\n换行"]]]);
+      await expect(
+        service.translateMetadata(
+          { title: "Original title", plot: "First line\nSecond line", genres: [] },
+          "zh_cn",
+          config,
+        ),
+      ).resolves.toEqual({ title: "标题", plot: "原样\n换行", genres: [] });
+      expect(getJson).toHaveBeenCalledTimes(3);
+    }
     expect(postJson).toHaveBeenCalledTimes(engine === TranslateEngine.GOOGLE ? 0 : 1);
   });
 

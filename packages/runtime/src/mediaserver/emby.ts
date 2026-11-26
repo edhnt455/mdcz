@@ -417,7 +417,7 @@ export const checkEmbyConnection = async (
     authFailedCode: "EMBY_AUTH_FAILED",
     fetchPublicServerInfo: async () => {
       const info = await networkClient.getJson<PublicSystemInfo>(buildEmbyUrl(configuration, "/System/Info/Public"), {
-        useProxy: false,
+        useProxy: configuration.emby.useProxy,
         headers: { accept: "application/json" },
       });
       return {
@@ -427,7 +427,7 @@ export const checkEmbyConnection = async (
     },
     verifyAuth: async () => {
       await networkClient.getJson<Record<string, unknown>>(buildEmbyUrl(configuration, "/System/Endpoint"), {
-        useProxy: false,
+        useProxy: configuration.emby.useProxy,
         headers: buildEmbyHeaders(configuration, { accept: "application/json" }),
       });
     },

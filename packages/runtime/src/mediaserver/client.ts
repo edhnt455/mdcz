@@ -114,7 +114,7 @@ export const fetchMediaServerPersons = async <TPerson, TError extends MediaServe
 
   try {
     const response = await options.networkClient.getJson<unknown>(url, {
-      useProxy: false,
+      useProxy: options.configuration[options.serverKey].useProxy,
       headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
@@ -144,7 +144,7 @@ export const fetchMediaServerItemDetail = async <
 
   try {
     return await options.networkClient.getJson<TDetail>(url, {
-      useProxy: false,
+      useProxy: options.configuration[options.serverKey].useProxy,
       headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
@@ -171,7 +171,7 @@ export const fetchMediaServerResolvedUserId = async <TError extends MediaServerS
   let response: unknown;
   try {
     response = await options.networkClient.getJson<unknown>(url, {
-      useProxy: false,
+      useProxy: options.configuration[options.serverKey].useProxy,
       headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
@@ -228,7 +228,7 @@ export const fetchMediaServerMetadataEditorInfo = async <TError extends MediaSer
 
   try {
     return await options.networkClient.getJson<Record<string, unknown>>(url, {
-      useProxy: false,
+      useProxy: options.configuration[options.serverKey].useProxy,
       headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
         accept: "application/json",
       }),
@@ -252,7 +252,7 @@ export const updateMediaServerItem = async <TError extends MediaServerServiceErr
 
   try {
     await options.networkClient.postText(url, JSON.stringify(options.payload), {
-      useProxy: false,
+      useProxy: options.configuration[options.serverKey].useProxy,
       headers: buildMediaServerHeaders(options.configuration, options.serverKey, {
         "content-type": "application/json",
       }),
@@ -287,7 +287,7 @@ export const uploadMediaServerPrimaryImage = async <TError extends MediaServerSe
       buildMediaServerUrl(options.configuration, options.serverKey, primaryPath),
       body,
       {
-        useProxy: false,
+        useProxy: options.configuration[options.serverKey].useProxy,
         headers,
       },
     );
@@ -305,7 +305,7 @@ export const uploadMediaServerPrimaryImage = async <TError extends MediaServerSe
       buildMediaServerUrl(options.configuration, options.serverKey, options.fallbackPath, options.fallbackQuery),
       body,
       {
-        useProxy: false,
+        useProxy: options.configuration[options.serverKey].useProxy,
         headers,
       },
     );

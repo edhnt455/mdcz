@@ -144,11 +144,12 @@ describe("Actor source local and gfriends", () => {
       throw new Error(`Unexpected URL ${url}`);
     });
 
+    const listLibraryDirectories = vi.fn(async () => [root]);
     const provider = new ActorSourceProvider({
       registry: new ActorSourceRegistry([
         new LocalActorSource({
           actorImageService: new ActorImageService(),
-          listLibraryDirectories: async () => [root],
+          listLibraryDirectories,
         }),
         new GfriendsActorSource({
           networkClient: networkClient as unknown as NetworkClient,
@@ -174,5 +175,6 @@ describe("Actor source local and gfriends", () => {
     });
     expect(result.profileSources.photo_url).toBe(first);
     expect(networkClient.getJson).toHaveBeenCalledTimes(first === "local" ? 0 : 1);
+    expect(listLibraryDirectories).not.toHaveBeenCalled();
   });
 });

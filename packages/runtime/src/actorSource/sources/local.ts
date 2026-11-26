@@ -136,17 +136,27 @@ export class LocalActorSource implements BaseActorSource {
 
   async lookup(configuration: Configuration, query: ActorLookupQuery): Promise<ActorSourceResult> {
     try {
+      const names = [query.name, ...(query.aliases ?? [])];
+      if (query.requiredField === "photo_url") {
+        const photo = await this.actorImageService?.resolveLocalImage(configuration, names);
+        if (photo) {
+          return {
+            source: this.name,
+            success: true,
+            profile: { name: query.name.trim(), photo_url: photo },
+            warnings: [],
+            sourceHints: [],
+          };
+        }
+      }
       const index = await this.loadIndex(configuration);
-      const indexed = [query.name, ...(query.aliases ?? [])]
-        .map((name) => index.get(normalizeActorName(name)))
-        .find(Boolean);
+      const indexed = names.map((name) => index.get(normalizeActorName(name))).find(Boolean);
       const profile = indexed?.profile;
       const aliases = profile?.aliases ?? [];
-      const localPhotoPath = await this.actorImageService?.resolveLocalImage(configuration, [
-        query.name,
-        ...(query.aliases ?? []),
-        ...aliases,
-      ]);
+      const localPhotoPath = await this.actorImageService?.resolveLocalImage(
+        configuration,
+        query.requiredField === "photo_url" ? aliases : [...names, ...aliases],
+      );
 
       return {
         source: this.name,

@@ -44,6 +44,13 @@ export const library = {
   allLibraries: "All libraries",
   libraryAriaLabel: "Library",
   view: { list: "List", wall: "Poster wall" },
+  updatedAt: "Last updated",
+  sort: {
+    field: "Sort by",
+    order: "Sort order",
+    fields: { createdAt: "Date added", number: "Number", title: "Title" },
+    orders: { asc: "Ascending", desc: "Descending" },
+  },
   filters: {
     label: "Media library filters",
     keyword: "Keyword",

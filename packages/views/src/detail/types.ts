@@ -1,3 +1,8 @@
+import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";
+
+export const detailImageWidths = { poster: 360, backdrop: 1200, scene: 480, diff: 720, diffScene: 240 } as const;
+export type ResolveImageCandidates = (candidates: string[], baseDir?: string, width?: number) => Promise<string[]>;
+
 export type DetailViewStatus = "success" | "failed" | "processing";
 
 export interface DetailViewItem {
@@ -34,5 +39,3 @@ export interface DetailViewItem {
   trailerFallbackUrls?: string[];
   errorMessage?: string;
 }
-
-import type { AssetRef, RootFileRef } from "@mdcz/shared/mediaRef";

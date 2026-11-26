@@ -1,4 +1,4 @@
-import type { MaintenanceItemResult, MaintenancePresetId, PathDiff } from "@mdcz/shared/types";
+import type { MaintenanceItemResult, MaintenancePresetId, PathDiff, PosterRedraw } from "@mdcz/shared/types";
 import {
   Button,
   Dialog,
@@ -18,6 +18,7 @@ export interface MaintenanceBatchBarPreviewGroup {
   blockedError?: string;
   changedPathItems: Array<{ fileId: string; fileName: string; pathDiff: PathDiff }>;
   diffCount: number;
+  posterRedraw?: PosterRedraw;
   hasPathChange: boolean;
   id: string;
   ready: boolean;
@@ -258,7 +259,10 @@ export function MaintenanceBatchBarView({
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                           <span>{t.maintenance.diffCount(group.diffCount)}</span>
                           {group.hasPathChange && <span>{t.maintenance.pathWillChange}</span>}
-                          {!group.hasPathChange && group.diffCount === 0 && <span>{t.maintenance.noExtraChanges}</span>}
+                          {group.posterRedraw && <span>{t.maintenance.posterRedraw[group.posterRedraw]}</span>}
+                          {!group.hasPathChange && group.diffCount === 0 && !group.posterRedraw && (
+                            <span>{t.maintenance.noExtraChanges}</span>
+                          )}
                         </div>
                         {group.hasPathChange && (
                           <div className="mt-3 space-y-2">

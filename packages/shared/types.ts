@@ -97,6 +97,16 @@ export interface FileInfo {
 export type ScrapeResultStatus = "pending" | "processing" | "success" | "failed" | "skipped";
 export type SubtitleTag = "字幕" | "中文字幕";
 
+export const BADGE_ARTWORK_KINDS = ["poster", "thumb"] as const;
+export type BadgeArtworkKind = (typeof BADGE_ARTWORK_KINDS)[number];
+export interface BadgeArtworkRecord {
+  stamp: string;
+  sha256: string;
+  baseSha256: string;
+}
+export type BadgeArtworkRecords = Partial<Record<BadgeArtworkKind, BadgeArtworkRecord | null>>;
+export type PosterRedraw = "redraw" | "kept";
+
 /** Structured record of all files produced by DownloadManager. */
 export interface DownloadedAssets {
   rootId?: string;
@@ -107,6 +117,7 @@ export interface DownloadedAssets {
   trailer?: string;
   /** Flat list of every asset path created during the current scrape. */
   downloaded: string[];
+  badgeRecords?: BadgeArtworkRecords;
 }
 
 export interface ScrapeResult {
@@ -168,6 +179,7 @@ export interface NfoLocalState {
   /** The detail page someone chose for this movie; scrapes and refreshes use it instead of searching by number. */
   sourcePin?: { site: Website; url: string };
   dateAdded?: string;
+  badgeRecords?: BadgeArtworkRecords;
   foreignElements?: Record<string, unknown>;
 }
 
@@ -318,6 +330,7 @@ export interface MaintenancePreviewItem {
   pathDiff?: PathDiff;
   proposedCrawlerData?: CrawlerData;
   imageAlternatives?: MaintenanceImageAlternatives;
+  posterRedraw?: PosterRedraw;
 }
 
 export interface MaintenancePreviewResult {

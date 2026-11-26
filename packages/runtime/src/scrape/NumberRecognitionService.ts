@@ -62,15 +62,13 @@ export class NumberRecognitionService {
         throw new Error("AI 番号识别需要配置模型及端点要求的 API 密钥");
       }
       result.rawResponse = await runWithNetworkChannel("number-recognition", () =>
-        this.requests.requestText(config.translate, prompt, signal, {
+        this.requests.requestText(config, prompt, signal, {
           name: "movie_code_recognition",
           schema: z.toJSONSchema(recognitionSchema),
         }),
       );
       throwIfAborted(signal);
-      const parsed = recognitionSchema.parse(
-        JSON.parse(result.rawResponse?.replace(/^<think>[\s\S]*?<\/think>\s*/iu, "").trim() ?? ""),
-      );
+      const parsed = recognitionSchema.parse(JSON.parse(result.rawResponse ?? ""));
       result.number = parsed.number?.normalize("NFKC").toUpperCase() ?? null;
       result.evidence = parsed.evidence;
       if (result.number !== null) {

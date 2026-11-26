@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIBRARY_PAGE_SIZES } from "./libraryPagination";
+import { LIBRARY_PAGE_SIZES, LIBRARY_SORT_FIELDS, LIBRARY_SORT_ORDERS } from "./libraryPagination";
 import { libraryListInputSchema } from "./serverDtos";
 
 describe("library page requests", () => {
@@ -12,6 +12,11 @@ describe("library page requests", () => {
         issues: { missingSynopsis: true },
       });
     }
+    for (const sortBy of LIBRARY_SORT_FIELDS) {
+      for (const sortOrder of LIBRARY_SORT_ORDERS) {
+        expect(libraryListInputSchema.parse({ sortBy, sortOrder })).toMatchObject({ sortBy, sortOrder });
+      }
+    }
   });
 
   it("rejects invalid page numbers and unsupported page sizes", () => {
@@ -20,6 +25,9 @@ describe("library page requests", () => {
     }
     for (const pageSize of [0, 1, 15, 500, "10"]) {
       expect(libraryListInputSchema.safeParse({ pageSize }).success).toBe(false);
+    }
+    for (const input of [{ sortBy: "updatedAt" }, { sortOrder: "up" }, { sortBy: null }]) {
+      expect(libraryListInputSchema.safeParse(input).success).toBe(false);
     }
   });
 });

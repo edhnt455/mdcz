@@ -1,11 +1,18 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 import { filesystemPathKey, type MediaRoot, resolveRootRelativePath } from "@mdcz/media-store";
 import { type AssetRef, isRemoteAssetUrl, type RootFileRef } from "@mdcz/shared/mediaRef";
 import { moviePilotResourceIdentity } from "@mdcz/shared/moviePilot";
-import type { CrawlerData, DiscoveredAssets, DownloadedAssets, MaintenanceAssetDecisions } from "@mdcz/shared/types";
+import type {
+  BadgeArtworkRecords,
+  CrawlerData,
+  DiscoveredAssets,
+  DownloadedAssets,
+  MaintenanceAssetDecisions,
+} from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser } from "fast-xml-parser";
+import { badgeBasePath } from "../scrape/badgeArtwork";
 import type { DirectoryInventory } from "../scrape/DirectoryInventory";
 import type { ResolvedPublicationLayout } from "../scrape/FileOrganizer";
 import { getNfoWritePaths } from "../scrape/nfo";
@@ -63,6 +70,7 @@ interface MovieOutputMember {
   layout: Omit<ResolvedPublicationLayout, "sourceVideoPath">;
   assetLayout: PublicationAssetLayout;
   existingAssets?: DiscoveredAssets;
+  existingBadgeRecords?: BadgeArtworkRecords;
   existingNfoPath?: string;
   scrape?: PreparedMovieFile["scrape"];
 }
@@ -70,8 +78,10 @@ interface MovieOutputMember {
 export const MANAGED_MOVIE_ASSET_KINDS = new Set([
   "nfo",
   "poster",
+  "poster-base",
   "fanart",
   "thumb",
+  "thumb-base",
   "trailer",
   "scene",
   "actor",
@@ -145,7 +155,7 @@ export const prepareMovieArtifacts = async (input: {
   const mapped = new Map<string, string>();
   const assetTargets = new Map<string, string>();
   const downloaded = input.downloadedAssets;
-  const ownedAssets = new Set(input.refreshExisting ? input.ownedAssetPaths : undefined);
+  const ownedAssets = new Set(input.ownedAssetPaths);
   const sourcePathOf = (file: MovieOutputMember) => {
     const root = input.roots.find((root) => root.id === file.source.rootId);
     if (!root) throw new Error(`未找到发布根目录：${file.source.rootId}`);
@@ -326,6 +336,7 @@ export const prepareMovieArtifacts = async (input: {
       const targets: string[] = [];
       for (const [index, sourcePath] of group.paths.entries()) {
         if (!sourcePath) continue;
+        const badgeKind = group.key === "poster" || group.key === "thumb" ? group.key : undefined;
         const mappingKey = `${sourcePath}\0${metadataOutputDir}`;
         let targetPath = assetTargets.get(mappingKey);
         if (!targetPath) {
@@ -344,12 +355,55 @@ export const prepareMovieArtifacts = async (input: {
               removeSourcesAfterCommit:
                 input.relocateExistingArtifacts && !stagedName
                   ? [sourcePath]
-                  : stagedName && replaced && replaced !== targetPath && ownedAssets.has(replaced)
-                    ? [replaced]
+                  : input.refreshExisting &&
+                      stagedName &&
+                      replaced &&
+                      replaced !== targetPath &&
+                      ownedAssets.has(replaced)
+                    ? [
+                        replaced,
+                        ...(badgeKind && ownedAssets.has(badgeBasePath(replaced)) ? [badgeBasePath(replaced)] : []),
+                      ]
                     : undefined,
             });
             publishedTargets.push(target);
             if (stagedName) downloadedTargets.add(targetPath);
+          }
+          if (badgeKind) {
+            const baseSource = badgeBasePath(sourcePath);
+            const baseTarget = badgeBasePath(targetPath);
+            const record = downloaded.badgeRecords?.[badgeKind];
+            const hasStagedBase = Boolean(stagedName && record && record.baseSha256 !== record.sha256);
+            const candidate = stagedName && !hasStagedBase ? baseTarget : baseSource;
+            const previous = file.existingBadgeRecords?.[badgeKind];
+            const knownBase =
+              candidate === badgeBasePath(existing?.[badgeKind] ?? targetPath) &&
+              previous &&
+              previous.sha256 !== previous.baseSha256;
+            const base =
+              hasStagedBase || knownBase || ownedAssets.has(candidate)
+                ? await lstat(candidate).catch((error: NodeJS.ErrnoException) => {
+                    if (error.code === "ENOENT" && !hasStagedBase) return undefined;
+                    throw error;
+                  })
+                : undefined;
+            if (hasStagedBase && !base?.isFile()) throw new Error(`暂存无角标底图无效：${candidate}`);
+            if (base?.isFile()) {
+              const ref = toRef(baseTarget);
+              if (candidate !== baseTarget) {
+                artifacts.push({
+                  sourcePath: candidate,
+                  targetPath: baseTarget,
+                  size: base.size,
+                  consume: hasStagedBase,
+                  removeSourcesAfterCommit: input.relocateExistingArtifacts && !stagedName ? [candidate] : undefined,
+                });
+                publishedTargets.push(ref);
+              }
+              const kind = `${badgeKind}-base`;
+              locationAssets.set(`${kind}\0${baseTarget}`, { type: "local", kind, file: ref });
+              assetTargets.set(`${candidate}\0${metadataOutputDir}`, baseTarget);
+            }
           }
           assetTargets.set(mappingKey, targetPath);
           if (metadataOutputDir === first.layout.metadataDir) mapped.set(sourcePath, targetPath);
@@ -371,12 +425,15 @@ export const prepareMovieArtifacts = async (input: {
     ),
   );
   const existingNfoPath = first.existingNfoPath;
-  let nfoPath = await input.writeNfo({ ...assets, downloaded: [...downloadedTargets] }, async (targetPath, data) => {
-    if (!allowedNfoPaths.has(resolve(targetPath))) throw new Error(`NFO 写入器选择了未声明的输出路径：${targetPath}`);
-    const target = toRef(targetPath);
-    artifacts.push({ targetPath, data });
-    publishedTargets.push(target);
-  });
+  let nfoPath = await input.writeNfo(
+    { ...assets, downloaded: [...downloadedTargets], badgeRecords: downloaded.badgeRecords },
+    async (targetPath, data) => {
+      if (!allowedNfoPaths.has(resolve(targetPath))) throw new Error(`NFO 写入器选择了未声明的输出路径：${targetPath}`);
+      const target = toRef(targetPath);
+      artifacts.push({ targetPath, data });
+      publishedTargets.push(target);
+    },
+  );
   const writtenNfos = artifacts.filter(
     (a): a is Extract<WriteArtifact, { data: unknown }> =>
       a.targetPath.toLowerCase().endsWith(".nfo") && "data" in a && a.data !== undefined,
@@ -441,7 +498,9 @@ export const prepareMovieArtifacts = async (input: {
   }
   if (input.relocateExistingArtifacts) {
     const kept = new Set(
-      [...assetTargets.values(), ...artifacts.map((artifact) => artifact.targetPath)].map((path) => resolve(path)),
+      [...assetTargets.values(), ...mapped.values(), ...artifacts.map((artifact) => artifact.targetPath)].map((path) =>
+        resolve(path),
+      ),
     );
     // The new layout holds one NFO and image set per movie; owned files it does not carry (replaced NFOs, extra
     // per-part artwork) would otherwise stay behind unregistered.

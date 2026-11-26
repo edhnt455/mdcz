@@ -1,7 +1,7 @@
 import { Website } from "@mdcz/shared/enums";
 import { resolvePosterEditorCropRegion } from "@mdcz/shared/posterCrop";
 import { type DetailActionPort, DetailPanelAdapter } from "@mdcz/views/adapters";
-import { SceneImageGallery } from "@mdcz/views/detail";
+import { detailImageWidths, SceneImageGallery } from "@mdcz/views/detail";
 import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
@@ -39,6 +39,14 @@ const createPort = (overrides: Partial<DetailActionPort> = {}): DetailActionPort
   ...overrides,
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 test("detail poster editor keeps the dialog open after a failed save", async () => {
   const savePosterCrop = vi.fn().mockRejectedValue(new Error("disk full"));
   const writeNfo = vi.fn().mockResolvedValue(undefined);
@@ -59,34 +67,76 @@ test("detail poster editor keeps the dialog open after a failed save", async () 
   await expect.element(screen.getByRole("dialog", { name: "编辑 NFO 文件" })).not.toBeInTheDocument();
 });
 
-test("detail poster editor hides remote-only failures and refreshes a successful save", async () => {
-  const unavailable = await render(
-    <DetailPanelAdapter
-      port={createPort({ preparePosterCrop: async () => await Promise.reject(new Error("no local image")) })}
-      item={item}
-    />,
-  );
-  await expect.element(unavailable.getByRole("button", { name: "编辑封面" })).not.toBeInTheDocument();
-  await unavailable.unmount();
+test("detail crop loads on demand and keeps late responses scoped to the selected result", async () => {
+  const nextItem = { ...item, resultId: "result-2", number: "ABC-002" };
+  const firstLoad = deferred<typeof session>();
+  const firstSave = deferred<{ posterUrl: string }>();
+  const preparePosterCrop = vi
+    .fn<DetailActionPort["preparePosterCrop"]>()
+    .mockReturnValueOnce(firstLoad.promise)
+    .mockRejectedValueOnce(new Error("no local image"))
+    .mockResolvedValue(session);
+  const savePosterCrop = vi
+    .fn<DetailActionPort["savePosterCrop"]>()
+    .mockReturnValueOnce(firstSave.promise)
+    .mockResolvedValue({ posterUrl: `${sourceUrl}#revision` });
+  const port = createPort({ preparePosterCrop, savePosterCrop });
+  const screen = await render(<DetailPanelAdapter port={port} item={item} />);
+  await expect.element(screen.getByAltText("ABC-001")).toBeVisible();
+  expect(preparePosterCrop).not.toHaveBeenCalled();
+  const edit = screen.getByRole("button", { name: "编辑封面" });
+  const dialog = screen.getByRole("dialog", { name: "编辑封面" });
+  await edit.click();
+  await expect.element(edit).toBeDisabled();
+  expect(preparePosterCrop).toHaveBeenLastCalledWith(item);
 
-  const screen = await render(<DetailPanelAdapter port={createPort()} item={item} />);
+  await screen.rerender(<DetailPanelAdapter port={port} item={nextItem} />);
+  firstLoad.resolve(session);
+  await firstLoad.promise;
+  await expect.element(edit).toBeEnabled();
+  await expect.element(dialog).not.toBeInTheDocument();
+  expect(preparePosterCrop).toHaveBeenCalledOnce();
+  await edit.click();
+  await expect.element(edit).toBeEnabled();
+  await expect.element(dialog).not.toBeInTheDocument();
+
+  await edit.click();
+  await screen.getByRole("button", { name: "保存封面" }).click();
+  expect(savePosterCrop).toHaveBeenLastCalledWith(nextItem, session.initialCrop);
+  await screen.rerender(<DetailPanelAdapter port={port} item={item} />);
+  firstSave.resolve({ posterUrl: `${sourceUrl}#stale` });
+  await firstSave.promise;
+  await expect.element(screen.getByAltText("ABC-001")).toHaveAttribute("src", sourceUrl);
+
   await screen.getByRole("button", { name: "编辑封面" }).click();
   await screen.getByRole("button", { name: "保存封面" }).click();
-  await expect.element(screen.getByRole("dialog", { name: "编辑封面" })).not.toBeInTheDocument();
+  await expect.element(dialog).not.toBeInTheDocument();
   await expect.element(screen.getByAltText("ABC-001")).toHaveAttribute("src", `${sourceUrl}#revision`);
+  await screen.rerender(<DetailPanelAdapter port={port} item={nextItem} />);
+  await expect.element(screen.getByAltText("ABC-002")).toHaveAttribute("src", sourceUrl);
+  await screen.rerender(<DetailPanelAdapter port={port} item={item} />);
+  await expect.element(screen.getByAltText("ABC-001")).toHaveAttribute("src", `${sourceUrl}#revision`);
+  expect(preparePosterCrop).toHaveBeenCalledTimes(4);
   await screen.unmount();
+  const resolveImageCandidates = vi.fn(async (candidates: string[], _directory?: string, width?: number) =>
+    candidates.map((candidate) => (width ? `${candidate}#w=${width}` : candidate)),
+  );
   const gallery = await render(
     <SceneImageGallery
       images={[sourceUrl]}
       trailerSrc="/trailer-test.mp4"
-      resolveImageCandidates={async (candidates) => candidates}
+      resolveImageCandidates={resolveImageCandidates}
     />,
   );
+  await expect
+    .element(gallery.getByAltText("Scene 1"))
+    .toHaveAttribute("src", `${sourceUrl}#w=${detailImageWidths.scene}`);
   expect(document.querySelector("video")).toBeNull();
   await gallery.getByRole("button", { name: "播放预告片" }).click();
   await expect.poll(() => document.querySelector("video")?.getAttribute("src")).toBe("/trailer-test.mp4");
   await gallery.getByRole("button", { name: "下一张剧照" }).click();
   await expect.poll(() => document.querySelector("video")).toBeNull();
+  await expect.element(gallery.getByRole("dialog").getByAltText("Scene 1")).toHaveAttribute("src", sourceUrl);
   await gallery.getByRole("button", { name: "上一张剧照" }).click();
   expect(document.querySelector("video")).toBeNull();
   await gallery.getByRole("button", { name: "播放预告片" }).last().click();

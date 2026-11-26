@@ -228,6 +228,13 @@ describe("Emby actor services", () => {
       { key: "adminKey", status: "skipped" },
     ]);
     for (const [, init] of networkClient.getJson.mock.calls) expect(init?.useProxy).toBe(false);
+    networkClient.getJson.mockClear();
+    const proxied = await checkConnection(
+      networkClient as unknown as NetworkClient,
+      createEmbyConfig({ emby: { useProxy: true } }),
+    );
+    expect(proxied.success).toBe(true);
+    for (const [, init] of networkClient.getJson.mock.calls) expect(init?.useProxy).toBe(true);
   });
 
   it("reads people for diagnostics exactly as the sync does: resolved user id and actor filter", async () => {

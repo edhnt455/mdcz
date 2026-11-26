@@ -183,6 +183,13 @@
       "when": 1795132800000,
       "tag": "0025_subtitle_resource_state",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795651200000,
+      "tag": "0026_library_file_lookup_index",
+      "breakpoints": true
     }
   ]
 }

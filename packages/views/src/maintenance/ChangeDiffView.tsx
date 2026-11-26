@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Clock, ImageIcon, LoaderCircle, X } from "lu
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { ImageOptionCard } from "../common";
 import { TrailerPlayer } from "../detail/TrailerPlayer";
+import { detailImageWidths, type ResolveImageCandidates } from "../detail/types";
 import { getT, useT } from "../i18n";
 
 export type MaintenanceFieldSelectionSide = "old" | "new";
@@ -35,7 +36,7 @@ export interface MaintenanceSceneImageOptionProps {
   resolveImageCandidates?: ResolveMaintenanceImageCandidates;
 }
 
-export type ResolveMaintenanceImageCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
+export type ResolveMaintenanceImageCandidates = ResolveImageCandidates;
 
 export interface ChangeDiffViewProps {
   fileId: string;
@@ -214,6 +215,7 @@ const useResolvedMaintenanceImageCandidates = (
   resolveImageCandidates: ResolveMaintenanceImageCandidates,
   rawCandidates: string[],
   baseDir?: string,
+  width?: number,
 ): string[] => {
   const candidateKey = rawCandidates.map((candidate) => candidate.trim()).join("\u0000");
   const [resolved, setResolved] = useState<string[]>([]);
@@ -223,7 +225,7 @@ const useResolvedMaintenanceImageCandidates = (
     const candidates = candidateKey ? candidateKey.split("\u0000").filter(Boolean) : [];
 
     const resolve = async () => {
-      const next = await resolveImageCandidates(candidates, baseDir);
+      const next = await resolveImageCandidates(candidates, baseDir, width);
       if (!cancelled) {
         setResolved(next);
       }
@@ -234,7 +236,7 @@ const useResolvedMaintenanceImageCandidates = (
     return () => {
       cancelled = true;
     };
-  }, [baseDir, candidateKey, resolveImageCandidates]);
+  }, [baseDir, candidateKey, resolveImageCandidates, width]);
 
   return resolved;
 };
@@ -425,7 +427,12 @@ function ResolvedSceneThumbnail({
   baseDir?: string;
   resolveImageCandidates: ResolveMaintenanceImageCandidates;
 }) {
-  const [resolvedSrc = ""] = useResolvedMaintenanceImageCandidates(resolveImageCandidates, [src], baseDir);
+  const [resolvedSrc = ""] = useResolvedMaintenanceImageCandidates(
+    resolveImageCandidates,
+    [src],
+    baseDir,
+    detailImageWidths.diffScene,
+  );
 
   if (!resolvedSrc) {
     return (
@@ -435,7 +442,15 @@ function ResolvedSceneThumbnail({
     );
   }
 
-  return <img src={resolvedSrc} alt={alt} className="h-full w-full rounded-md object-cover" />;
+  return (
+    <img
+      src={resolvedSrc}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      className="h-full w-full rounded-md object-cover"
+    />
+  );
 }
 
 function ResolvedSceneLightboxImage({
@@ -614,11 +629,15 @@ export function ChangeDiffView({
 }: ChangeDiffViewProps) {
   const t = useT();
   const baseDir = imageBaseDir || getMaintenanceImageBaseDir(entry);
+  const resolveDiffImageCandidates = useCallback<ResolveImageCandidates>(
+    (candidates, directory) => resolveImageCandidates(candidates, directory, detailImageWidths.diff),
+    [resolveImageCandidates],
+  );
   const renderResolvedImageOption = (props: MaintenanceImageOptionProps) =>
     renderImageOption({
       ...props,
       baseDir,
-      resolveImageCandidates,
+      resolveImageCandidates: resolveDiffImageCandidates,
     });
   const renderResolvedSceneImages = (props: MaintenanceSceneImageOptionProps) =>
     renderSceneImages({

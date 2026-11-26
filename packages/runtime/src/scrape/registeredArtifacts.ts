@@ -191,5 +191,12 @@ export async function registeredPosterCropContext(
     root = await resolveRoot(asset.rootId);
     assets[kind] = resolveRootRelativePath(root, asset.relativePath);
   }
-  return { videoPath, assets, root, movieId };
+  const nfoPaths = await Promise.all(
+    entry.assets.flatMap(({ kind, published, rootId, relativePath }) =>
+      kind === "nfo" && published && rootId && relativePath
+        ? [resolveRoot(rootId).then((root) => resolveRootRelativePath(root, relativePath))]
+        : [],
+    ),
+  );
+  return { videoPath, assets, root, movieId, nfoPaths };
 }

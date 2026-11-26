@@ -22,7 +22,12 @@ export interface DetailNfoReadResponse {
 export interface DetailActionPort {
   previewConflict?(input: ScrapeConflictInput): Promise<ScrapeConflictPreview>;
   resolveConflict?(input: ScrapeConflictResolveInput): Promise<void>;
-  resolveImageCandidates(candidates: string[], baseDir?: string, item?: DetailViewItem | null): Promise<string[]>;
+  resolveImageCandidates(
+    candidates: string[],
+    baseDir?: string,
+    item?: DetailViewItem | null,
+    width?: number,
+  ): Promise<string[]>;
   readNfo(item: DetailViewItem, path: string): Promise<DetailNfoReadResponse>;
   writeNfo(
     item: DetailViewItem,

@@ -18,7 +18,13 @@ vi.mock("node:timers/promises", () => {
 
 import { CrawlerProvider } from "@mdcz/runtime/crawler/CrawlerProvider";
 import { FetchGateway } from "@mdcz/runtime/crawler/FetchGateway";
-import { NetworkClient, runWithCrawlerSource } from "@mdcz/runtime/network";
+import {
+  checkConfiguredSiteCookies,
+  InMemoryCookieJar,
+  NetworkClient,
+  runWithCrawlerSource,
+} from "@mdcz/runtime/network";
+import { configurationSchema } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import { Impit } from "../../impitMock";
 
@@ -146,7 +152,7 @@ describe("NetworkClient retry policy", () => {
       .mockResolvedValueOnce(
         new Response('{"output":"ok"}', {
           status: 200,
-          headers: { "content-type": "application/json" },
+          headers: { "content-type": "text/plain" },
         }),
       );
     const client = new NetworkClient({ getRetryCount: () => 1 });
@@ -159,6 +165,21 @@ describe("NetworkClient retry policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(json).toHaveBeenCalledTimes(1);
     expect(sleepMock).toHaveBeenCalledWith(1000);
+
+    fetchMock.mockResolvedValueOnce(new Response("rate limited", { status: 429, headers: { "retry-after": "1" } }));
+    await expect(client.postJsonDetailed("https://example.com/responses", {})).resolves.toMatchObject({
+      status: 429,
+      data: "rate limited",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sleepMock).toHaveBeenCalledOnce();
+
+    fetchMock.mockRejectedValueOnce(new Error("body timed out"));
+    await expect(client.postJsonDetailed("https://example.com/responses", {}, { maxRetries: 0 })).rejects.toThrow(
+      "body timed out",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(sleepMock).toHaveBeenCalledOnce();
   });
 
   it("streams downloads through a temporary file before publishing the target", async () => {
@@ -365,6 +386,19 @@ describe("NetworkClient retry policy", () => {
     }
     expect(impitConstructorMock).toHaveBeenCalledTimes(3);
 
+    for (const url of [
+      "http://127.0.0.1",
+      "http://[::1]",
+      "http://[fd12::1]",
+      "http://100.64.0.1",
+      "http://emby",
+      "http://nas.local.",
+      "http://192.168.50.4",
+    ]) {
+      await expect(client.getText(url, { useProxy: true })).resolves.toBe("ok");
+      expect(dispatchSpy.mock.contexts.at(-1)).toBe(directClient);
+    }
+
     await expect(client.getText("https://example.com/actor.jpg")).resolves.toBe("ok");
     expect(dispatchSpy.mock.contexts.at(-1)).toBe(dispatchSpy.mock.contexts[2]);
     expect(impitConstructorMock).toHaveBeenCalledTimes(3);
@@ -378,7 +412,27 @@ describe("NetworkClient retry policy", () => {
     await expect(client.getText("https://example.com/actor.jpg")).resolves.toBe("ok");
     expect(impitConstructorMock).toHaveBeenCalledTimes(4);
     expect(impitConstructorMock.mock.calls[3]?.[0]).toMatchObject({ proxyUrl: "http://proxy-c" });
+    const jar = new InMemoryCookieJar();
+    const session = client.createSession({ cookieJar: jar });
+    await expect(session.getText("http://nas.local/login")).resolves.toBe("ok");
+    await expect(session.getText("https://example.com/login")).resolves.toBe("ok");
+    await expect(session.getText("https://example.com/profile")).resolves.toBe("ok");
+    expect(impitConstructorMock.mock.calls.slice(4).map(([options]) => [options.proxyUrl, options.cookieJar])).toEqual([
+      [undefined, jar],
+      ["http://proxy-c", jar],
+    ]);
     dispatchSpy.mockRestore();
+  });
+
+  it("applies each site's proxy policy to its cookie check", async () => {
+    fetchMock.mockImplementation(async () => new Response("ok"));
+    const getProxyUrl = vi.fn((site?: Website) => (site === Website.JAVDB ? undefined : "http://proxy.test"));
+    const client = new NetworkClient({ getProxyUrl });
+    await checkConfiguredSiteCookies(
+      configurationSchema.parse({ network: { javdbCookie: "test=yes", fantiaCookie: "test=yes" } }),
+      client,
+    );
+    expect(getProxyUrl.mock.calls.flat().filter(Boolean)).toEqual([Website.JAVDB, Website.JAVBUS, Website.FANTIA]);
   });
 
   it("applies crawler-registered site request defaults without overriding explicit headers", async () => {

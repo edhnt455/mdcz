@@ -489,6 +489,7 @@ export class FileScraper {
           const { assets: _assets, ...memberIdentity } = member.identity;
           return {
             ...rest,
+            existingBadgeRecords: member.localState?.badgeRecords,
             existingNfoPath: preservedNfoPath,
             scrape: {
               itemId: member.itemId,

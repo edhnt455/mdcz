@@ -241,7 +241,7 @@ export const settingsFields: Messages["settingsFields"] = {
     "download.downloadPoster": { label: "下载海报" },
     "download.tagBadges": {
       label: "启用图片水印",
-      description: "根据影片信息，为选中的图片添加水印。",
+      description: "按影片标签为选中的图片添加角标。标签或角标样式变化后，可用「重新合并」重绘由 MDCz 管理的海报。",
       aliases: ["角标", "标签角标"],
     },
     "download.tagBadgeTypes": {
@@ -442,6 +442,8 @@ export const settingsFields: Messages["settingsFields"] = {
       description:
         "可选，填写 24 小时制 HH:mm（如 03:00），每天补全一次 Emby 中缺失的演员头像。留空关闭；按 MDCz 服务所在时区执行，需开启自动同步。",
     },
+    "emby.useProxy": { label: "Emby 使用代理", description: "公网地址可使用全局代理，内网地址始终直连。" },
+    "jellyfin.useProxy": { label: "Jellyfin 使用代理", description: "公网地址可使用全局代理，内网地址始终直连。" },
     "emby.notifyAfterPublish": {
       label: "入库后增量刷新目录",
       description: "影片整理入库后，请求 Emby 刷新该影片所在目录。开启自动头像同步时始终发送扫描通知。",

@@ -2,18 +2,13 @@ import { toUniqueActorNames } from "@mdcz/shared/actorAliases";
 import type { Configuration } from "@mdcz/shared/config";
 import type { TranslateEngine } from "@mdcz/shared/enums";
 import type { CrawlerData, TranslationFailures } from "@mdcz/shared/types";
-import {
-  isUnrecoverableNetworkError,
-  type RuntimeNetworkClient,
-  type RuntimeRequestInit,
-  runWithNetworkChannel,
-} from "../network";
+import { isUnrecoverableNetworkError, type RuntimeNetworkClient, runWithNetworkChannel } from "../network";
 import { detectLanguage, noopRuntimeLogger, type RuntimeLogger, toErrorMessage } from "../shared";
 import { ActorNameNormalizer } from "./translate/ActorNameNormalizer";
 import { BaiduTranslator } from "./translate/engines/BaiduTranslator";
 import { DeeplTranslator } from "./translate/engines/DeeplTranslator";
 import { GoogleTranslator } from "./translate/engines/GoogleTranslator";
-import { LlmApiClient, type RuntimeNetworkJsonResponse } from "./translate/engines/LlmApiClient";
+import { LlmApiClient } from "./translate/engines/LlmApiClient";
 import { LlmRequestService } from "./translate/engines/LlmRequestService";
 import { type LlmMetadataTranslationInput, OpenAiTranslator } from "./translate/engines/OpenAiTranslator";
 import { GenreTranslator } from "./translate/GenreTranslator";
@@ -36,20 +31,6 @@ export interface TranslateServiceOptions {
   mappingStore?: TranslationMappingStore;
 }
 
-const createLlmApiClient = (networkClient: RuntimeNetworkClient): LlmApiClient => {
-  const postJsonDetailed = networkClient.postJsonDetailed;
-  if (typeof postJsonDetailed === "function") {
-    return new LlmApiClient({
-      postJsonDetailed: async <TResponse>(url: string, payload: unknown, init?: RuntimeRequestInit) => {
-        const response = await postJsonDetailed.call(networkClient, url, payload, init);
-        return response as RuntimeNetworkJsonResponse<TResponse>;
-      },
-    });
-  }
-
-  return new LlmApiClient();
-};
-
 export class TranslateService {
   private readonly logger: RuntimeLogger;
 
@@ -66,7 +47,17 @@ export class TranslateService {
     this.actorNameNormalizer = new ActorNameNormalizer(options.mappingStore);
     const llmRequests =
       options.llmRequests ??
-      new LlmRequestService(this.logger, options.llmApiClient ?? createLlmApiClient(networkClient));
+      new LlmRequestService(
+        this.logger,
+        options.llmApiClient ??
+          new LlmApiClient({
+            postJsonDetailed: (url, payload, init) => {
+              if (!networkClient.postJsonDetailed) throw new Error("大模型请求需要支持完整 HTTP 响应的网络客户端");
+              return networkClient.postJsonDetailed(url, payload, init);
+            },
+            setDomainLimit: networkClient.setDomainLimit?.bind(networkClient),
+          }),
+      );
     this.openAiTranslator = new OpenAiTranslator(llmRequests);
     this.translators = {
       google: new GoogleTranslator(networkClient).translate,

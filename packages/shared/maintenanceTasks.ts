@@ -67,6 +67,7 @@ export interface MaintenanceSessionPreview {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
+  posterRedraw?: import("./types").PosterRedraw;
   entry?: LocalScanEntry;
   createdAt: Date;
   updatedAt: Date;

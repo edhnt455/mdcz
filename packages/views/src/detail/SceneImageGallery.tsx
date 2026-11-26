@@ -3,8 +3,7 @@ import { ChevronLeft, ChevronRight, ImageIcon, Play, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "../i18n";
 import { TrailerPlayer } from "./TrailerPlayer";
-
-export type ResolveImageCandidates = (candidates: string[], baseDir?: string) => Promise<string[]>;
+import { detailImageWidths, type ResolveImageCandidates } from "./types";
 
 interface SceneImageGalleryProps {
   images: string[];
@@ -25,6 +24,7 @@ const useResolvedImageSrc = (
   resolveImageCandidates: ResolveImageCandidates,
   rawCandidates: string[],
   baseDir?: string,
+  width?: number,
 ): string => {
   const candidateKey = rawCandidates.map((candidate) => candidate.trim()).join("\u0000");
   const [resolvedSrc, setResolvedSrc] = useState("");
@@ -34,7 +34,7 @@ const useResolvedImageSrc = (
     const candidates = candidateKey ? candidateKey.split("\u0000").filter(Boolean) : [];
 
     const resolve = async () => {
-      const [nextSrc = ""] = await resolveImageCandidates(candidates, baseDir);
+      const [nextSrc = ""] = await resolveImageCandidates(candidates, baseDir, width);
       if (!cancelled) {
         setResolvedSrc(nextSrc);
       }
@@ -45,7 +45,7 @@ const useResolvedImageSrc = (
     return () => {
       cancelled = true;
     };
-  }, [baseDir, candidateKey, resolveImageCandidates]);
+  }, [baseDir, candidateKey, resolveImageCandidates, width]);
 
   return resolvedSrc;
 };
@@ -261,48 +261,9 @@ function LazyImage({
   baseDir?: string;
   resolveImageCandidates: ResolveImageCandidates;
 }) {
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState(false);
-  const resolvedSrc = useResolvedImageSrc(resolveImageCandidates, [src], baseDir);
-
-  useEffect(() => {
-    setLoaded(false);
-    setError(false);
-
-    if (!resolvedSrc) {
-      return;
-    }
-
-    let cancelled = false;
-    const probe = new Image();
-    probe.onload = () => {
-      if (!cancelled) {
-        setLoaded(true);
-      }
-    };
-    probe.onerror = () => {
-      if (!cancelled) {
-        setError(true);
-      }
-    };
-    probe.src = resolvedSrc;
-
-    if (probe.complete) {
-      if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
-        setLoaded(true);
-      } else {
-        setError(true);
-      }
-    }
-
-    return () => {
-      cancelled = true;
-      probe.onload = null;
-      probe.onerror = null;
-    };
-  }, [resolvedSrc]);
-
-  if (error || !resolvedSrc) {
+  const [failedSrc, setFailedSrc] = useState("");
+  const resolvedSrc = useResolvedImageSrc(resolveImageCandidates, [src], baseDir, detailImageWidths.scene);
+  if (!resolvedSrc || failedSrc === resolvedSrc) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <ImageIcon className="h-4 w-4 text-muted-foreground/30" />
@@ -311,16 +272,14 @@ function LazyImage({
   }
 
   return (
-    <div className="h-full w-full overflow-hidden rounded-quiet">
-      {!loaded ? <div className="h-full w-full animate-pulse bg-muted/30" /> : null}
-      <img
-        key={resolvedSrc}
-        src={resolvedSrc}
-        alt={alt}
-        onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
-        className={`h-full w-full object-cover ${loaded ? "" : "invisible"}`}
-      />
-    </div>
+    <img
+      key={resolvedSrc}
+      src={resolvedSrc}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailedSrc(resolvedSrc)}
+      className="h-full w-full object-cover"
+    />
   );
 }

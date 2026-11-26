@@ -7,7 +7,7 @@ import type {
   ScrapeActionPort,
   SharedWorkbenchPorts,
 } from "@mdcz/views/adapters";
-import type { DetailViewItem } from "@mdcz/views/detail";
+import { type DetailViewItem, detailImageWidths } from "@mdcz/views/detail";
 import { getT } from "@mdcz/views/i18n";
 import {
   applyMaintenanceSessionSnapshot,
@@ -120,7 +120,12 @@ const resolveCandidatePath = (candidate: string, item: DetailViewItem, baseDir?:
   return normalizedCandidate;
 };
 
-const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseDir?: string): string => {
+const toAssetCandidate = (
+  candidate: string,
+  item?: DetailViewItem | null,
+  baseDir?: string,
+  width?: number,
+): string => {
   const trimmed = candidate.trim();
   if (!trimmed) {
     return "";
@@ -128,9 +133,10 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
   if (isRemoteImageCandidate(trimmed)) {
     return trimmed;
   }
+  const variant = { width, format: "webp" as const };
   if (trimmed.startsWith(`${LOCAL_FILE_SCHEME}://`)) {
     const file = parseLocalFileUrl(trimmed);
-    return getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath }) || trimmed;
+    return getLibraryAssetSrc({ rootId: file.rootId, path: file.relativePath, ...variant }) || trimmed;
   }
   if (!item) {
     return trimmed;
@@ -146,7 +152,7 @@ const toAssetCandidate = (candidate: string, item?: DetailViewItem | null, baseD
     return trimmed;
   }
   const path = asset?.type === "local" ? asset.file.relativePath : resolveCandidatePath(trimmed, item, baseDir);
-  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path) }) || trimmed;
+  return getLibraryAssetSrc({ rootId, path: toRelativePath(item, path), ...variant }) || trimmed;
 };
 
 export const createWebDetailPort = (): DetailActionPort => ({
@@ -159,8 +165,8 @@ export const createWebDetailPort = (): DetailActionPort => ({
       requestScrapeLiveRunsRefresh();
     }
   },
-  resolveImageCandidates: async (candidates, baseDir, item) =>
-    dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir))),
+  resolveImageCandidates: async (candidates, baseDir, item, width) =>
+    dedupeValues(candidates.map((candidate) => toAssetCandidate(candidate, item, baseDir, width))),
   readNfo: async (item, path) => {
     const rootId = getMetadataRootId(item);
     const relativePath = toRelativePath(item, path);
@@ -197,9 +203,15 @@ export const createWebDetailPort = (): DetailActionPort => ({
   savePosterCrop: async (item, crop) => {
     if (!item.resultId) throw new Error(getT().web.missingScrapeResultId);
     const response = await api.scrape.posterCropSave({ id: item.resultId, crop });
-    const posterUrl = new URL(getLibraryAssetSrc({ rootId: response.rootId, path: response.targetRelativePath }));
-    if (response.revision) posterUrl.searchParams.set("revision", response.revision);
-    return { posterUrl: posterUrl.toString() };
+    return {
+      posterUrl: getLibraryAssetSrc({
+        rootId: response.rootId,
+        path: response.targetRelativePath,
+        width: detailImageWidths.poster,
+        format: "webp",
+        revision: response.revision,
+      }),
+    };
   },
 });
 

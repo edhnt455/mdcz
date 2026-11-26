@@ -1,5 +1,12 @@
 import { Website } from "@mdcz/shared/enums";
-import type { ActorProfile, CrawlerData, NfoLocalState, TranslationFailures } from "@mdcz/shared/types";
+import {
+  type ActorProfile,
+  BADGE_ARTWORK_KINDS,
+  type BadgeArtworkRecords,
+  type CrawlerData,
+  type NfoLocalState,
+  type TranslationFailures,
+} from "@mdcz/shared/types";
 import { XMLParser } from "fast-xml-parser";
 import { MDCZ_NFO_ELEMENTS } from "../scrape/nfo";
 import { detectNfoEdits, parseFingerprints } from "../scrape/nfoEdits";
@@ -57,6 +64,18 @@ const toStringArray = (value: unknown): string[] =>
     .filter((item) => item.length > 0);
 
 const getNodeText = (value: unknown): string | undefined => toStringValue(toRecord(value)?.["#text"] ?? value);
+
+const parseBadgeRecords = (mdcz: Record<string, unknown> | undefined): BadgeArtworkRecords | undefined => {
+  const records: BadgeArtworkRecords = {};
+  for (const kind of BADGE_ARTWORK_KINDS) {
+    const node = toRecord(mdcz?.[`${kind}_record`]);
+    const sha256 = toStringValue(node?.["@_sha256"]);
+    const baseSha256 = toStringValue(node?.["@_base_sha256"]);
+    if (!sha256 || !baseSha256 || ![sha256, baseSha256].every((hash) => /^[a-f0-9]{64}$/u.test(hash))) continue;
+    records[kind] = { sha256, baseSha256, stamp: toStringValue(node?.["@_stamp"]) ?? "" };
+  }
+  return Object.keys(records).length ? records : undefined;
+};
 
 interface NfoIdentifier {
   number?: string;
@@ -247,6 +266,7 @@ export const parseNfoSnapshot = (xml: string): ParsedNfoSnapshot => {
       fileinfo: toRecord(movieNode.fileinfo),
       sourcePin: pinnedSite && pinnedUrl ? { site: pinnedSite, url: pinnedUrl } : undefined,
       dateAdded: toStringValue(movieNode.dateadded),
+      badgeRecords: parseBadgeRecords(mdczNode),
       foreignElements: Object.fromEntries(Object.entries(movieNode).filter(([name]) => !MDCZ_NFO_ELEMENTS.has(name))),
     }),
   };

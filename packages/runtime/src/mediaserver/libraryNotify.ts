@@ -29,7 +29,7 @@ export const notifyMediaServersOfPublish = async (
     servers.map(async (key) => {
       try {
         await networkClient.postText(buildMediaServerUrl(configuration, key, "/Library/Media/Updated"), body, {
-          useProxy: false,
+          useProxy: configuration[key].useProxy,
           headers: buildMediaServerHeaders(configuration, key, { "content-type": "application/json" }),
         });
         notified += 1;

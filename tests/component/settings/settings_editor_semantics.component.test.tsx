@@ -491,7 +491,12 @@ test("LLM settings save independently, recognition restores defaults and transla
       values={{
         ...defaultConfiguration,
         scrape: { ...defaultConfiguration.scrape, aiNumberFallback: true },
-        translate: { ...defaultConfiguration.translate, llmNumberRecognitionPrompt: "Saved extraction instructions" },
+        translate: {
+          ...defaultConfiguration.translate,
+          llmNumberRecognitionPrompt: "Saved extraction instructions",
+          llmReasoning: "medium",
+          llmOutputFormat: "json_schema",
+        },
       }}
       defaultValues={defaultConfiguration}
       services={createSettingsServices({ saveConfig, resetConfig, testTranslation })}
@@ -555,6 +560,25 @@ test("LLM settings save independently, recognition restores defaults and transla
   await resetRecognition.click();
   await expect.element(screen.getByText("Reset unavailable", { exact: true })).toBeVisible();
   await expect.element(recognitionPrompt).toHaveValue("New extraction instructions");
+  await screen.getByRole("combobox", { name: "服务类型", exact: true }).click();
+  await page.getByRole("option", { name: "DeepSeek", exact: true }).click();
+  await expect
+    .element(screen.getByRole("combobox", { name: "LLM 推理强度", exact: true }))
+    .toHaveTextContent("服务端默认");
+  await expect
+    .element(screen.getByRole("combobox", { name: "输出格式", exact: true }))
+    .toHaveTextContent("JSON Object");
+  await expect
+    .poll(() => saveConfig.mock.calls)
+    .toContainEqual([
+      {
+        translate: expect.objectContaining({
+          llmServiceType: "deepseek",
+          llmReasoning: "default",
+          llmOutputFormat: "json_object",
+        }),
+      },
+    ]);
 });
 
 test("settings sections expose public labels and the library template notice", async () => {

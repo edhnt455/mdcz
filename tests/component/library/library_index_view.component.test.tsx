@@ -1,3 +1,4 @@
+import { DEFAULT_LIBRARY_SORT } from "@mdcz/shared/libraryPagination";
 import type { LibraryEntryDto } from "@mdcz/shared/serverDtos";
 import { type LibraryBrowseControls, LibraryEditForm, LibraryIndexView, useLibraryView } from "@mdcz/views/library";
 import { expect, test, vi } from "vitest";
@@ -39,6 +40,8 @@ const baseProps = {
   ],
   page: 1,
   pageSize: 10 as const,
+  sort: DEFAULT_LIBRARY_SORT,
+  onSortChange: vi.fn(),
   selectionKey: "all",
   onPageChange: vi.fn(),
   onPageSizeChange: vi.fn(),

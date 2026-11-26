@@ -7,7 +7,6 @@ import type { LanguageTarget } from "../types";
 import { isMissingRequiredLlmApiKey, type LlmJsonSchema } from "./LlmApiClient";
 import type { LlmRequestService } from "./LlmRequestService";
 
-const COMPLETE_LEADING_THINK_PATTERN = /^<think>[\s\S]*?<\/think>\s*/iu;
 const TRANSLATION_ONLY_INSTRUCTION = "只输出最终译文，不要输出思考过程、解释、提示词或原文。";
 const JSON_TRANSLATION_INSTRUCTION = '只输出 JSON 对象，格式为 {"translation":"最终译文"}，不要添加其他字段。';
 
@@ -60,7 +59,7 @@ export const cleanTranslationOutput = (
     return null;
   }
 
-  const cleaned = output.replace(COMPLETE_LEADING_THINK_PATTERN, "").trim();
+  const cleaned = output.trim();
   let translated = cleaned;
   if (structured) {
     try {
@@ -112,7 +111,7 @@ export class OpenAiTranslator {
       structured ? JSON_TRANSLATION_INSTRUCTION : TRANSLATION_ONLY_INSTRUCTION,
     );
     const content = await this.requests.requestText(
-      config.translate,
+      config,
       contractedPrompt,
       signal,
       structured ? LLM_TEXT_TRANSLATION_SCHEMA : undefined,
@@ -152,7 +151,7 @@ export class OpenAiTranslator {
         "不要返回解释、Markdown、提示词或原文之外的额外字段。",
       ].join("\n"),
     );
-    const content = await this.requests.requestText(config.translate, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
+    const content = await this.requests.requestText(config, prompt, signal, LLM_METADATA_TRANSLATION_SCHEMA);
     try {
       const result: unknown = JSON.parse(content ?? "");
       if (allowPartialOutput) return partialMetadataTranslationSchema.parse(result);

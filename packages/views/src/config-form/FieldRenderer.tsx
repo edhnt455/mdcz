@@ -72,6 +72,7 @@ interface BaseFieldProps {
    * Defaults to "immediate".
    */
   commitMode?: CommitMode;
+  bundlePaths?: readonly FieldKey[];
   rules?: RegisterOptions;
 }
 
@@ -86,6 +87,7 @@ export function BaseField({
   children,
   layout,
   commitMode = "immediate",
+  bundlePaths,
   rules,
 }: BaseFieldProps) {
   const sectionMode = useSettingsSectionMode();
@@ -102,6 +104,7 @@ export function BaseField({
       showReset={showReset}
       layout={layout}
       commitMode={commitMode}
+      bundlePaths={bundlePaths}
       rules={rules}
     >
       {children}
@@ -117,6 +120,7 @@ function ConnectedBaseField({
   children,
   layout,
   commitMode,
+  bundlePaths,
   rules,
 }: BaseFieldProps) {
   const t = useT();
@@ -124,7 +128,7 @@ function ConnectedBaseField({
   const label = text.label;
   const form = useFormContext();
   const fieldLayout = useContext(ConfigFieldLayoutContext);
-  const { resetToDefault } = useAutoSaveField(name, { mode: commitMode });
+  const { resetToDefault } = useAutoSaveField(name, { mode: commitMode, bundlePaths });
   const search = useOptionalSettingsSearch();
   const visible =
     search && isFieldManagedBySettingsSearch(name) ? !search.hasActiveFilters || search.isFieldVisible(name) : true;
@@ -360,33 +364,43 @@ export function EnumField({
   name,
   description,
   options,
+  bundlePaths,
+  onBeforeChange,
 }: {
   name: FieldKey;
   description?: string;
   options: EnumOption[];
+  bundlePaths?: readonly FieldKey[];
+  onBeforeChange?: (value: string) => void;
 }) {
   const t = useT();
   return (
-    <BaseField name={name} description={description} commitMode="immediate">
+    <BaseField name={name} description={description} commitMode="immediate" bundlePaths={bundlePaths}>
       {(field) => (
-        <FormControl>
-          <Select value={(field.value as string) ?? ""} onValueChange={field.onChange}>
+        <Select
+          value={(field.value as string) ?? ""}
+          onValueChange={(value) => {
+            onBeforeChange?.(value);
+            field.onChange(value);
+          }}
+        >
+          <FormControl>
             <SelectTrigger className="h-8 w-[320px] text-sm bg-background/50 focus:bg-background transition-all">
               <SelectValue placeholder={t.configForm.selectOption} />
             </SelectTrigger>
-            <SelectContent>
-              {options.map((option) => {
-                const value = typeof option === "string" ? option : option.value;
-                const display = typeof option === "string" ? option : option.label;
-                return (
-                  <SelectItem key={value} value={value}>
-                    {display}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </FormControl>
+          </FormControl>
+          <SelectContent>
+            {options.map((option) => {
+              const value = typeof option === "string" ? option : option.value;
+              const display = typeof option === "string" ? option : option.label;
+              return (
+                <SelectItem key={value} value={value}>
+                  {display}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
       )}
     </BaseField>
   );

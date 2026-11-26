@@ -1,3 +1,5 @@
+import type { LibrarySort } from "@mdcz/shared/libraryPagination";
+
 export const queryKeys = {
   subtitleJobs: ["subtitle-jobs"] as const,
   libraryEdit: ["library-edit"] as const,
@@ -27,8 +29,8 @@ export const queryKeys = {
   },
   library: {
     all: ["library"] as const,
-    list: (filters: object, page: number, pageSize: number) =>
-      ["library", "list", filters, { page, pageSize }] as const,
+    list: (filters: object, sort: LibrarySort, page: number, pageSize: number) =>
+      ["library", "list", filters, sort, { page, pageSize }] as const,
     availability: ["library", "availability"] as const,
     summary: (libraryId: string | undefined) => ["library", "summary", libraryId ?? ""] as const,
     facet: (input: object) => ["library", "facet", input] as const,

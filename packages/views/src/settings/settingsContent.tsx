@@ -10,6 +10,7 @@ import {
 } from "@mdcz/shared/config";
 import { TRANSLATION_TARGET_OPTIONS } from "@mdcz/shared/enums";
 import { toErrorMessage } from "@mdcz/shared/error";
+import { fitLlmChoices, type LlmReasoning, type LlmServiceType, llmServiceChoices } from "@mdcz/shared/llm";
 
 import {
   Button,
@@ -384,6 +385,8 @@ export function NamingSection() {
   );
 }
 
+const LLM_PROVIDER_FIELDS = ["translate.llmReasoning", "translate.llmOutputFormat"] as const;
+
 export function TranslateSection() {
   const t = useT();
   const services = useSettingsServices();
@@ -393,6 +396,7 @@ export function TranslateSection() {
   const search = useOptionalSettingsSearch();
   const engine = useWatch({ control: form.control, name: "translate.engine" });
   const serviceType = useWatch({ control: form.control, name: "translate.llmServiceType" });
+  const choices = llmServiceChoices(serviceType ?? "openai-compatible");
   const baiduService = useWatch({ control: form.control, name: "translate.baiduService" });
   const isLLM = engine === "openai";
   const aiNumberFallback = useWatch({ control: form.control, name: "scrape.aiNumberFallback" });
@@ -489,7 +493,20 @@ export function TranslateSection() {
           {serviceType === "openai-compatible" && (
             <EnumField name="translate.llmApiFormat" options={toEnumOptions(t.settings.options.llmApiFormat)} />
           )}
-          <EnumField name="translate.llmServiceType" options={toEnumOptions(t.settings.options.llmServiceType)} />
+          <EnumField
+            name="translate.llmServiceType"
+            options={toEnumOptions(t.settings.options.llmServiceType)}
+            bundlePaths={LLM_PROVIDER_FIELDS}
+            onBeforeChange={(next) => {
+              const reasoning = form.getValues("translate.llmReasoning");
+              const outputFormat = form.getValues("translate.llmOutputFormat");
+              const fitted = fitLlmChoices(next as LlmServiceType, reasoning, outputFormat);
+              if (fitted.reasoning !== reasoning)
+                form.setValue("translate.llmReasoning", fitted.reasoning, { shouldDirty: true });
+              if (fitted.outputFormat !== outputFormat)
+                form.setValue("translate.llmOutputFormat", fitted.outputFormat, { shouldDirty: true });
+            }}
+          />
           <PromptFieldWrapper name="translate.llmSystemPrompt" />
           <PromptFieldWrapper name="translate.llmPrompt" />
           <PromptFieldWrapper name="translate.llmNumberRecognitionPrompt" showReset />
@@ -505,13 +522,11 @@ export function TranslateSection() {
             }
             options={toEnumOptions(
               serviceType === "deepseek" ? t.settings.options.llmReasoningDeepseek : t.settings.options.llmReasoning,
-            )}
+            ).filter(({ value }) => choices.reasoning.includes(value as LlmReasoning))}
           />
           <EnumField
             name="translate.llmOutputFormat"
-            options={toEnumOptions(t.settings.options.llmOutputFormat).filter(
-              (option) => serviceType !== "deepseek" || option.value !== "json_schema",
-            )}
+            options={choices.outputFormat.map((value) => ({ value, label: t.settings.options.llmOutputFormat[value] }))}
           />
           <NumberField name="translate.llmTimeout" min={1} max={300} />
           <NumberField name="translate.llmMaxRetries" min={1} max={20} />

@@ -127,5 +127,6 @@ export const scrape = {
   discardNfoChanges: "Discard unsaved NFO changes?",
   discardPosterChanges: "Discard unsaved thumbnail changes?",
   coverSaved: "Thumbnail saved",
+  loadCoverFailed: (error: string) => `Failed to open the cover editor: ${error}`,
   saveCoverFailed: (error: string) => `Failed to save thumbnail: ${error}`,
 };

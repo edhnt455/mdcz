@@ -1,5 +1,5 @@
-import { lstat, mkdir } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join } from "node:path";
 import type { MediaRoot } from "@mdcz/media-store";
 import { filesystemPathKey, resolveRootRelativePath, toRootRelativePath } from "@mdcz/media-store";
 import type { LibraryEntryRecord } from "@mdcz/persistence";
@@ -21,6 +21,7 @@ import type {
   MaintenancePreviewStatus,
   NfoLocalState,
   PathDiff,
+  PosterRedraw,
 } from "@mdcz/shared/types";
 import { registeredMediaLocations } from "../library/registeredMedia";
 import { runWithScrapeItem } from "../network";
@@ -43,6 +44,7 @@ import { createStagingDirectory, removeStagingDirectory } from "../publication/p
 import type { PublicationOutputPort } from "../publication/types";
 import { WriteOutput } from "../publication/WriteOutput";
 import { AggregationService, type CrawlerPort, mergeSiteData, type SiteResultSink } from "../scrape/aggregation";
+import { badgeBasePath, readManagedArtworkBase, resolveArtworkBadges } from "../scrape/badgeArtwork";
 import { canonicalizeCrawlerDataActorAliases } from "../scrape/canonicalizeActorAliases";
 import { DirectoryInventory } from "../scrape/DirectoryInventory";
 import type { DownloadManager } from "../scrape/download";
@@ -58,6 +60,7 @@ import type { PrepareScrapeItem } from "../scrape/ScrapeRunner";
 import type { TranslateService } from "../scrape/TranslateService";
 import { isAbortError, throwIfAborted } from "../scrape/utils/abort";
 import { type RuntimeLogger, runtimeLoggerService } from "../shared";
+import { buildMaintenanceApplyData } from "./applyData";
 import { partitionCrawlerDataWithOptions } from "./diffCrawlerData";
 import { diffPaths } from "./diffPaths";
 import { LocalScanService } from "./LocalScanService";
@@ -129,6 +132,7 @@ export interface MaintenanceRuntimePreviewItem {
   pathDiff: PathDiff | null;
   proposedCrawlerData: CrawlerData | null;
   imageAlternatives?: MaintenanceImageAlternatives;
+  posterRedraw?: PosterRedraw;
 }
 
 export interface MaintenanceRuntimeApplyEntryInput {
@@ -384,6 +388,15 @@ export class MaintenanceRuntime {
       }
 
       const { fieldDiffs, unchangedFieldDiffs } = this.partitionDiffs(entry, preset, crawlerData, imageAlternatives);
+      const applied = buildMaintenanceApplyData(
+        entry,
+        { fieldDiffs, proposedCrawlerData: crawlerData, imageAlternatives },
+        undefined,
+      );
+      const posterRedraw =
+        applied.assetDecisions?.poster === "replace" || preset.assetPolicy === "replace"
+          ? undefined
+          : (await this.planPosterRedraw(preset, config, entry, files, applied.crawlerData))?.status;
 
       const { pathDiff, affectedFiles } = await this.previewPaths({
         presetId: input.presetId,
@@ -404,6 +417,7 @@ export class MaintenanceRuntime {
         pathDiff: pathDiff ?? null,
         proposedCrawlerData: crawlerData ?? null,
         imageAlternatives,
+        posterRedraw,
         affectedFiles,
         files,
       };
@@ -642,6 +656,7 @@ export class MaintenanceRuntime {
                 movieBaseName: sharedPlan.plan ? basename(sharedPlan.plan.nfoPath, ".nfo") : undefined,
               }),
               existingAssets: file.assets,
+              existingBadgeRecords: file.nfoLocalState?.badgeRecords,
               existingNfoPath: file.nfoPath,
             };
           }),
@@ -707,7 +722,51 @@ export class MaintenanceRuntime {
           }
           throwIfAborted(signal);
 
-          if (this.deps.postProcessAssets && stagingDir && preset.dataSource === "online") {
+          if (input.refreshOnline) {
+            preparedCrawlerData = mergeRefreshedMetadata(
+              preparedCrawlerData,
+              entry.crawlerData,
+              downloadedAssets,
+              entry.assets,
+              config.download,
+            );
+          }
+          let redrawnPoster: string | undefined;
+          const currentPoster = entry.assets.poster;
+          if (
+            currentPoster &&
+            committed?.assetDecisions?.poster !== "replace" &&
+            !(downloadedAssets.poster && downloadedAssets.downloaded.includes(downloadedAssets.poster))
+          ) {
+            const redraw = await this.planPosterRedraw(preset, config, entry, files, preparedCrawlerData);
+            if (redraw?.status === "kept") {
+              (this.deps.logger ?? runtimeLoggerService.getLogger("MaintenanceRuntime")).warn(
+                `[${entry.fileInfo.number}] 无法核验海报或无角标底图，已保留原海报`,
+              );
+            } else if (redraw?.status === "redraw") {
+              if (!stagingDir) {
+                await mkdir(stagingParent, { recursive: true });
+                stagingDir = await createStagingDirectory(stagingParent);
+              }
+              const name = `.mdcz-poster-redraw${extname(currentPoster)}`;
+              redrawnPoster = join(stagingDir, name);
+              await writeFile(redrawnPoster, redraw.base, { flag: "wx" });
+              for (const member of members) {
+                const target = member.assetLayout.retained.get(currentPoster);
+                if (!target) throw new Error("角标重绘缺少已登记的海报目标");
+                member.assetLayout = {
+                  ...member.assetLayout,
+                  staged: new Map([...member.assetLayout.staged, [name, target]]),
+                };
+              }
+              downloadedAssets = {
+                ...downloadedAssets,
+                poster: redrawnPoster,
+                downloaded: [...downloadedAssets.downloaded, redrawnPoster],
+              };
+            }
+          }
+          if (this.deps.postProcessAssets && stagingDir) {
             downloadedAssets = await this.deps.postProcessAssets({
               assets: downloadedAssets,
               configuration: config,
@@ -717,15 +776,15 @@ export class MaintenanceRuntime {
               signal,
               signalService: this.deps.signalService,
             });
-          }
-          if (input.refreshOnline) {
-            preparedCrawlerData = mergeRefreshedMetadata(
-              preparedCrawlerData,
-              entry.crawlerData,
-              downloadedAssets,
-              entry.assets,
-              config.download,
-            );
+            if (redrawnPoster && !downloadedAssets.badgeRecords?.poster) {
+              downloadedAssets = {
+                ...downloadedAssets,
+                poster: currentPoster,
+                downloaded: downloadedAssets.downloaded.filter((path) => path !== redrawnPoster),
+                badgeRecords: { ...downloadedAssets.badgeRecords, poster: entry.nfoLocalState?.badgeRecords?.poster },
+              };
+              redrawnPoster = undefined;
+            }
           }
 
           const published = await prepareMovieArtifacts({
@@ -844,10 +903,15 @@ export class MaintenanceRuntime {
             const actorCopies = published.artifacts.flatMap((artifact) =>
               "sourcePath" in artifact && basename(dirname(artifact.targetPath)) === ".actors" ? [artifact] : [],
             );
+            const redrawSources = new Set(redrawnPoster ? [redrawnPoster, badgeBasePath(redrawnPoster)] : []);
+            const redrawTargets = published.artifacts.flatMap((artifact) =>
+              "sourcePath" in artifact && redrawSources.has(artifact.sourcePath) ? [artifact.targetPath] : [],
+            );
             const ownershipPaths = [
               ...new Set([
                 ...cleanupPaths,
                 ...actorCopies.map((artifact) => artifact.targetPath),
+                ...redrawTargets,
                 ...(input.refreshOnline ? published.artifacts.map((artifact) => artifact.targetPath) : []),
               ]),
             ];
@@ -875,8 +939,12 @@ export class MaintenanceRuntime {
                 ),
               );
               const isShared = (path: string) => shared.has(filesystemPathKey(entryPaths.get(path) ?? path));
-              if (input.refreshOnline) {
-                const conflict = published.artifacts.find((artifact) => isShared(artifact.targetPath));
+              if (input.refreshOnline || redrawnPoster) {
+                const conflict = published.artifacts.find(
+                  (artifact) =>
+                    isShared(artifact.targetPath) &&
+                    (input.refreshOnline || redrawTargets.includes(artifact.targetPath)),
+                );
                 if (conflict) {
                   throw new PublicationConflictError(
                     entry.fileInfo.filePath,
@@ -908,7 +976,10 @@ export class MaintenanceRuntime {
             const validate = async () => {
               throwIfAborted(signal);
               publication.validate?.(movie);
-              await this.inventory.assertUnchanged(files.flatMap((f) => f.nfoPaths));
+              await this.inventory.assertUnchanged([
+                ...files.flatMap((f) => f.nfoPaths),
+                ...(redrawnPoster && currentPoster ? [currentPoster] : []),
+              ]);
               throwIfAborted(signal);
             };
             const commit = () => publication.commit(movie);
@@ -969,6 +1040,32 @@ export class MaintenanceRuntime {
       },
       input.signal,
     );
+  }
+
+  private async planPosterRedraw(
+    preset: MaintenancePreset,
+    config: Configuration,
+    entry: LocalScanEntry,
+    files: readonly LocalScanEntry[],
+    data: CrawlerData | undefined,
+  ): Promise<{ status: "redraw"; base: Buffer } | { status: "kept" } | undefined> {
+    const path = entry.assets.poster;
+    if (
+      !this.deps.postProcessAssets ||
+      !path ||
+      !data ||
+      !config.download.downloadPoster ||
+      preset.output === "none" ||
+      (preset.dataSource === "local" && !config.download.generateNfo)
+    )
+      return undefined;
+    const { stamp } = resolveArtworkBadges("poster", data, entry.fileInfo, entry.nfoLocalState, config.download);
+    const record = entry.nfoLocalState?.badgeRecords?.poster;
+    if ((record?.stamp ?? "") === stamp) return undefined;
+    if (!record || files.some((file) => file.assets.poster !== path)) return { status: "kept" };
+    await this.inventory.stats(path);
+    const base = await readManagedArtworkBase(path, record);
+    return base ? { status: "redraw", base } : { status: "kept" };
   }
 
   private memberIndex(files: readonly LocalScanEntry[], entry: LocalScanEntry): number {

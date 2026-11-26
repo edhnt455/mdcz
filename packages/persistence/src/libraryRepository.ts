@@ -102,6 +102,8 @@ export interface LibraryEntryFilter {
 export interface ListLibraryEntriesInput extends LibraryEntryFilter {
   page?: number;
   limit: number;
+  sortBy?: "createdAt" | "number" | "title";
+  sortOrder?: "asc" | "desc";
 }
 
 export interface LibraryFacetCount {
@@ -284,9 +286,29 @@ const toLibraryEntryRecord = (
   };
 };
 
+const nameCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+const validCrawlerData = sql`CASE WHEN json_valid(${libraryItems.crawlerDataJson}) THEN ${libraryItems.crawlerDataJson} END`;
+const nameSortKeys = {
+  number: sql<string>`coalesce(
+    nonblank_text(${libraryItems.number}),
+    nonblank_text(json_extract(${validCrawlerData}, '$.number')),
+    nonblank_text(${libraryItems.mediaIdentity}),
+    ''
+  )`,
+  title: sql<string>`coalesce(
+    nonblank_text(json_extract(${validCrawlerData}, '$.title_zh')),
+    nonblank_text(${libraryItems.title}),
+    nonblank_text(json_extract(${validCrawlerData}, '$.title')),
+    nonblank_text(${libraryItems.number}),
+    ''
+  )`,
+};
+
 const isRemoteAssetUri = (value: string): boolean => /^https?:\/\//iu.test(value.trim());
 
 export class LibraryRepository {
+  private sortedLibraryIds?: { scope: string; dataVersion: number; changes: number; ids: string[] };
+
   constructor(private readonly database: PersistenceDatabase) {}
 
   publicationRoots() {
@@ -578,7 +600,8 @@ export class LibraryRepository {
       }
       throw new Error(`未找到媒体库条目：${id}`);
     }
-    const [files, assets] = await Promise.all([this.listFilesForItems([id]), this.listAssetsForItems([id])]);
+    const files = this.listFilesForItems([id]);
+    const assets = this.listAssetsForItems([id]);
     return toLibraryEntryRecord(item, files.get(id) ?? [], assets.get(id) ?? []);
   }
 
@@ -588,10 +611,8 @@ export class LibraryRepository {
       return [];
     }
     const items = this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, normalizedIds)).all();
-    const [filesByItem, assetsByItem] = await Promise.all([
-      this.listFilesForItems(normalizedIds),
-      this.listAssetsForItems(normalizedIds),
-    ]);
+    const filesByItem = this.listFilesForItems(normalizedIds);
+    const assetsByItem = this.listAssetsForItems(normalizedIds);
     const itemMap = new Map(items.map((item) => [item.id, item]));
     return normalizedIds.flatMap((id) => {
       const item = itemMap.get(id);
@@ -609,7 +630,7 @@ export class LibraryRepository {
       .from(libraryItems)
       .where(inArray(libraryItems.id, normalizedIds))
       .all();
-    const filesByItem = await this.listFilesForItems(normalizedIds);
+    const filesByItem = this.listFilesForItems(normalizedIds);
     const rowById = new Map(rows.map((row) => [row.id, row]));
     return normalizedIds.flatMap((id) => {
       const row = rowById.get(id);
@@ -627,7 +648,8 @@ export class LibraryRepository {
       .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
       .all();
     const ids = items.map((item) => item.id);
-    const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
+    const filesByItem = this.listFilesForItems(ids);
+    const assetsByItem = this.listAssetsForItems(ids);
     return items.map((item) =>
       toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
     );
@@ -647,41 +669,93 @@ export class LibraryRepository {
       .filter((value): value is string => value !== null);
   }
 
-  async listEntriesPage(input: ListLibraryEntriesInput): Promise<LibraryEntriesPage> {
-    const limit = Math.max(1, Math.trunc(input.limit));
-    const baseWhere = buildLibraryListWhere(input);
-    const total = this.getListCount(baseWhere);
-    const page = Math.min(Math.max(1, Math.trunc(input.page ?? 1)), Math.max(1, Math.ceil(total / limit)));
-    const items = this.database.db
-      .select()
-      .from(libraryItems)
-      .where(baseWhere)
-      .orderBy(desc(libraryItems.createdAt), desc(libraryItems.id))
-      .limit(limit)
-      .offset((page - 1) * limit)
-      .all();
-    const ids = items.map((item) => item.id);
-    const [filesByItem, assetsByItem] = await Promise.all([this.listFilesForItems(ids), this.listAssetsForItems(ids)]);
-    const entries = items.map((item) =>
-      toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
-    );
-    const totals = this.database.db
-      .select({
-        fileCount: sql<number>`count(${libraryItemFiles.id})`,
-        totalBytes: sql<number>`coalesce(sum(${libraryItemFiles.size}), 0)`,
-      })
-      .from(libraryItems)
-      .innerJoin(libraryItemFiles, eq(libraryItemFiles.itemId, libraryItems.id))
-      .where(baseWhere)
-      .get();
-    if (!totals) throw new Error("媒体库汇总查询未返回结果");
+  async listEntriesPage({
+    page: requestedPage = 1,
+    limit: requestedLimit,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+    ...filter
+  }: ListLibraryEntriesInput): Promise<LibraryEntriesPage> {
+    return this.database.sqlite.transaction(() => {
+      const limit = Math.max(1, Math.trunc(requestedLimit));
+      const where = buildLibraryListWhere(filter);
+      const total = this.getListCount(where);
+      const page = Math.min(Math.max(1, Math.trunc(requestedPage)), Math.max(1, Math.ceil(total / limit)));
+      const offset = (page - 1) * limit;
+      const order = sortOrder === "asc" ? asc : desc;
+      const items =
+        sortBy === "createdAt"
+          ? this.database.db
+              .select()
+              .from(libraryItems)
+              .where(where)
+              .orderBy(order(libraryItems.createdAt), order(libraryItems.id))
+              .limit(limit)
+              .offset(offset)
+              .all()
+          : this.listNameSortedPage(sortBy, sortOrder, filter, where, offset, limit);
+      const ids = items.map((item) => item.id);
+      const filesByItem = this.listFilesForItems(ids);
+      const assetsByItem = this.listAssetsForItems(ids);
+      const entries = items.map((item) =>
+        toLibraryEntryRecord(item, filesByItem.get(item.id) ?? [], assetsByItem.get(item.id) ?? []),
+      );
+      const totals = this.database.db
+        .select({
+          fileCount: sql<number>`count(${libraryItemFiles.id})`,
+          totalBytes: sql<number>`coalesce(sum(${libraryItemFiles.size}), 0)`,
+        })
+        .from(libraryItems)
+        .innerJoin(libraryItemFiles, eq(libraryItemFiles.itemId, libraryItems.id))
+        .where(where)
+        .get();
+      if (!totals) throw new Error("媒体库汇总查询未返回结果");
 
-    return {
-      entries,
-      page,
-      ...totals,
-      total,
-    };
+      return { entries, page, ...totals, total };
+    })();
+  }
+
+  private listNameSortedPage(
+    field: keyof typeof nameSortKeys,
+    order: "asc" | "desc",
+    filter: LibraryEntryFilter,
+    where: SQL | undefined,
+    offset: number,
+    limit: number,
+  ): LibraryItemRow[] {
+    const scope = JSON.stringify([field, filter]);
+    // The WebUI reads from a separate SQLite connection while the worker writes to the database.
+    const dataVersion = Number(this.database.sqlite.pragma("data_version", { simple: true }));
+    const changes = Number(this.database.sqlite.prepare("SELECT total_changes()").pluck().get());
+    let cached = this.sortedLibraryIds;
+    if (cached?.scope !== scope || cached.dataVersion !== dataVersion || cached.changes !== changes) {
+      const keys = this.database.db
+        .select({ id: libraryItems.id, value: nameSortKeys[field] })
+        .from(libraryItems)
+        .where(where)
+        .all();
+      keys.sort((left, right) => {
+        const byName = nameCollator.compare(left.value, right.value);
+        if (byName || left.id === right.id) return byName;
+        return left.id < right.id ? -1 : 1;
+      });
+      cached = { scope, dataVersion, changes, ids: keys.map(({ id }) => id) };
+      this.sortedLibraryIds = cached;
+    }
+    const { ids } = cached;
+    const pageIds =
+      order === "asc"
+        ? ids.slice(offset, offset + limit)
+        : ids.slice(Math.max(0, ids.length - offset - limit), ids.length - offset).reverse();
+    if (!pageIds.length) return [];
+
+    const items = this.database.db.select().from(libraryItems).where(inArray(libraryItems.id, pageIds)).all();
+    const itemsById = new Map(items.map((item) => [item.id, item]));
+    return pageIds.map((id) => {
+      const item = itemsById.get(id);
+      if (!item) throw new Error(`未找到媒体库条目：${id}`);
+      return item;
+    });
   }
 
   /** Health counts and the most common actors, studios and tags among the movies a filter selects. */
@@ -755,10 +829,8 @@ export class LibraryRepository {
       .limit(Math.max(1, Math.trunc(recentLimit)))
       .all();
     const itemIds = items.map((item) => item.id);
-    const [filesByItem, assetsByItem] = await Promise.all([
-      this.listFilesForItems(itemIds),
-      this.listAssetsForItems(itemIds),
-    ]);
+    const filesByItem = this.listFilesForItems(itemIds);
+    const assetsByItem = this.listAssetsForItems(itemIds);
     return {
       fileCount: Number(aggregate?.fileCount ?? 0),
       totalBytes: Number(aggregate?.totalBytes ?? 0),
@@ -847,7 +919,7 @@ export class LibraryRepository {
     return row;
   }
 
-  private async listFilesForItems(ids: string[]): Promise<Map<string, LibraryItemFileRecord[]>> {
+  private listFilesForItems(ids: string[]): Map<string, LibraryItemFileRecord[]> {
     const rows =
       ids.length > 0
         ? this.database.db
@@ -860,7 +932,7 @@ export class LibraryRepository {
     return groupByItem(rows.map(toLibraryItemFileRecord));
   }
 
-  private async listAssetsForItems(ids: string[]): Promise<Map<string, LibraryItemAssetRecord[]>> {
+  private listAssetsForItems(ids: string[]): Map<string, LibraryItemAssetRecord[]> {
     const rows =
       ids.length > 0
         ? this.database.db

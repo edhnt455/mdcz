@@ -1,7 +1,13 @@
 import type { LibraryEntryDto } from "@mdcz/shared";
 import { toErrorMessage } from "@mdcz/shared/error";
 import { formatBytes } from "@mdcz/shared/format";
-import { LIBRARY_PAGE_SIZES, type LibraryPageSize } from "@mdcz/shared/libraryPagination";
+import {
+  LIBRARY_PAGE_SIZES,
+  LIBRARY_SORT_FIELDS,
+  LIBRARY_SORT_ORDERS,
+  type LibraryPageSize,
+  type LibrarySort,
+} from "@mdcz/shared/libraryPagination";
 import type { LibraryFileRemoveInput, LibraryRelinkInput } from "@mdcz/shared/serverDtos";
 import {
   Badge,
@@ -58,6 +64,8 @@ export interface LibraryIndexViewProps {
   totalBytes?: number;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   browse: LibraryBrowseControls;
+  sort: LibrarySort;
+  onSortChange: (sort: LibrarySort) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: LibraryPageSize) => void;
   onSelectAll: () => Promise<LibraryEntryDto[]>;
@@ -90,6 +98,8 @@ export function LibraryIndexView({
   totalBytes,
   linkComponent: LinkComponent,
   browse,
+  sort,
+  onSortChange,
   onPageChange,
   onPageSizeChange,
   onSelectAll,
@@ -169,7 +179,7 @@ export function LibraryIndexView({
   };
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
-  }, [page, pageSize, selectionKey]);
+  }, [page, pageSize, selectionKey, sort.sortBy, sort.sortOrder]);
 
   return (
     <TooltipProvider>
@@ -227,6 +237,32 @@ export function LibraryIndexView({
               </fieldset>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
+              <select
+                aria-label={t.library.sort.field}
+                className="h-9 rounded-quiet border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={sort.sortBy}
+                onChange={(event) => onSortChange({ ...sort, sortBy: event.target.value as LibrarySort["sortBy"] })}
+              >
+                {LIBRARY_SORT_FIELDS.map((field) => (
+                  <option key={field} value={field}>
+                    {t.library.sort.fields[field]}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={t.library.sort.order}
+                className="h-9 rounded-quiet border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={sort.sortOrder}
+                onChange={(event) =>
+                  onSortChange({ ...sort, sortOrder: event.target.value as LibrarySort["sortOrder"] })
+                }
+              >
+                {LIBRARY_SORT_ORDERS.map((order) => (
+                  <option key={order} value={order}>
+                    {t.library.sort.orders[order]}
+                  </option>
+                ))}
+              </select>
               <div className="inline-flex shrink-0 rounded-quiet bg-surface-low p-1 shadow-inner">
                 {(["list", "wall"] as const).map((view) => (
                   <Button
@@ -302,6 +338,7 @@ export function LibraryIndexView({
                   <LibraryEntryRow
                     key={entry.id}
                     entry={entry}
+                    showAddedDate={sort.sortBy === "createdAt"}
                     getImageSrc={getImageSrc}
                     linkComponent={LinkComponent}
                     selectionDisabled={selectionDisabled || isLoading}
@@ -452,6 +489,7 @@ export function LibraryDeleteDialog({ entries, submitting = false, onCancel, onC
 
 function LibraryEntryRow({
   entry,
+  showAddedDate,
   getImageSrc,
   linkComponent: LinkComponent,
   selectionDisabled,
@@ -462,6 +500,7 @@ function LibraryEntryRow({
   onRelinkFile,
 }: {
   entry: LibraryEntryDto;
+  showAddedDate: boolean;
   getImageSrc: (path: string, entry: LibraryEntryDto) => string;
   linkComponent?: ComponentType<{ children: ReactNode; className?: string; entry: LibraryEntryDto }>;
   selectionDisabled: boolean;
@@ -475,6 +514,7 @@ function LibraryEntryRow({
   const id = entry.number || entry.crawlerData?.number || entry.mediaIdentity || displayFile?.fileName || entry.id;
   const title =
     entry.crawlerData?.title_zh || entry.title || entry.crawlerData?.title || displayFile?.fileName || entry.id;
+  const date = showAddedDate ? entry.createdAt : latestEntryUpdate(entry);
   const t = useT();
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
@@ -547,7 +587,13 @@ function LibraryEntryRow({
         </div>
         <div className="hidden shrink-0 items-center gap-6 font-numeric text-xs font-semibold text-muted-foreground lg:flex">
           <span className="text-foreground/75">{formatBytes(entry.size)}</span>
-          <span className="min-w-24 text-right text-muted-foreground/80">{formatDate(latestEntryUpdate(entry))}</span>
+          <time
+            className="min-w-24 text-right text-muted-foreground/80"
+            dateTime={date}
+            title={showAddedDate ? t.library.sort.fields.createdAt : t.library.updatedAt}
+          >
+            {formatDate(date)}
+          </time>
         </div>
         <div className="ml-auto flex items-center gap-1.5 lg:pl-2">
           <StatusActionSlot available={entry.available} entry={entry} onDeleteEntries={onDeleteEntries} />

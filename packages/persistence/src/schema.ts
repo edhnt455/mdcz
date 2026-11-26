@@ -187,6 +187,7 @@ export const libraryItemFiles = sqliteTable(
   (table) => [
     uniqueIndex("library_item_files_root_path_idx").on(table.rootId, table.rootRelativePath),
     uniqueIndex("library_item_files_entry_identity_idx").on(table.entryIdentity),
+    index("library_item_files_item_root_idx").on(table.itemId, table.rootId),
     index("library_item_files_retained_source_idx").on(table.retainedSourceIdentity),
     check("library_item_files_part_number_check", sql`${table.partNumber} is null or ${table.partNumber} >= 1`),
   ],

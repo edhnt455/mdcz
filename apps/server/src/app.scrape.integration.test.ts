@@ -1,12 +1,14 @@
 import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parseNfoSnapshot } from "@mdcz/runtime/maintenance";
+import { NetworkClient } from "@mdcz/runtime/network";
 import { acquireMediaTask, movieTaskKey } from "@mdcz/runtime/publication/mediaTasks";
 import {
   type AggregationResult,
   ImageWatermarkService,
   LlmApiClient,
   NfoGenerator,
+  readManagedArtworkBase,
   TranslateService,
 } from "@mdcz/runtime/scrape";
 import { defaultConfiguration } from "@mdcz/shared/config";
@@ -14,7 +16,7 @@ import { Website } from "@mdcz/shared/enums";
 import type { PendingBatchResponse, PendingKindDto } from "@mdcz/shared/pending";
 import type { ScrapeRunSnapshotDto } from "@mdcz/shared/serverDtos";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { buildServer } from "./app";
 import {
   closeTestServers,
@@ -1590,9 +1592,30 @@ describe("buildServer scrape integration", () => {
     const root = await createTempRoot("ambiguous-uncensored-root");
     const names = scenario === "single" ? ["ABP-999-U.mp4"] : ["ABP-999-U-CD1.mp4", "ABP-999-U-CD2.mp4"];
     for (const name of names) await writeFile(join(root, name), "video");
-    const imageServer = await startTestImageServer();
+    const image = Buffer.concat([
+      await sharp({ create: { width: 400, height: 600, channels: 3, background: "white" } })
+        .png()
+        .toBuffer(),
+      Buffer.alloc(8192),
+    ]);
+    const probe = vi.spyOn(NetworkClient.prototype, "probe").mockImplementation(async (url) => ({
+      ok: true,
+      status: 200,
+      resolvedUrl: url,
+      contentLength: image.length,
+      width: 400,
+      height: 600,
+    }));
+    const download = vi.spyOn(NetworkClient.prototype, "download").mockImplementation(async (_url, path) => {
+      await writeFile(path, image);
+      return path;
+    });
+    onTestFinished(() => {
+      probe.mockRestore();
+      download.mockRestore();
+    });
     let aggregateCount = 0;
-    const aggregation = createAmbiguousUncensoredAggregation(`${imageServer.url}/image.png`);
+    const aggregation = createAmbiguousUncensoredAggregation("https://unused.example/image.png");
     const { fastify, services } = await createTestServer({
       scrapeAggregation: {
         async aggregate(...args) {
@@ -1605,6 +1628,14 @@ describe("buildServer scrape integration", () => {
     const token = await loginAsAdmin(fastify);
     const headers = { authorization: `Bearer ${token}` };
     const { rootId, libraryId } = await createTestLibrary(fastify, token, root);
+    await services.config.update({
+      download: {
+        tagBadges: true,
+        tagBadgeTypes: ["uncensored", "leak"],
+        tagBadgeTargets: ["poster"],
+        tagBadgeStyle: "ribbon",
+      },
+    });
     const startResponse = await fastify.inject({
       method: "POST",
       url: "/trpc/scrape.start",
@@ -1619,6 +1650,18 @@ describe("buildServer scrape integration", () => {
     expect(item).toMatchObject({ kind: "uncensored", libraryId });
     const state = await services.persistence.getState();
     const originalEntry = await state.repositories.library.getEntryById(item.movieId);
+    const badgeArtwork = async (entry: typeof originalEntry) => {
+      const poster = entry.assets.find((asset) => asset.kind === "poster")?.relativePath;
+      const nfo = entry.assets.find((asset) => asset.kind === "nfo")?.relativePath;
+      if (!poster || !nfo) throw new Error("Missing published poster or NFO");
+      const record = parseNfoSnapshot(await readFile(join(root, nfo), "utf8")).localState?.badgeRecords?.poster;
+      if (!record) throw new Error("Missing published poster record");
+      return { record, base: await readManagedArtworkBase(join(root, poster), record) };
+    };
+    const before = await badgeArtwork(originalEntry);
+    expect(before.record.stamp).toBeTruthy();
+    expect(before.base).toBeInstanceOf(Buffer);
+    const downloadCount = download.mock.calls.length;
     expect(originalEntry.files).toHaveLength(names.length);
     await expect(readFile(join(root, names[0]))).rejects.toMatchObject({ code: "ENOENT" });
 
@@ -1670,7 +1713,12 @@ describe("buildServer scrape integration", () => {
       });
     }
     expect(aggregateCount).toBe(1);
+    expect(download).toHaveBeenCalledTimes(downloadCount);
     const confirmed = await state.repositories.library.getEntryById(originalEntry.id);
+    const after = await badgeArtwork(confirmed);
+    expect(after.record.stamp).not.toBe(before.record.stamp);
+    expect(after.record.sha256).not.toBe(before.record.sha256);
+    expect(after.base).toEqual(before.base);
     expect(confirmed.files.map((file) => file.id).sort()).toEqual(originalEntry.files.map((file) => file.id).sort());
     for (const file of confirmed.files) {
       expect(file.rootRelativePath).toContain("流出");

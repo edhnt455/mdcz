@@ -311,7 +311,8 @@ const fields: Record<FieldKey, FieldText> = {
   "download.downloadPoster": { label: "Download poster" },
   "download.tagBadges": {
     label: "Enable image watermarks",
-    description: "Add watermarks based on movie information to selected image types.",
+    description:
+      "Add badges to selected image types based on movie tags. Use Re-merge to redraw managed posters after tags or badge settings change.",
     aliases: ["badge", "badges", "mark", "corner"],
   },
   "download.tagBadgeTypes": {
@@ -546,6 +547,14 @@ const fields: Record<FieldKey, FieldText> = {
     label: "Daily actor photo check time",
     description:
       "Optional 24-hour HH:mm (e.g. 03:00) to fill missing Emby actor photos once daily. Leave empty to disable. Uses the MDCz service's time zone and requires automatic sync to be enabled.",
+  },
+  "emby.useProxy": {
+    label: "Use proxy for Emby",
+    description: "Use the global proxy for public addresses. Local addresses connect directly.",
+  },
+  "jellyfin.useProxy": {
+    label: "Use proxy for Jellyfin",
+    description: "Use the global proxy for public addresses. Local addresses connect directly.",
   },
   "emby.notifyAfterPublish": {
     label: "Refresh folder after organizing",

@@ -114,6 +114,9 @@ export class ImageWatermarkService {
       case "jpeg":
         pipeline = pipeline.jpeg({ quality: 95, chromaSubsampling: "4:4:4" });
         break;
+      case "heif":
+        pipeline = pipeline.avif({ quality: 90 });
+        break;
       default:
         throw new Error(`不支持的水印图片格式：${metadata.format}`);
     }

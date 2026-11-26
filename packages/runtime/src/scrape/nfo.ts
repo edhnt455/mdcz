@@ -5,14 +5,17 @@ import { normalizeActorName as normalizeActorKey } from "@mdcz/shared/actorAlias
 import { type Configuration, NFO_FIELD_OPTIONS, type NfoField, type TranslationField } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { LibraryEdit } from "@mdcz/shared/libraryEdit";
-import type {
-  CrawlerData,
-  DownloadedAssets,
-  FileInfo,
-  NfoEditableField,
-  NfoEditorField,
-  NfoLocalState,
-  VideoMeta,
+import {
+  BADGE_ARTWORK_KINDS,
+  type BadgeArtworkRecord,
+  type BadgeArtworkRecords,
+  type CrawlerData,
+  type DownloadedAssets,
+  type FileInfo,
+  type NfoEditableField,
+  type NfoEditorField,
+  type NfoLocalState,
+  type VideoMeta,
 } from "@mdcz/shared/types";
 import { XMLBuilder, XMLParser, XMLValidator } from "fast-xml-parser";
 import type { SourceMap } from "./aggregation";
@@ -148,6 +151,9 @@ export const nfoIgnoreFieldsToEnabledFields = (
 ): readonly NfoField[] | undefined =>
   ignoredFields === undefined ? undefined : NFO_FIELD_OPTIONS.filter((field) => !ignoredFields.includes(field));
 
+const badgeRecordNode = (record: BadgeArtworkRecord | null | undefined) =>
+  record ? { "@_sha256": record.sha256, "@_base_sha256": record.baseSha256, "@_stamp": record.stamp } : undefined;
+
 const buildMdczNode = (
   data: CrawlerData,
   rawTitle: string | undefined,
@@ -178,12 +184,15 @@ const buildMdczNode = (
       : [];
 
   const sourcePin = options?.localState?.sourcePin;
+  const badgeRecords = { ...options?.localState?.badgeRecords, ...options?.assets?.badgeRecords };
   return {
     raw_title: rawTitle,
     original_plot: originalPlot,
     translation_failures: data.translation_failures,
     translation_ignored: data.translation_ignored,
     source_url: sourcePin ? { "@_site": sourcePin.site, "#text": sourcePin.url } : undefined,
+    poster_record: badgeRecordNode(badgeRecords.poster),
+    thumb_record: badgeRecordNode(badgeRecords.thumb),
     thumb_source_url: thumbSourceUrl,
     poster_source_url: posterSourceUrl,
     fanart_source_url: fanartSourceUrl,
@@ -194,6 +203,23 @@ const buildMdczNode = (
 };
 
 export class NfoGenerator {
+  mergeBadgeRecords(existingXml: string, records: BadgeArtworkRecords): string {
+    const validation = XMLValidator.validate(existingXml);
+    if (validation !== true) throw new Error(`NFO XML 无效：${validation.err.msg}`);
+    const root = requireXmlRecord(parser.parse(existingXml), "NFO 根节点无效");
+    const movie = requireXmlRecord(root.movie, "NFO 影片节点无效");
+    const mdcz = toRecordOrEmpty(movie.mdcz);
+    for (const kind of BADGE_ARTWORK_KINDS) {
+      if (records[kind] === undefined) continue;
+      const name = `${kind}_record`;
+      const node = badgeRecordNode(records[kind]);
+      if (node) mdcz[name] = node;
+      else delete mdcz[name];
+    }
+    movie.mdcz = mdcz;
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${builder.build(root)}`;
+  }
+
   mergeSubtitleTag(existingXml: string, tag: string): string {
     const validation = XMLValidator.validate(existingXml);
     if (validation !== true) throw new Error(`NFO XML 无效：${validation.err.msg}`);

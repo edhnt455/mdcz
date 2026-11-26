@@ -1,6 +1,10 @@
 import type { Messages } from "../en";
 
 export const maintenance: Messages["maintenance"] = {
+  posterRedraw: {
+    redraw: "应用时将重绘海报角标。",
+    kept: "无法核验无角标底图或当前海报，将保留现有海报。",
+  },
   // PathPlanView
   pathChange: "路径变更",
   currentPath: "当前路径",

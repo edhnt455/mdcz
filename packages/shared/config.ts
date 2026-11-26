@@ -361,6 +361,7 @@ const jellyfinSchema = z.object({
   url: z.url().or(z.literal("")).default("http://127.0.0.1:8096"),
   apiKey: z.string().default(""),
   userId: z.string().default(""),
+  useProxy: z.boolean().default(false),
   lockOverviewAfterSync: z.boolean().default(false),
   /** Asks the server to scan only the published directory, so new movies show up without a library refresh. */
   notifyAfterPublish: z.boolean().default(true),
@@ -375,6 +376,7 @@ const embySchema = z.object({
   url: z.url().or(z.literal("")).default(""),
   apiKey: z.string().default(""),
   userId: z.string().default(""),
+  useProxy: z.boolean().default(false),
   notifyAfterPublish: z.boolean().default(true),
 });
 

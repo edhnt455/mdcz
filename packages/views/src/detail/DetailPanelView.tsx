@@ -13,7 +13,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@mdcz/ui";
-import { Crop, FileText, GitCompareArrows, ImageIcon, MousePointerClick, Star, X } from "lucide-react";
+import { Crop, FileText, GitCompareArrows, ImageIcon, LoaderCircle, MousePointerClick, Star, X } from "lucide-react";
 import { type Dispatch, type ReactNode, type SetStateAction, useState } from "react";
 import type { PosterCropEditSession } from "../adapters/ports";
 import { NaturalAspectImageFrame } from "../common";
@@ -22,8 +22,8 @@ import { ChangeDiffView, type MaintenanceFieldSelectionSide, PathPlanView } from
 import { type EditableNfoData, NfoEditorDialog, type NfoValidationErrors } from "../nfo";
 import { formatBitrate, formatDuration } from "./detailViewAdapters";
 import { PosterCropDialog } from "./PosterCropDialog";
-import { type ResolveImageCandidates, SceneImageGallery } from "./SceneImageGallery";
-import type { DetailViewItem } from "./types";
+import { SceneImageGallery } from "./SceneImageGallery";
+import type { DetailViewItem, ResolveImageCandidates } from "./types";
 
 export interface DetailPanelCompareProps {
   result?: MaintenanceItemResult | MaintenancePreviewItem;
@@ -62,6 +62,8 @@ export interface DetailPanelViewProps {
   onTrailerError?: () => void;
   resolveImageCandidates: ResolveImageCandidates;
   posterEditor: {
+    available: boolean;
+    loading: boolean;
     open: boolean;
     session: PosterCropEditSession | null;
     crop: NormalizedCropRegion | null;
@@ -187,6 +189,12 @@ export function DetailPanelView({
           <div className="flex min-h-full flex-col space-y-4 px-5 pb-24 md:px-6">
             {compareError ? <DetailErrorBlock value={compareError} /> : null}
 
+            {compare.preview?.posterRedraw && compare.fieldSelections?.poster_url !== "new" && (
+              <p className="rounded-quiet border border-border bg-surface-low p-3 text-sm">
+                {t.maintenance.posterRedraw[compare.preview.posterRedraw]}
+              </p>
+            )}
+
             {shouldRenderDiffs ? (
               <ChangeDiffView
                 fileId={item.id}
@@ -237,7 +245,10 @@ export function DetailPanelView({
     durationLabel ? { label: t.detail.fields.duration, value: durationLabel } : undefined,
     item.publisher ? { label: t.detail.fields.publisher, value: item.publisher } : undefined,
   ].filter((field): field is { label: string; value: string } => Boolean(field?.value));
-  const shouldShowThumb = Boolean(thumbSrc) && thumbSrc !== posterSrc;
+  const shouldShowThumb =
+    Boolean(thumbSrc) &&
+    thumbSrc !== posterSrc &&
+    (!item.posterUrl || item.posterUrl !== (item.thumbUrl ?? item.fanartUrl));
 
   return (
     <>
@@ -262,39 +273,39 @@ export function DetailPanelView({
               <>
                 <section className="grid gap-6 min-[960px]:grid-cols-[minmax(0,180px)_minmax(0,1fr)] min-[960px]:items-start">
                   <div className="w-full max-w-[180px] shrink-0">
-                    {posterSrc ? (
-                      <div className="group relative aspect-2/3 overflow-hidden rounded-quiet-lg border border-black/5 bg-surface-low/70 shadow-[0_18px_48px_rgba(0,0,0,0.08)]">
+                    <div className="relative flex aspect-2/3 items-center justify-center overflow-hidden rounded-quiet-lg border border-black/5 bg-surface-low/70 shadow-[0_18px_48px_rgba(0,0,0,0.08)]">
+                      {posterSrc ? (
                         <img
                           src={posterSrc}
                           alt={posterAlt}
                           className="h-full w-full object-cover"
                           onError={onPosterError}
                         />
-                        {posterEditor.session ? (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  type="button"
-                                  size="icon-sm"
-                                  variant="secondary"
-                                  aria-label={t.detail.editCover}
-                                  className="absolute right-2 bottom-2 bg-surface-floating/90 opacity-90 shadow-sm backdrop-blur-sm hover:opacity-100"
-                                  onClick={posterEditor.onOpen}
-                                >
-                                  <Crop />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent side="right">{t.detail.editCover}</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="flex aspect-2/3 w-full items-center justify-center rounded-quiet-lg border border-black/5 bg-surface-low/70">
+                      ) : (
                         <ImageIcon className="h-10 w-10 text-muted-foreground/30" />
-                      </div>
-                    )}
+                      )}
+                      {posterEditor.available ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="secondary"
+                                aria-label={t.detail.editCover}
+                                aria-busy={posterEditor.loading}
+                                disabled={posterEditor.loading}
+                                className="absolute right-2 bottom-2 bg-surface-floating/90 opacity-90 shadow-sm backdrop-blur-sm hover:opacity-100"
+                                onClick={posterEditor.onOpen}
+                              >
+                                {posterEditor.loading ? <LoaderCircle className="animate-spin" /> : <Crop />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">{t.detail.editCover}</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : null}
+                    </div>
                   </div>
 
                   <div className="min-w-0">

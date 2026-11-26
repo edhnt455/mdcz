@@ -1,4 +1,5 @@
-import type { MaintenancePresetId } from "@mdcz/shared/types";
+import type { FieldDiff, MaintenancePresetId } from "@mdcz/shared/types";
+import { detailImageWidths } from "@mdcz/views/detail";
 import {
   ChangeDiffView,
   MaintenanceBatchBarView,
@@ -172,20 +173,40 @@ test("diff presets expose replacement confirmation and changed path evidence", a
   await screen.getByRole("button", { name: "开始批量执行 1 项" }).click();
   expect(onExecute).toHaveBeenCalledOnce();
   await screen.unmount();
+  const image =
+    "data:image/svg+xml," +
+    encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="30"><rect width="20" height="30"/></svg>',
+    );
+  const resolveImageCandidates = vi.fn(async (candidates: string[], _directory?: string, width?: number) =>
+    candidates.map((candidate) => (width ? `${candidate}#w=${width}` : candidate)),
+  );
   const props = {
     fileId: "one",
     diffs: [
       {
-        kind: "value" as const,
-        field: "trailer_url" as const,
+        kind: "image",
+        field: "poster_url",
+        oldValue: image,
+        newValue: "",
+        oldPreview: { src: image, fallbackSrcs: [] },
+        newPreview: { src: "", fallbackSrcs: [] },
+        changed: true,
+      },
+      {
+        kind: "value",
+        field: "trailer_url",
         oldValue: "/old.mp4",
         newValue: "/new.mp4",
         changed: true,
       },
-    ],
-    resolveImageCandidates: async (candidates: string[]) => candidates,
+    ] satisfies FieldDiff[],
+    resolveImageCandidates,
   };
   const preview = await render(<ChangeDiffView {...props} />);
+  await expect
+    .poll(() => document.querySelector("img")?.getAttribute("src"))
+    .toBe(`${image}#w=${detailImageWidths.diff}`);
   expect(document.querySelector("video")).toBeNull();
   let createdPlayer = false;
   const observer = new MutationObserver((records) => {
@@ -201,6 +222,7 @@ test("diff presets expose replacement confirmation and changed path evidence", a
   observer.observe(document.body, { childList: true, subtree: true });
   await preview.getByRole("button", { name: "播放预告片" }).first().click();
   await expect.poll(() => createdPlayer).toBe(true);
+  expect(resolveImageCandidates).toHaveBeenCalledWith(["/old.mp4"], undefined, undefined);
   observer.disconnect();
   await preview.rerender(<ChangeDiffView {...props} fileId="two" />);
   await expect.poll(() => document.querySelector("video")).toBeNull();

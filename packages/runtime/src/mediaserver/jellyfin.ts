@@ -401,7 +401,7 @@ export const checkJellyfinConnection = async (
       const info = await networkClient.getJson<PublicSystemInfo>(
         buildJellyfinUrl(configuration, "/System/Info/Public"),
         {
-          useProxy: false,
+          useProxy: configuration.jellyfin.useProxy,
           headers: { accept: "application/json" },
         },
       );
@@ -412,7 +412,7 @@ export const checkJellyfinConnection = async (
     },
     verifyAuth: async () => {
       await networkClient.getJson<Record<string, unknown>>(buildJellyfinUrl(configuration, "/System/Info"), {
-        useProxy: false,
+        useProxy: configuration.jellyfin.useProxy,
         headers: buildJellyfinHeaders(configuration, { accept: "application/json" }),
       });
     },

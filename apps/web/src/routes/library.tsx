@@ -1,6 +1,12 @@
 import { toErrorMessage } from "@mdcz/shared/error";
 import type { LibraryEditJobDto, LibraryEditStartInput } from "@mdcz/shared/libraryEdit";
-import type { LibraryPageSize } from "@mdcz/shared/libraryPagination";
+import {
+  DEFAULT_LIBRARY_SORT,
+  LIBRARY_SORT_FIELDS,
+  LIBRARY_SORT_ORDERS,
+  type LibraryPageSize,
+  type LibrarySort,
+} from "@mdcz/shared/libraryPagination";
 import type { LibraryEntryDto, LibraryFacetInput } from "@mdcz/shared/serverDtos";
 import { useT } from "@mdcz/views/i18n";
 import {
@@ -30,15 +36,20 @@ export function LibraryPage() {
   const t = useT();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const search = Route.useSearch();
+  const { sortBy, sortOrder, ...filters } = Route.useSearch();
+  const sort: LibrarySort = {
+    sortBy: sortBy ?? DEFAULT_LIBRARY_SORT.sortBy,
+    sortOrder: sortOrder ?? DEFAULT_LIBRARY_SORT.sortOrder,
+  };
   const libraryView = useLibraryView();
   const maintenanceStatus = useMaintenanceStore(selectMaintenanceExecutionStatus);
   const isScraping = useScrapeStore(selectIsScraping);
-  const filterKey = JSON.stringify(search);
-  const [pagination, setPagination] = useState({ filterKey, page: 1, pageSize: 20 as LibraryPageSize });
+  const filterKey = JSON.stringify(filters);
+  const listKey = JSON.stringify([filters, sort]);
+  const [pagination, setPagination] = useState({ listKey, page: 1, pageSize: 20 as LibraryPageSize });
   const [selectionVersion, setSelectionVersion] = useState(0);
-  if (pagination.filterKey !== filterKey) setPagination({ ...pagination, filterKey, page: 1 });
-  const page = pagination.filterKey === filterKey ? pagination.page : 1;
+  if (pagination.listKey !== listKey) setPagination({ ...pagination, listKey, page: 1 });
+  const page = pagination.listKey === listKey ? pagination.page : 1;
   const [deleteTargets, setDeleteTargets] = useState<LibraryEntryDto[]>([]);
   const [editOpen, setEditOpen] = useState(false);
   const [editTargets, setEditTargets] = useState<LibraryEntryDto[]>([]);
@@ -86,10 +97,10 @@ export function LibraryPage() {
     onError: (error) => setEditError(toErrorMessage(error)),
   });
   const libraryQ = useQuery({
-    queryKey: queryKeys.library.list(search, page, pagination.pageSize),
-    queryFn: () => api.library.list({ ...search, page, pageSize: pagination.pageSize }),
+    queryKey: queryKeys.library.list(filters, sort, page, pagination.pageSize),
+    queryFn: () => api.library.list({ ...filters, ...sort, page, pageSize: pagination.pageSize }),
     placeholderData: (previous, previousQuery) =>
-      JSON.stringify(previousQuery?.queryKey[2]) === filterKey ? previous : undefined,
+      JSON.stringify(previousQuery?.queryKey.slice(2, 4)) === listKey ? previous : undefined,
     retry: false,
   });
   const notifyDeletionQueued = (taskIds: string[]) => {
@@ -139,7 +150,7 @@ export function LibraryPage() {
   );
   const applyFilters = (next: LibraryBrowseSearch) => {
     const nextSearch = parseLibraryBrowseSearch(next);
-    const firstPage = { queryKey: queryKeys.library.list(nextSearch, 1, pagination.pageSize), exact: true };
+    const firstPage = { queryKey: queryKeys.library.list(nextSearch, sort, 1, pagination.pageSize), exact: true };
     void queryClient.cancelQueries(firstPage);
     void queryClient.invalidateQueries(firstPage);
     const sameFilters = JSON.stringify(nextSearch) === filterKey;
@@ -148,7 +159,7 @@ export function LibraryPage() {
       refetchType: sameFilters && page === 1 ? "active" : "none",
     });
     if (sameFilters && page !== 1) setPagination((current) => ({ ...current, page: 1 }));
-    void navigate({ to: "/library", search: nextSearch });
+    void navigate({ to: "/library", search: { ...nextSearch, sortBy, sortOrder } });
   };
   const refreshBlockedReason = maintenanceStatus !== "idle" ? t.workbench.taskConflict.maintenance : undefined;
   const blockedReason = isScraping ? t.workbench.taskConflict.scrape : refreshBlockedReason;
@@ -162,7 +173,7 @@ export function LibraryPage() {
       <LibraryIndexView
         selectionKey={`${filterKey}:${selectionVersion}`}
         browse={{
-          search,
+          search: filters,
           libraries: librariesQ.data?.libraries ?? [],
           loadFacet,
           onApply: applyFilters,
@@ -173,7 +184,7 @@ export function LibraryPage() {
           const rootIds = new Set(selected.flatMap((entry) => entry.fileRefs.map((file) => file.rootId)));
           if (rootIds.size > 1) throw new Error(t.library.bulk.mixedRoots);
           const { runId } = await api.scrape.start({
-            libraryId: search.libraryId,
+            libraryId: filters.libraryId,
             refreshMovieIds: selected.map((entry) => entry.id),
           });
           requestScrapeLiveRunsRefresh();
@@ -212,7 +223,18 @@ export function LibraryPage() {
         pageSize={pagination.pageSize}
         onPageChange={(page) => setPagination({ ...pagination, page })}
         onPageSizeChange={(pageSize) => setPagination({ ...pagination, page: 1, pageSize })}
-        onSelectAll={async () => (await api.library.matches(search)).entries}
+        sort={sort}
+        onSortChange={(next) =>
+          void navigate({
+            to: "/library",
+            search: {
+              ...filters,
+              sortBy: next.sortBy === DEFAULT_LIBRARY_SORT.sortBy ? undefined : next.sortBy,
+              sortOrder: next.sortOrder === DEFAULT_LIBRARY_SORT.sortOrder ? undefined : next.sortOrder,
+            },
+          })
+        }
+        onSelectAll={async () => (await api.library.matches(filters)).entries}
         onDeleteEntries={setDeleteTargets}
         onEditEntries={(entries) => void openEdit(entries)}
         onRemoveFile={async (input) => {
@@ -262,8 +284,16 @@ export function LibraryPage() {
   );
 }
 
+export const parseLibraryRouteSearch = (
+  search: Record<string, unknown>,
+): LibraryBrowseSearch & Partial<LibrarySort> => ({
+  ...parseLibraryBrowseSearch(search),
+  sortBy: LIBRARY_SORT_FIELDS.find((field) => field === search.sortBy),
+  sortOrder: LIBRARY_SORT_ORDERS.find((order) => order === search.sortOrder),
+});
+
 export const Route = createFileRoute("/library")({
-  validateSearch: parseLibraryBrowseSearch,
+  validateSearch: parseLibraryRouteSearch,
   component: LibraryPage,
 });
 

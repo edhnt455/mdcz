@@ -1,13 +1,22 @@
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { CrawlerProvider } from "@mdcz/runtime/crawler";
-import { MaintenanceRuntime } from "@mdcz/runtime/maintenance";
+import { MaintenanceRuntime, parseNfoSnapshot } from "@mdcz/runtime/maintenance";
 import { NetworkClient } from "@mdcz/runtime/network";
 import type { AggregationService } from "@mdcz/runtime/scrape";
-import { DownloadManager, FileOrganizer, MemoryImageHostCooldownStore, NfoGenerator } from "@mdcz/runtime/scrape";
+import {
+  applyImageWatermarks,
+  badgeBasePath,
+  DownloadManager,
+  FileOrganizer,
+  MemoryImageHostCooldownStore,
+  NfoGenerator,
+} from "@mdcz/runtime/scrape";
+import { configurationSchema } from "@mdcz/shared/config";
 import { Website } from "@mdcz/shared/enums";
 import type { MaintenanceActiveSessionSnapshot } from "@mdcz/shared/maintenanceTasks";
 import type { CrawlerData, MaintenancePresetId } from "@mdcz/shared/types";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeTestServers,
@@ -263,6 +272,125 @@ describe("buildServer maintenance integration", () => {
     await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
     expect(await readFile(join(root, "ABC-500.nfo"), "utf8")).toContain("<title>Official Title</title>");
     expect(crawl).not.toHaveBeenCalled();
+  });
+
+  it("redraws registered posters offline, preserves manual replacements and restores the original when disabled", async () => {
+    const directory = await createTempRoot("maintenance-poster-badge-base");
+    const { fastify, services } = await createTestServer();
+    const token = await loginAsAdmin(fastify);
+    const library = await createTestLibrary(fastify, token, directory);
+    const generator = new NfoGenerator();
+    const { repositories } = await services.persistence.getState();
+    const initial = configurationSchema.parse({
+      download: {
+        tagBadges: true,
+        tagBadgeTypes: ["censored"],
+        tagBadgeTargets: ["poster"],
+        tagBadgePosition: "topLeft",
+      },
+    });
+    const base = await sharp({ create: { width: 400, height: 600, channels: 3, background: "#157060" } })
+      .jpeg()
+      .toBuffer();
+    const manual = await sharp({ create: { width: 400, height: 600, channels: 3, background: "#1010a0" } })
+      .jpeg()
+      .toBuffer();
+    const fixtures = await Promise.all(
+      ["ABC-601", "ABC-602", "ABC-603"].map(async (number, index) => {
+        const fileName = `${number}.mp4`;
+        const filePath = join(directory, fileName);
+        const posterName = `${number}-poster.jpg`;
+        const poster = join(directory, posterName);
+        const nfoPath = join(directory, `${number}.nfo`);
+        const crawlerData: CrawlerData = {
+          title: number,
+          number,
+          poster_url: posterName,
+          actors: [],
+          genres: [],
+          scene_images: [],
+          website: Website.DMM,
+        };
+        await Promise.all([writeFile(filePath, "video"), writeFile(poster, base)]);
+        const assets =
+          index === 2
+            ? { poster, sceneImages: [], downloaded: [] }
+            : await applyImageWatermarks({
+                assets: { poster, sceneImages: [], downloaded: [poster] },
+                crawlerData,
+                config: initial,
+                dataDir: directory,
+                fileInfo: { filePath, fileName, number, extension: ".mp4", isSubtitled: false },
+                logger: {
+                  warn: (message) => {
+                    throw new Error(message);
+                  },
+                },
+              });
+        await writeFile(nfoPath, generator.buildXml(crawlerData, { assets }));
+        if (index === 1) await writeFile(poster, manual);
+        repositories.siteResults.record(number, [
+          { site: Website.DMM, status: "success", elapsedMs: 1, data: crawlerData },
+        ]);
+        return { fileName, poster, nfoPath, original: await readFile(poster) };
+      }),
+    );
+    await services.config.update({
+      translate: { enableTranslation: false },
+      download: {
+        tagBadges: true,
+        tagBadgeTypes: ["censored"],
+        tagBadgeTargets: ["poster"],
+        tagBadgePosition: "bottomRight",
+        nfoNaming: "filename",
+      },
+    });
+    const crawl = vi.spyOn(CrawlerProvider.prototype, "crawl");
+    const download = vi.spyOn(NetworkClient.prototype, "download");
+    const apply = async (sessionId: string) => {
+      const response = await fastify.inject({
+        method: "POST",
+        url: "/trpc/maintenance.execute",
+        headers: { authorization: `Bearer ${token}` },
+        payload: { sessionId, confirmationToken: `maintenance:${sessionId}` },
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      return await waitForMaintenanceSession(fastify, token, sessionId, "apply", "completed");
+    };
+    const { session, sessionId } = await startMaintenancePreview(
+      fastify,
+      token,
+      library,
+      "remerge",
+      fixtures.map((file) => file.fileName),
+    );
+    expect(session.previews.map((preview) => [preview.relativePath, preview.posterRedraw])).toEqual([
+      ["ABC-601.mp4", "redraw"],
+      ["ABC-602.mp4", "kept"],
+      ["ABC-603.mp4", "kept"],
+    ]);
+    await apply(sessionId);
+    expect(await readFile(fixtures[0].poster)).not.toEqual(fixtures[0].original);
+    expect(await readFile(badgeBasePath(fixtures[0].poster))).toEqual(base);
+    expect(
+      parseNfoSnapshot(await readFile(fixtures[0].nfoPath, "utf8")).localState?.badgeRecords?.poster?.stamp,
+    ).toBeTruthy();
+    expect(await readFile(fixtures[1].poster)).toEqual(manual);
+    expect(await readFile(fixtures[2].poster)).toEqual(base);
+    const published = (await repositories.library.listEntries({ query: "ABC-601" }))[0];
+    expect(published.assets).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "poster-base", published: true })]),
+    );
+
+    await services.config.update({ download: { tagBadges: false } });
+    const disabled = await startMaintenancePreview(fastify, token, library, "remerge", [fixtures[0].fileName]);
+    expect(disabled.session.previews[0].posterRedraw).toBe("redraw");
+    await apply(disabled.sessionId);
+    expect(await readFile(fixtures[0].poster)).toEqual(base);
+    const record = parseNfoSnapshot(await readFile(fixtures[0].nfoPath, "utf8")).localState?.badgeRecords?.poster;
+    expect(record).toMatchObject({ stamp: "", sha256: record?.baseSha256 });
+    expect(crawl).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
   });
 
   it("exposes paused and resumed previews through HTTP", async () => {

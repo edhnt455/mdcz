@@ -9,6 +9,8 @@ import { createAbortError, isAbortError } from "../scrape/utils/abort";
 import { parseImageDimensions } from "../scrape/utils/image";
 import { runtimeLoggerService } from "../shared";
 import { parseRetryAfterMs } from "../shared/utils";
+import type { RuntimeJsonResponse } from "./index";
+import { isLocalNetworkUrl } from "./localNetworkUrl";
 import {
   getCrawlerExecutionSource,
   isUnrecoverableNetworkError,
@@ -111,18 +113,10 @@ export interface ProbeResult {
   reason?: FailureReason;
 }
 
-export interface NetworkJsonResponse<T = unknown> {
-  ok: boolean;
-  status: number;
-  statusText: string;
-  resolvedUrl: string;
-  headers: Headers;
-  data: T | string | null;
-}
-
 interface RequestBehavior<TResult> {
   allowNonOkResponse?: boolean;
-  retry?: boolean;
+  maxRetries?: number;
+  retryRateLimit?: boolean;
   retryLogPrefix?: string;
   transformResponse?: (response: RawNetworkResponse) => Promise<TResult> | TResult;
 }
@@ -201,8 +195,8 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    { retry, ...init }: Omit<NetworkRequestInit, "method" | "body"> & { retry?: boolean } = {},
-  ): Promise<NetworkJsonResponse<TResponse>> {
+    { maxRetries, ...init }: Omit<NetworkRequestInit, "method" | "body"> & { maxRetries?: number } = {},
+  ): Promise<RuntimeJsonResponse<TResponse>> {
     const headers = new Headers(init.headers);
     headers.set("content-type", "application/json");
 
@@ -217,7 +211,8 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       undefined,
       {
         allowNonOkResponse: true,
-        retry,
+        maxRetries,
+        retryRateLimit: false,
         transformResponse: async (response) => ({
           ok: response.ok,
           status: response.status,
@@ -347,12 +342,20 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
   }
 
   createSession(options: { cookieJar?: NetworkCookieJar } = {}): NetworkSession {
-    const client = options.cookieJar
-      ? this.createImpitClient(options.cookieJar, this.options.getProxyUrl?.())
-      : undefined;
+    const { cookieJar } = options;
+    const clients = new Map<string, Impit>();
 
     return {
-      getText: async (url: string, init: Omit<ImpitRequestInit, "method"> = {}) => {
+      getText: async (url: string, init: Omit<NetworkRequestInit, "method"> = {}) => {
+        let client: Impit | undefined;
+        if (cookieJar) {
+          const proxyUrl = this.resolveProxyUrl(url, init.useProxy);
+          client = clients.get(proxyUrl ?? "");
+          if (!client) {
+            client = this.createImpitClient(cookieJar, proxyUrl);
+            clients.set(proxyUrl ?? "", client);
+          }
+        }
         const response = await this.executeRequest(
           url,
           {
@@ -503,7 +506,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       throw createAbortError();
     }
 
-    const maxRetries = behavior.retry === false ? 0 : this.resolveRetryCount();
+    const maxRetries = behavior.maxRetries ?? this.resolveRetryCount();
     let attempt = 0;
     const transformResponse = behavior.transformResponse ?? ((response: RawNetworkResponse) => response as TResult);
     const retryTransportError = async (error: unknown): Promise<void> => {
@@ -537,7 +540,11 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
       }
 
       if (!response.ok) {
-        if (this.shouldRetryResponse(response) && attempt < maxRetries) {
+        if (
+          attempt < maxRetries &&
+          (response.status !== RETRY_STATUS_CODE || behavior.retryRateLimit !== false) &&
+          this.shouldRetryResponse(response)
+        ) {
           const delayMs = this.getRetryDelayMs(response, attempt);
           attempt += 1;
           this.logger.warn(
@@ -592,7 +599,7 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
 
     const { useProxy, ...requestInit } = init;
-    const currentClient = client ?? this.getClient(getCrawlerExecutionSource()?.website, useProxy);
+    const currentClient = client ?? this.getClient(this.resolveProxyUrl(url, useProxy));
     const headers = new Headers(init.headers);
     this.applySiteRequestConfig(url, headers);
 
@@ -643,7 +650,12 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     }
 
     const text = await response.text();
-    return text.trim().length > 0 ? text : null;
+    if (!text.trim()) return null;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return text;
+    }
   }
 
   private buildProbeRangeValue(byteCount: number): string {
@@ -757,8 +769,13 @@ export class NetworkClient implements SiteRequestConfigRegistrar {
     return Math.max(0, Math.trunc(value));
   }
 
-  private getClient(site?: Website, useProxy = true): Impit {
-    const proxyUrl = useProxy ? this.options.getProxyUrl?.(site) : undefined;
+  private resolveProxyUrl(url: string, useProxy = true): string | undefined {
+    return useProxy && !isLocalNetworkUrl(url)
+      ? this.options.getProxyUrl?.(getCrawlerExecutionSource()?.website)
+      : undefined;
+  }
+
+  private getClient(proxyUrl: string | undefined): Impit {
     let client = this.clientsByProxy.get(proxyUrl ?? "");
     if (!client) {
       // Requests go either through the global proxy or direct, so any other cached proxy has been replaced.

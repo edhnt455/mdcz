@@ -5,28 +5,13 @@ import {
   type LlmOutputFormat,
   type LlmReasoning,
   type LlmServiceType,
+  llmServiceChoices,
 } from "@mdcz/shared/llm";
+import type { RuntimeDetailedRequestInit, RuntimeJsonResponse, RuntimeNetworkClient } from "../../../network";
 import { toErrorMessage } from "../../../shared";
 
-type LlmHeadersInit = Headers | Record<string, string> | Array<[string, string]>;
-type LlmRequestInit = { headers?: LlmHeadersInit; signal?: AbortSignal; timeout?: number; retry?: boolean };
-
-export interface LlmApiTransport {
-  postJsonDetailed<TResponse>(
-    url: string,
-    payload: unknown,
-    init?: LlmRequestInit,
-  ): Promise<RuntimeNetworkJsonResponse<TResponse>>;
-}
-
-export interface RuntimeNetworkJsonResponse<T = unknown> {
-  ok: boolean;
-  status: number;
-  statusText: string;
-  resolvedUrl: string;
-  headers: Headers;
-  data: T | string | null;
-}
+type LlmApiTransport = Required<Pick<RuntimeNetworkClient, "postJsonDetailed">> &
+  Pick<RuntimeNetworkClient, "setDomainLimit">;
 
 export interface LlmTextRequest {
   model: string;
@@ -41,7 +26,7 @@ export interface LlmTextRequest {
   outputFormat: LlmOutputFormat;
   outputSchema?: LlmJsonSchema;
   timeout?: number;
-  retry?: boolean;
+  maxRetries?: number;
 }
 
 export interface LlmJsonSchema {
@@ -146,88 +131,20 @@ export const isOfficialOpenAiBaseUrl = (baseUrl: string): boolean =>
 export const isMissingRequiredLlmApiKey = (baseUrl: string, apiKey: string): boolean =>
   isOfficialOpenAiBaseUrl(baseUrl) && apiKey.trim().length === 0;
 
-class FetchLlmApiTransport implements LlmApiTransport {
-  async postJsonDetailed<TResponse>(
-    url: string,
-    payload: unknown,
-    init: LlmRequestInit = {},
-  ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
-    const headers = new Headers(init.headers);
-    headers.set("content-type", "application/json");
-    const { signal, cleanup } = this.resolveSignal(init.signal, init.timeout);
-    let response: Response;
-
-    try {
-      response = await globalThis.fetch(url, {
-        body: JSON.stringify(payload),
-        headers,
-        method: "POST",
-        signal,
-      });
-    } finally {
-      cleanup();
-    }
-
-    return {
-      data: await this.parseJsonResponseBody<TResponse>(response),
-      headers: response.headers,
-      ok: response.ok,
-      resolvedUrl: response.url || url,
-      status: response.status,
-      statusText: response.statusText,
-    };
-  }
-
-  private async parseJsonResponseBody<TResponse>(response: Response): Promise<TResponse | string | null> {
-    const text = await response.text();
-    if (!text.trim()) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(text) as TResponse;
-    } catch {
-      return text;
-    }
-  }
-
-  private resolveSignal(signal?: AbortSignal, timeout?: number): { signal?: AbortSignal; cleanup: () => void } {
-    if (!timeout || !Number.isFinite(timeout)) {
-      return { signal, cleanup: () => undefined };
-    }
-
-    const controller = new AbortController();
-    const timeoutMs = Math.max(1, Math.trunc(timeout));
-    const onAbort = () => controller.abort(signal?.reason);
-    const timeoutId = globalThis.setTimeout(() => {
-      controller.abort(new Error(`请求超时（${timeoutMs} 毫秒）`));
-    }, timeoutMs);
-
-    if (signal?.aborted) {
-      onAbort();
-    } else {
-      signal?.addEventListener("abort", onAbort, { once: true });
-    }
-
-    return {
-      signal: controller.signal,
-      cleanup: () => {
-        globalThis.clearTimeout(timeoutId);
-        signal?.removeEventListener("abort", onAbort);
-      },
-    };
-  }
-}
-
 export class LlmApiClient {
-  constructor(private readonly transport: LlmApiTransport = new FetchLlmApiTransport()) {}
+  constructor(private readonly transport: LlmApiTransport) {}
+
+  setDomainLimit(domain: string, requestsPerSecond: number, concurrency: number): void {
+    this.transport.setDomainLimit?.(domain, requestsPerSecond, concurrency);
+  }
 
   async generateText(request: LlmTextRequest, signal?: AbortSignal): Promise<string | null> {
-    if (request.reasoning === "enabled" && request.serviceType !== "deepseek") {
-      throw new Error("仅 DeepSeek 支持使用默认推理强度显式开启推理，请使用服务端默认值或指定推理强度");
+    const choices = llmServiceChoices(request.serviceType);
+    if (!choices.reasoning.includes(request.reasoning)) {
+      throw new Error(`模型服务 ${request.serviceType} 不支持推理档位 ${request.reasoning}`);
     }
-    if (request.serviceType === "google" && request.reasoning === "max") {
-      throw new Error("Google 的 OpenAI 兼容端点不支持最高推理强度");
+    if (!choices.outputFormat.includes(request.outputFormat)) {
+      throw new Error(`模型服务 ${request.serviceType} 不支持输出格式 ${request.outputFormat}`);
     }
     const baseUrl = normalizeLlmBaseUrl(request.baseUrl);
     const headers = this.buildHeaders(request.apiKey);
@@ -248,7 +165,7 @@ export class LlmApiClient {
           : { reasoning: { effort: request.reasoning === "disabled" ? "none" : request.reasoning } }),
         ...this.buildOutputFormat(request, "responses"),
       },
-      { headers, signal, timeout: request.timeout, ...(request.retry === false ? { retry: false } : {}) },
+      { headers, signal, timeout: request.timeout, maxRetries: request.maxRetries },
     );
 
     if (responsesResponse.ok) {
@@ -284,7 +201,7 @@ export class LlmApiClient {
           },
         ],
       },
-      { headers, signal, timeout: request.timeout, ...(request.retry === false ? { retry: false } : {}) },
+      { headers, signal, timeout: request.timeout, maxRetries: request.maxRetries },
     );
 
     if (!response.ok) {
@@ -309,9 +226,6 @@ export class LlmApiClient {
 
   private buildOutputFormat(request: LlmTextRequest, apiFormat: LlmApiFormat): Record<string, unknown> {
     if (request.outputFormat === "none") return {};
-    if (request.serviceType === "deepseek" && request.outputFormat === "json_schema") {
-      throw new Error("DeepSeek 不支持 JSON Schema 输出，请选择提示词 JSON 或 JSON Object");
-    }
     const useJsonObject = request.outputFormat === "json_object";
     if (apiFormat === "chat-completions") {
       if (useJsonObject) return { response_format: { type: "json_object" } };
@@ -343,8 +257,8 @@ export class LlmApiClient {
   private async postJsonDetailed<TResponse>(
     url: string,
     payload: unknown,
-    init?: LlmRequestInit,
-  ): Promise<RuntimeNetworkJsonResponse<TResponse>> {
+    init?: RuntimeDetailedRequestInit,
+  ): Promise<RuntimeJsonResponse<TResponse>> {
     try {
       return await this.transport.postJsonDetailed<TResponse>(url, payload, init);
     } catch (error) {
@@ -354,12 +268,11 @@ export class LlmApiClient {
 
   private requireExtractedText(
     url: string,
-    response: RuntimeNetworkJsonResponse<unknown>,
+    response: RuntimeJsonResponse<unknown>,
     text: string | null,
   ): string | null {
-    if (typeof text === "string" && text.trim()) {
-      return text;
-    }
+    const answer = text?.replace(/^\s*<think>[\s\S]*?<\/think>\s*/iu, "").trim();
+    if (answer) return answer;
 
     throw new LlmEmptyResponseError(
       `大模型对 ${url} 的响应不包含文本：${this.summarizeResponseData(response.data)}`,
@@ -443,7 +356,7 @@ export class LlmApiClient {
     return texts.length > 0 ? texts.join("\n") : null;
   }
 
-  private toLlmApiError(url: string, response: RuntimeNetworkJsonResponse<unknown>): LlmApiError {
+  private toLlmApiError(url: string, response: RuntimeJsonResponse<unknown>): LlmApiError {
     const baseMessage = `HTTP ${response.status} ${response.statusText} for ${url}`;
     const detail = this.extractErrorDetail(response.data);
     return new LlmApiError(

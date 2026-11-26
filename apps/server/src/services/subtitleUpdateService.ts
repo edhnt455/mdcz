@@ -9,9 +9,13 @@ import { mediaTaskConflict, movieTaskKey, tryAcquireMediaTask } from "@mdcz/runt
 import { outputDirectoryKeys } from "@mdcz/runtime/publication/outputMutex";
 import { WriteOutput } from "@mdcz/runtime/publication/WriteOutput";
 import {
+  badgeBasePath,
+  encodeBadgeArtwork,
   findSubtitleSidecars,
   ImageWatermarkService,
   NfoGenerator,
+  readManagedArtworkBase,
+  resolveArtworkBadges,
   resolveFileInfoWithSubtitles,
   resolvePosterBadgeDefinitions,
 } from "@mdcz/runtime/scrape";
@@ -25,6 +29,7 @@ import type {
   SubtitleJobListInput,
   SubtitleJobStage,
 } from "@mdcz/shared/subtitleJobs";
+import type { BadgeArtworkRecords } from "@mdcz/shared/types";
 import { z } from "@mdcz/shared/zod";
 import sharp from "sharp";
 import type { TaskEventBus } from "../taskEvents";
@@ -630,13 +635,9 @@ export class SubtitleUpdateService {
       height: Number(streams?.video?.height) || undefined,
     };
     const generator = new NfoGenerator();
-    const artifacts: Array<{ targetPath: string; data: string | Buffer }> = xmls.flatMap(
-      ({ path: targetPath, xml }) => {
-        const data = generator.mergeSubtitleTag(xml, chinese ? "中文字幕" : "字幕");
-        return data === xml ? [] : [{ targetPath, data }];
-      },
-    );
-    metadataUpdated = artifacts.length > 0;
+    const artifacts: Array<{ targetPath: string; data: string | Buffer }> = [];
+    const badgeRecords: BadgeArtworkRecords = {};
+    const newBases: Array<{ kind: string; uri: string; rootId: string; relativePath: string; published: true }> = [];
     if (!config.download.tagBadges || !config.download.tagBadgeTypes.includes("subtitle")) {
       warnings.push("中文字幕角标未启用");
     } else if (!targets.length) {
@@ -657,6 +658,51 @@ export class SubtitleUpdateService {
       let unchanged = 0;
       const sources = new Map<string, Promise<Uint8Array>>();
       for (const [index, target] of targets.entries()) {
+        const kind = target.kind;
+        const record = kind === "fanart" ? undefined : nfo.localState?.badgeRecords?.[kind];
+        if (kind !== "fanart" && record) {
+          const plan = resolveArtworkBadges(
+            kind,
+            nfo.crawlerData,
+            info.fileInfo,
+            nfo.localState,
+            config.download,
+            videoMeta,
+          );
+          if (plan.stamp === record.stamp && !config.download.tagBadgeImageOverrides) {
+            unchanged++;
+            continue;
+          }
+          const base = await readManagedArtworkBase(target.path, record);
+          if (!base) {
+            warnings.push(`${kind} 角标跳过：无法核验当前图片或无角标底图`);
+            continue;
+          }
+          progress("rendering", `从已登记底图重绘 ${kind} 角标`);
+          const rendered = await encodeBadgeArtwork(base, plan, config.download, watermark, (warning) =>
+            warnings.push(warning),
+          );
+          if (rendered.record.sha256 === record.sha256 && rendered.record.stamp === record.stamp) {
+            unchanged++;
+            continue;
+          }
+          if (rendered.data !== base && record.baseSha256 === record.sha256) {
+            const targetPath = badgeBasePath(target.path);
+            const ref = resolveRootFile(roots, targetPath);
+            newBases.push({
+              kind: `${kind}-base`,
+              uri: ref.relativePath,
+              rootId: ref.root.id,
+              relativePath: ref.relativePath,
+              published: true,
+            });
+            artifacts.push({ targetPath, data: base });
+          }
+          badgeRecords[kind] = rendered.record;
+          artifacts.push({ targetPath: target.path, data: rendered.data });
+          updated++;
+          continue;
+        }
         progress("downloading", `下载 ${target.kind} 原图（${index + 1}/${targets.length}）`);
         let base: Buffer;
         try {
@@ -705,6 +751,13 @@ export class SubtitleUpdateService {
       }
       badgeStatus = updated + unchanged === targets.length ? (updated ? "updated" : "unchanged") : "skipped";
     }
+    const nfoArtifacts = xmls.flatMap(({ path: targetPath, xml }) => {
+      const tagged = generator.mergeSubtitleTag(xml, chinese ? "中文字幕" : "字幕");
+      const data = Object.keys(badgeRecords).length ? generator.mergeBadgeRecords(tagged, badgeRecords) : tagged;
+      return data === xml ? [] : [{ targetPath, data }];
+    });
+    metadataUpdated = nfoArtifacts.length > 0;
+    artifacts.push(...nfoArtifacts);
     const members = scans.map(({ file, sidecars }) => ({
       fileId: file.fileId,
       rootId: file.rootId,
@@ -737,7 +790,30 @@ export class SubtitleUpdateService {
       progress("publishing", "写入 NFO、图片与字幕记录");
       await new WriteOutput().install(artifacts, {
         protectedMediaFiles: snapshot.files.map((item) => absolute(item.rootId, item.relativePath)),
-        commit: () => repositories.library.writeEntry({ id: entry.id }, members),
+        commit: () =>
+          repositories.library.writeEntry(
+            {
+              id: entry.id,
+              ...(newBases.length
+                ? {
+                    assets: [
+                      ...entry.assets.filter(
+                        (asset) =>
+                          asset.fileId === null &&
+                          !newBases.some(
+                            (base) =>
+                              base.kind === asset.kind &&
+                              base.rootId === asset.rootId &&
+                              base.relativePath === asset.relativePath,
+                          ),
+                      ),
+                      ...newBases,
+                    ],
+                  }
+                : {}),
+            },
+            members,
+          ),
       });
       this.deps.events.invalidate("library");
     }

@@ -266,7 +266,7 @@ it("retries AI extraction with current settings without scraping or changing the
     });
     expect(JSON.parse(pending.get(original.id).numberRecognitionJson ?? "null")).toEqual(detail.numberRecognition);
     const [configuration, prompt] = recognize.mock.calls.at(-1) ?? [];
-    expect(configuration?.llmModelName).toBe(`model-${scenario}`);
+    expect(configuration?.translate.llmModelName).toBe(`model-${scenario}`);
     expect(prompt).toContain(`prompt-${scenario}`);
   }
   expect(recognize).toHaveBeenCalledTimes(5);

@@ -2,7 +2,7 @@ import { BAIDU_SERVICE_OPTIONS, type Configuration, type DeepPartial, type notif
 import { directorySourceSchema, directoryTaskScopeSchema } from "./directoryTasks";
 import { TRANSLATION_TARGET_OPTIONS, TranslateEngine, Website } from "./enums";
 import { libraryEditJobSchema } from "./libraryEdit";
-import { LIBRARY_PAGE_SIZES } from "./libraryPagination";
+import { LIBRARY_PAGE_SIZES, LIBRARY_SORT_FIELDS, LIBRARY_SORT_ORDERS } from "./libraryPagination";
 import {
   LLM_API_FORMAT_OPTIONS,
   LLM_OUTPUT_FORMAT_OPTIONS,
@@ -785,6 +785,8 @@ export const libraryListInputSchema = libraryMatchesInputSchema
   .extend({
     page: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).default(1),
     pageSize: z.literal(LIBRARY_PAGE_SIZES).default(10),
+    sortBy: z.enum(LIBRARY_SORT_FIELDS).optional(),
+    sortOrder: z.enum(LIBRARY_SORT_ORDERS).optional(),
   })
   .optional();
 
